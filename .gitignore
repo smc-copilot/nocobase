@@ -80,3 +80,23 @@ openspec/
 /skills
 /skills-lock.json
 paseo.json
+!packages/app/app-host/fixtures/app-dist/**/dist/
+!packages/app/app-host/fixtures/app-dist/**/dist/**
+!packages/app/app-host/fixtures/app-dist/**/dist/node_modules/
+!packages/app/app-host/fixtures/app-dist/**/dist/node_modules/**
+
+packages/app/app-host/fixtures/app-dist/main/
+packages/app/app-host/fixtures/app-dist/hub/dist/
+packages/app/app-host/fixtures/app-dist/hub/dist/**
+# Runtime state app-host writes under its working directory when a test gives
+# it no explicit location. Tests use temporary directories; this is a backstop.
+packages/app/app-host/storage/
+
+packages/templates/app-template-default/workflows
+
+# Independent Default business baseline instances and private evidence.
+/.business-baseline/
+
+# lat.md local UI build output and embedding cache.
+.lat-build
+lat.md/.cache/
