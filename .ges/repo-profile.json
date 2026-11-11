@@ -1,0 +1,82 @@
+{
+  "schema": "ges.repo-profile.v2",
+  "repository_lifecycle": "brownfield",
+  "layout": "monorepo",
+  "kind": "brownfield-monorepo",
+  "repository_kind": "brownfield-monorepo",
+  "agents": [
+    "cursor"
+  ],
+  "languages": [
+    "typescript"
+  ],
+  "spec_kit": false,
+  "legacy_ges": false,
+  "ci": [
+    "github-actions"
+  ],
+  "package_managers": [
+    "yarn"
+  ],
+  "frameworks": [
+    "react"
+  ],
+  "existing": {
+    "AGENTS.md": true,
+    "CLAUDE.md": true,
+    ".agents": true,
+    ".cursor": true,
+    ".codex": false,
+    ".specify": false,
+    ".smc": false,
+    "CONTEXT.md": true,
+    "CONTEXT-MAP.md": false,
+    "docs/adr": true
+  },
+  "source_roots": [
+    "packages"
+  ],
+  "scripts": {
+    "test": [
+      "package.json",
+      "packages/core/cli/package.json",
+      "packages/core/create-nocobase-app/templates/app/package.json"
+    ],
+    "build": [
+      "docs/package.json",
+      "package.json",
+      "packages/core/build/package.json",
+      "packages/core/cli/package.json",
+      "packages/core/create-nocobase-app/templates/app/package.json"
+    ],
+    "lint": [
+      "docs/package.json",
+      "package.json",
+      "packages/core/create-nocobase-app/templates/app/package.json"
+    ]
+  },
+  "tsconfig_evidence": [
+    "docs/tsconfig.json",
+    "packages/core/app/client-settings/tsconfig.json",
+    "packages/core/app/client-v2/tsconfig.json",
+    "packages/core/app/client/tsconfig.json",
+    "packages/core/cli/tsconfig.json",
+    "packages/core/client-v2/tsconfig.json",
+    "packages/core/client/tsconfig.json",
+    "packages/core/create-nocobase-app/templates/app/tsconfig.server.json",
+    "packages/core/sdk/tsconfig.json",
+    "packages/plugins/@nocobase/plugin-license/tsconfig.env.json",
+    "packages/plugins/@nocobase/plugin-notification-email/tsconfig.json",
+    "packages/plugins/@nocobase/plugin-notification-in-app-message/tsconfig.json",
+    "tsconfig.json",
+    "tsconfig.server.json"
+  ],
+  "analyzer_version": "6.0.0-alpha.5",
+  "analyzed_at": "2026-11-11T03:43:42.490847+00:00",
+  "git": {
+    "repository": true,
+    "head": "458ac0d6abaf43bc61d2531d974b43043afe8f1f",
+    "remote": "git@github.com:smc-copilot/nocobase.git"
+  },
+  "llm_token_usage": 0
+}
