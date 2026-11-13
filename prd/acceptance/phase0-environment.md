@@ -29,6 +29,7 @@ Baseline: `feature/v3.0.1` @ `e1f584e6d514aca08c762f6cbba43a4848d5f363`
 
 - [x] Remote SSH reachable and Docker available
 - [x] PG databases planned and created
-- [ ] Casdoor JWT issuance + JWKS fetch verified
+- [x] Casdoor JWKS fetch verified (`http://localhost:8000/.well-known/jwks` → 200; see `prd/acceptance/p0/live-casdoor-jwks.md`)
+- [ ] Casdoor JWT access-token issuance for Control/Demo clients (admin password / clients still being finalized)
 - [ ] Origin push unblocked (user)
 - [ ] Octop fixed-SHA package prepared (user)
