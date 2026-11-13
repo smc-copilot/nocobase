@@ -12,8 +12,10 @@
 // microseconds and seconds.
 import { spawnSync } from 'node:child_process';
 import { rename, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 
+const require = createRequire(import.meta.url);
 const packageRoot: string = path.resolve(import.meta.dirname, '..');
 const distDirectory: string = path.join(packageRoot, 'dist');
 const stagingDirectory: string = path.join(packageRoot, 'dist.build');
@@ -21,8 +23,14 @@ const stagingDirectory: string = path.join(packageRoot, 'dist.build');
 await rm(stagingDirectory, { force: true, recursive: true });
 
 const result = spawnSync(
-  'pnpm',
-  ['exec', 'tsc', '-p', 'tsconfig.build.json', '--outDir', stagingDirectory],
+  process.execPath,
+  [
+    require.resolve('typescript/bin/tsc'),
+    '-p',
+    'tsconfig.build.json',
+    '--outDir',
+    stagingDirectory,
+  ],
   { cwd: packageRoot, stdio: 'inherit' },
 );
 
