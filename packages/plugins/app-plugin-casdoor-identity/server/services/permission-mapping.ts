@@ -461,6 +461,21 @@ export class PermissionMappingService {
         }
         continue;
       }
+      // I04: our tracked assignment was replaced (admin deleted A and assigned B). Drop the
+      // stale managed row without revoking B, and never rewrite assignmentId to the manual grant.
+      if (row && existing && existing.id !== row.assignmentId) {
+        skipped.push({
+          permissionSetKey: key,
+          reason: 'MANUAL_ASSIGNMENT_EXISTS',
+        });
+        if (!dryRun && row.id) {
+          await connection.query
+            .deleteFrom('managedPermissionAssignments')
+            .where('id', '=', row.id)
+            .execute();
+        }
+        continue;
+      }
       if (existing && !sharedOwner) {
         // A person assigned this set; the adapter never adopts it.
         skipped.push({

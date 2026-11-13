@@ -1,5 +1,6 @@
 import { authenticationToken } from '@nocobase/app-plugin-authentication/server';
 import type { AppPluginApplication } from '@nocobase/app-server/plugins';
+import { secretsServiceToken } from '@nocobase/app-server/secrets';
 import { databaseManagerToken } from '@nocobase/db';
 import { ServiceProvider } from '@nocobase/service-provider';
 
@@ -27,6 +28,10 @@ export class BusinessUiAdapterProvider extends ServiceProvider<AppPluginApplicat
         database: () => resolver.resolve(databaseManagerToken),
         auth: () => resolver.resolve(authenticationToken),
         config: () => this.config(),
+        secrets: () =>
+          this.app.container.has(secretsServiceToken)
+            ? resolver.resolve(secretsServiceToken)
+            : undefined,
       }),
     );
   }

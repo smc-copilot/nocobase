@@ -43,6 +43,12 @@ export interface CasdoorIdentitySyncConfig {
    * registered. Unset disables the fallback.
    */
   readonly fallbackIntervalSeconds?: number;
+  /**
+   * How long a directory attribute snapshot remains authoritative for Permission Set mapping
+   * on login (seconds). Defaults to 600 (10 minutes). After the first sync, a stale snapshot
+   * blocks JWT-driven grant upgrades.
+   */
+  readonly snapshotMaxAgeSeconds?: number;
 }
 
 export interface CasdoorDirectoryConfig {

@@ -24,8 +24,19 @@ export const CASDOOR_ACCESS_TOKEN_SCHEME = 'casdoorAccessToken';
 export interface BusinessUiAdapterConfig {
   environment?: string;
   publicBaseUrl?: string;
-  /** When true, save/submit may inject UNKNOWN before side effects (tests only). */
+  /**
+   * Fault injection — production builds must leave this unset. Test harnesses may enable
+   * one scenario at a time to prove UNKNOWN / FAILED recovery paths (FIX-12 / R42).
+   */
   faultInjection?: {
+    /** Persist UNKNOWN before any document write (response-lost before commit is a separate path). */
     unknownOnSubmit?: boolean;
+    /** Fail before writing the document and mark the operation FAILED with safe_retry. */
+    failBeforeWrite?: boolean;
   };
 }
+
+/** Authorization settings items for the adapter admin API (FIX-06 / FIX-08). */
+export const SETTINGS_CONNECTIONS = 'businessUiAdapter.connections';
+export const SETTINGS_FORMS = 'businessUiAdapter.forms';
+export const SETTINGS_AUDIT = 'businessUiAdapter.audit';

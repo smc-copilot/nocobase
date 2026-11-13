@@ -1,26 +1,30 @@
-# P1 — Control plane templates
+# P1 — Control and integration-demo templates (Gate A)
 
-Date: 2026-11-13 (Asia/Shanghai)
-Branch: `feat/v3-smc-control` (worktree `D:\git\nocobase-wt-smc-control`)
+Branch: `fix/v3-smc-integration-readiness`  
+Packages: `@nocobase/app-template-smc-control`, `@nocobase/app-template-integration-demo`
 
 ## Delivered
 
-| Item                              | Location                                                                             |
-| --------------------------------- | ------------------------------------------------------------------------------------ |
-| Control template                  | `packages/templates/app-template-smc-control`                                        |
-| `releasesAccessToken` binding     | `server/providers/releases-access.ts`                                                |
-| Releases + drive + secrets config | `config.example.yml`                                                                 |
-| Managed demo template             | `packages/templates/app-template-integration-demo`                                   |
-| create-app aliases                | `smc-control`, `integration-demo` in `packages/tools/create-app/src/lib/template.ts` |
+| Item                                            | Location                                                                                 |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Control template                                | `packages/templates/app-template-smc-control`                                            |
+| Integration demo template                       | `packages/templates/app-template-integration-demo`                                       |
+| Casdoor identity + Business UI Adapter assembly | template `server/plugins.ts`, `package.json`, `config.example.yml`                       |
+| `genericOAuth` wiring                           | `server/config/auth.ts` + `client/config/auth.ts` per plugin docs                        |
+| Users / Permission Set pages                    | `client/pages/settings/routes.ts` registered from `client/routes.ts` (FIX-16)            |
+| ReleasesAccess binding                          | `server/providers/releases-access.ts` + `publisherAuthorizationGrants()` dual page grant |
 
-## Acceptance notes
-
-- **In-process Host**: enable `releases.host` in `config.yml` on a machine that can run child App Host processes. Local Windows can exercise API and access mapping without enabling the host child.
-- **Docker Host**: deferred to remote `192.168.102.104` (Docker available). Marked environment-pending until an operator enables `releases.docker` there and records REC-02 evidence.
-- **Frontend**: Control reuses the Releases plugin client pages; no new React pages were authored for P1. Future custom UI must not use Claude models for page implementation (team constraint 2026-11-13).
-
-## How to verify access mapping
+## Verify
 
 ```bash
-pnpm --filter @nocobase/app-template-smc-control exec vitest run tests/server/releases-access.test.ts
+pnpm --filter @nocobase/app-template-smc-control test
+pnpm --filter @nocobase/app-template-integration-demo test
+pnpm --filter @nocobase/app-template-smc-control exec vitest run tests/server/publisher-releases-boundary.test.ts
 ```
+
+Non-root publisher evidence (R35): Authorization `page:rel-apps/access` plus ReleasesAccess related scopes — see `tests/server/publisher-releases-boundary.test.ts`.
+
+## Environment notes
+
+- In-process Host and Docker Host remain Gate B / operator-owned (`192.168.102.104`).
+- Frontend constraint: no new Claude-authored React admin pages for IdP/mapping/connection UI; Gate A initializes via authenticated APIs. See `FRONTEND_MODEL_CONSTRAINT.md`.

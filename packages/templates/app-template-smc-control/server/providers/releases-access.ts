@@ -32,6 +32,7 @@ export {
   PUBLISHER_SET,
   UNRESTRICTED_SETS,
   permissionsForSets,
+  publisherAuthorizationGrants,
 } from '../lib/releases-permissions.js';
 
 export default class ReleasesAccessProvider extends ServiceProvider<Application> {

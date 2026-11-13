@@ -77,20 +77,17 @@ Notes:
 
 ## 2. Client counterpart
 
-Add the client plugin to `client/config/auth.ts` and start the flow from a button:
+In Better Auth 1.7.5, `genericOAuth` registers providers as social providers. No separate client plugin is required. Start the flow from a button:
 
 ```ts
-import { genericOAuthClient } from 'better-auth/client/plugins';
-// ...add genericOAuthClient() to the plugins of the auth client...
-
 const { client } = useAuthentication();
-await client.signIn.oauth2({
-  providerId: 'casdoor',
+await client.signIn.social({
+  provider: 'casdoor',
   callbackURL: resolveAppUrl('/'),
 });
 ```
 
-Use `resolveAppUrl` from `@nocobase/app-client` for the callback so it follows the runtime mount path.
+Use `resolveAppUrl` from `@nocobase/app-client` for the callback so it follows the runtime mount path. Re-check the installed Better Auth version if a later release reintroduces a dedicated client helper.
 
 ## 3. What this wiring does not do yet
 

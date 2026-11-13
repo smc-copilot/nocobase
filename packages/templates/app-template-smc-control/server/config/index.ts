@@ -28,6 +28,7 @@ import users from './users.js';
 import knowledge from './knowledge.js';
 import foundation from './foundation.js';
 import releases from './releases.js';
+import casdoorIdentity from './casdoor-identity.js';
 
 const defaultConfigs: AppConfigFactory<{
   mailers: ReturnType<typeof mailers>;
@@ -56,6 +57,7 @@ const defaultConfigs: AppConfigFactory<{
   knowledge: ReturnType<typeof knowledge>;
   foundation: ReturnType<typeof foundation>;
   releases: ReturnType<typeof releases>;
+  casdoorIdentity: ReturnType<typeof casdoorIdentity>;
 }> = defaultAppConfigs({
   mailers,
   auth,
@@ -83,6 +85,7 @@ const defaultConfigs: AppConfigFactory<{
   knowledge,
   foundation,
   releases,
+  casdoorIdentity,
 });
 
 export default defaultConfigs;

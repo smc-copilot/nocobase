@@ -62,6 +62,31 @@ describeMigration('casdoor_identity_202611140001_create_iam_sync_collections', {
   },
 });
 
+describeMigration(
+  'casdoor_identity_202611140002_directory_authority_snapshot',
+  {
+    sources: migrations,
+    up: async ({ expectCollection }) => {
+      await expectCollection('externalIdentities').toHaveField(
+        'directoryAttributes',
+        { nullable: true },
+      );
+      await expectCollection('externalIdentities').toHaveField(
+        'directoryObservedAt',
+        { nullable: true },
+      );
+    },
+    down: async ({ expectCollection }) => {
+      await expectCollection('externalIdentities').not.toHaveField(
+        'directoryAttributes',
+      );
+      await expectCollection('externalIdentities').not.toHaveField(
+        'directoryObservedAt',
+      );
+    },
+  },
+);
+
 describeMigration('casdoor_identity_202611130001_create_external_identities', {
   sources: migrations,
   up: async ({ expectCollection }) => {

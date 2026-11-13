@@ -3,6 +3,7 @@ export const ERROR_DOMAIN = 'businessUiAdapter';
 export type ProtocolErrorCode =
   | 'AUTH_REQUIRED'
   | 'ACCOUNT_DISABLED'
+  | 'PERMISSION_DENIED'
   | 'SUBJECT_BINDING_REQUIRED'
   | 'SUBJECT_MISMATCH'
   | 'FORM_NOT_REGISTERED'
@@ -17,7 +18,8 @@ export type ProtocolErrorCode =
   | 'SESSION_CONFLICT'
   | 'EMBED_CONTEXT_REQUIRED'
   | 'UNSUPPORTED'
-  | 'INVALID_ARGUMENT';
+  | 'INVALID_ARGUMENT'
+  | 'SECRETS_NOT_CONFIGURED';
 
 export class ProtocolError extends Error {
   public readonly code: ProtocolErrorCode;

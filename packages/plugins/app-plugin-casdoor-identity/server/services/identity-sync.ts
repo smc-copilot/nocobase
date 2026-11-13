@@ -452,6 +452,9 @@ export class IdentitySyncService {
             lastSeenEnabled: false,
             disabledBySyncAt: now,
             lastSyncedAt: now,
+            // Directory authority snapshot: JWT login maps from this, not from groups in the token.
+            directoryAttributes: { ...directoryUser.attributes },
+            directoryObservedAt: now,
             updatedAt: now,
           })
           .where('id', '=', binding.id)
@@ -471,6 +474,8 @@ export class IdentitySyncService {
             lastSeenEnabled: true,
             disabledBySyncAt: null,
             lastSyncedAt: now,
+            directoryAttributes: { ...directoryUser.attributes },
+            directoryObservedAt: now,
             updatedAt: now,
           })
           .where('id', '=', binding.id)
@@ -479,12 +484,26 @@ export class IdentitySyncService {
       effectivelyEnabled = true;
     } else if (desiredEnabled && disabled) {
       actions.push('keep-disabled:local');
+      if (!dryRun) {
+        await connection.query
+          .updateTable('externalIdentities')
+          .set({
+            directoryAttributes: { ...directoryUser.attributes },
+            directoryObservedAt: now,
+            lastSyncedAt: now,
+            updatedAt: now,
+          })
+          .where('id', '=', binding.id)
+          .execute();
+      }
     } else if (!dryRun) {
       await connection.query
         .updateTable('externalIdentities')
         .set({
           lastSeenEnabled: desiredEnabled,
           lastSyncedAt: now,
+          directoryAttributes: { ...directoryUser.attributes },
+          directoryObservedAt: now,
           updatedAt: now,
         })
         .where('id', '=', binding.id)

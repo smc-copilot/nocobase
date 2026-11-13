@@ -128,7 +128,7 @@ describe('Casdoor login through the credential resolver (IAM-001..007)', () => {
     const response = await call('nobody');
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({
-      error: { reason: 'SUBJECT_BINDING_REQUIRED' },
+      error: { reason: 'IDENTITY_PROVIDER_DISABLED' },
     });
     expect(await userCount()).toBe(0);
   });

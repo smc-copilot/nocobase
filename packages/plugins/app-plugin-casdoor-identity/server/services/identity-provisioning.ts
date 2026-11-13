@@ -87,29 +87,31 @@ export class IdentityProvisioningService {
   }
 
   private async onLoginLocked(token: VerifiedToken): Promise<LoginBinding> {
+    // A disabled or missing provider must refuse every login, including identities that
+    // already have a local binding (I01). Never fall through to "compat" reuse.
     const provider = await this.providers.findEnabledByIssuer(token.issuer);
+    if (!provider) {
+      throw identityError(
+        'PERMISSION_DENIED',
+        'IDENTITY_PROVIDER_DISABLED',
+        'No enabled identity provider accepts this issuer.',
+      );
+    }
     const identity = extractIdentity(
       token.issuer,
       token.subject,
       token.attributes,
-      provider?.claimMapping,
+      provider.claimMapping,
     );
     const existing = await this.findBinding(identity.issuer, identity.subject);
     if (existing) {
-      if (provider) this.assertAdmitted(provider, identity);
+      this.assertAdmitted(provider, identity);
       await this.reuse(existing, identity, provider);
       return {
         bindingId: existing.id,
         localUserId: existing.localUserId,
         created: false,
       };
-    }
-    if (!provider) {
-      throw identityError(
-        'PERMISSION_DENIED',
-        'SUBJECT_BINDING_REQUIRED',
-        'No local user is bound to this external subject.',
-      );
     }
     this.assertAdmitted(provider, identity);
     return this.provision(identity, provider);
@@ -134,13 +136,18 @@ export class IdentityProvisioningService {
   private async reuse(
     binding: { id: string; localUserId: string },
     identity: ExternalIdentityClaims,
-    provider: IdentityProviderRecord | undefined,
+    provider: IdentityProviderRecord,
   ): Promise<void> {
     const connection = this.runtime.database().connection();
     const now = nowOf(this.runtime);
+    const row = await connection.query
+      .selectFrom('externalIdentities')
+      .select(['directoryAttributes', 'directoryObservedAt'])
+      .where('id', '=', binding.id)
+      .executeTakeFirst();
     await connection.query
       .updateTable('externalIdentities')
-      .set({ lastSyncedAt: now, updatedAt: now })
+      .set({ updatedAt: now })
       .where('id', '=', binding.id)
       .execute();
     const user = await connection.query
@@ -156,13 +163,63 @@ export class IdentityProvisioningService {
         name: identity.name,
       });
     }
-    if (provider) {
-      await this.mapping.reconcileIdentity(
-        binding.localUserId,
-        provider.providerId,
-        identity,
-      );
+    // Directory authority (I02): after the first successful sync, map permissions from the
+    // directory snapshot only. A stale or missing snapshot must not let an old JWT re-grant.
+    const mappingIdentity = this.resolveMappingIdentity(
+      identity,
+      provider,
+      row
+        ? {
+            directoryAttributes: row.directoryAttributes,
+            directoryObservedAt: row.directoryObservedAt,
+          }
+        : undefined,
+    );
+    if (!mappingIdentity) return;
+    await this.mapping.reconcileIdentity(
+      binding.localUserId,
+      provider.providerId,
+      mappingIdentity,
+    );
+  }
+
+  /**
+   * JWT proves identity; after the first directory sync (`directoryObservedAt` set), only the
+   * directory snapshot may drive Permission Set mapping. Returns `undefined` when a required
+   * snapshot is stale so login still succeeds without JWT-driven grant upgrades.
+   */
+  private resolveMappingIdentity(
+    tokenIdentity: ExternalIdentityClaims,
+    provider: IdentityProviderRecord,
+    row:
+      | {
+          readonly directoryAttributes: unknown;
+          readonly directoryObservedAt: unknown;
+        }
+      | undefined,
+  ): ExternalIdentityClaims | undefined {
+    const observedAt = toDateOrNull(row?.directoryObservedAt);
+    if (observedAt == null) {
+      // Never directory-synced: first-login JIT may use verified token claims.
+      return tokenIdentity;
     }
+    const maxAgeSeconds =
+      this.runtime.config().sync?.snapshotMaxAgeSeconds ?? 600;
+    const ageMs = nowOf(this.runtime).getTime() - observedAt.getTime();
+    if (
+      ageMs > maxAgeSeconds * 1000 ||
+      row?.directoryAttributes == null ||
+      typeof row.directoryAttributes !== 'object'
+    ) {
+      // Snapshot missing/stale: do not upgrade grants from the JWT; leave existing grants.
+      return undefined;
+    }
+    return extractIdentity(
+      tokenIdentity.issuer,
+      tokenIdentity.subject,
+      row.directoryAttributes as Readonly<Record<string, unknown>>,
+      provider.claimMapping,
+    );
   }
 
   private async provision(

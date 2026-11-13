@@ -57,16 +57,3 @@ export function parseGenericRequestFields(
 
   return { title: title.trim(), description, quantity };
 }
-
-export function businessRejectIfNeeded(
-  fields: GenericRequestFields,
-): ProtocolError | undefined {
-  if (fields.title.toLowerCase() === 'reject-me') {
-    return new ProtocolError(
-      'INVALID_ARGUMENT',
-      200,
-      'Business rule rejected this document',
-    );
-  }
-  return undefined;
-}

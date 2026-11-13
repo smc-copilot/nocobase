@@ -137,6 +137,7 @@ const systemZhCN: SystemResource = {
   'auth.methods': '登录方式',
   'auth.or': '或使用以下方式继续',
   'auth.continueWith': '使用 {provider} 继续',
+  'auth.casdoor': 'Casdoor',
   'auth.about': '关于此应用',
   'auth.platform': 'AI 原生应用平台',
   'auth.marketingTitleFirst': 'AI + NocoBase',

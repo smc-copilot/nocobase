@@ -10,6 +10,7 @@ import {
   type ReleasesPermissions,
   type Scope,
 } from '@nocobase/app-plugin-releases/shared/access';
+import type { PermissionGrant } from '@nocobase/authorization/core';
 
 /** Permission Sets whose holders reach every App, at every action. */
 export const UNRESTRICTED_SETS: readonly string[] = ['root', 'platform-admin'];
@@ -29,6 +30,33 @@ const PUBLISHER_ACTIONS: readonly AppAction[] = [
   'deploy',
   'operate',
 ];
+
+/**
+ * Authorization grants that must live on the `publisher` Permission Set alongside the
+ * ReleasesAccess mapping (FIX-16 / R35). `page:rel-apps/access` opens the client route;
+ * ReleasesAccess.pages['rel-apps'] alone is not enough for the native page guard.
+ */
+export function publisherAuthorizationGrants(): readonly PermissionGrant[] {
+  return [
+    {
+      resource: { type: 'page', id: 'rel-apps' },
+      actions: [{ action: 'access' }],
+    },
+    {
+      resource: { type: 'rel', id: 'rel.apps' },
+      actions: [
+        { action: 'create' },
+        ...PUBLISHER_ACTIONS.map((action) => ({
+          action: `${action}.related`,
+        })),
+      ],
+    },
+    {
+      resource: { type: 'settings', id: 'rel.environments' },
+      actions: [{ action: 'read' }],
+    },
+  ];
+}
 
 export function permissionsForSets(
   sets: readonly string[],

@@ -1,39 +1,38 @@
-# P3 acceptance — Business UI Adapter
+# P3 — Business UI Adapter protocol (Gate A)
 
-Date: 2026-11-13  
-Branch: `feat/v3-smc-business-ui-adapter`  
+Branch: `fix/v3-smc-integration-readiness`  
 Package: `@nocobase/app-plugin-business-ui-adapter`
 
 ## Commands
 
 ```bash
-pnpm --filter @nocobase/app-plugin-business-ui-adapter test
+pnpm --filter @nocobase/app-plugin-business-ui-adapter lint
 pnpm --filter @nocobase/app-plugin-business-ui-adapter typecheck
+pnpm --filter @nocobase/app-plugin-business-ui-adapter test
+pnpm --filter @nocobase/app-plugin-business-ui-adapter build
 ```
 
-Result: 9 tests passed (migrations, DTO dual naming, protocol flow, plugin contributions).
+Result on remediation branch: adapter protocol, Octop handshake fixture, migrations and DTO suites pass (14+ tests in-package; see Gate A report).
 
-## Coverage vs PRD §10 / §11.4
+## Coverage vs Remediation FIX-04…12
 
-| Area                                                   | Evidence                             |
-| ------------------------------------------------------ | ------------------------------------ |
-| Handshake + connection service credential              | `tests/server/protocol-flow.test.ts` |
-| OAuth callback stash + consume (pending / ready)       | same                                 |
-| Ticket issue (60s TTL) + redeem HTML + replay reject   | same                                 |
-| Save draft + optimistic version conflict (409)         | same                                 |
-| Idempotent submit (same key → same operation/receipt)  | same                                 |
-| `interactions/{id}` recovers `latestSubmitOperationId` | same                                 |
-| `operations/{id}` query_only                           | same                                 |
-| UNKNOWN retry rejected (`RETRY_NOT_SAFE`)              | same (faultInjection path)           |
-| formRef URL / unregistered reject                      | same                                 |
-| Dual camelCase / snake_case DTO                        | `tests/server/dto.test.ts`           |
-| Collections migration                                  | `tests/database/migrations.test.ts`  |
+| Area                                                            | Evidence                                                                     |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Handshake top-level paths + features                            | `tests/server/protocol-flow.test.ts`, `tests/server/octop-handshake.test.ts` |
+| OAuth seal/open consume returns raw code                        | protocol-flow                                                                |
+| Nested subject + nonce + redeem replay                          | protocol-flow                                                                |
+| Draft save: `status=draft`, `record_id=null`, no SUCCESS result | protocol-flow                                                                |
+| Stable submit slot `operation_id` before first submit           | protocol-flow                                                                |
+| Idempotent submit + same-key different payload 409              | protocol-flow                                                                |
+| Business auth three states (allow / deny / subsequent reject)   | protocol-flow                                                                |
+| Detail redeem readonly + server write reject                    | protocol-flow                                                                |
+| FAILED `failBeforeWrite` + safe retry                           | protocol-flow                                                                |
+| UNKNOWN retry rejected; `side_effect: null`                     | protocol-flow                                                                |
+| Admin settings auth + real forms list                           | routes / admin tests                                                         |
+| CSP `frame-ancestors` + `business-ui/hint` postMessage          | redeem HTML / route headers                                                  |
 
-## Explicit gaps (not claimed)
+## Explicit gaps (not claimed as Gate A field evidence)
 
-- Full Hono route HTTP integration against a running Application (service-layer coverage only for protocol).
-- Live Octop host + Casdoor end-to-end redeem in a browser (P4 remote).
-- HTTPS / iframe cookie attributes (P4).
-- Production fault-injection routes are config-gated (`businessUiAdapter.faultInjection`); default off.
-- Admin `GET /api/businessUiAdapter/forms` returns an empty configuration list stub until a list query is needed.
-- Generic form UI is server-rendered HTML from redeem (no React client page; FRONTEND_MODEL_CONSTRAINT).
+- Live Octop host at pinned SHA `64689a5b` browser redeem.
+- HTTPS iframe Cookie attributes (R37).
+- Production must leave `businessUiAdapter.faultInjection` unset (R42).

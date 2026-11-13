@@ -173,6 +173,48 @@ describe('Permission Set mapping and ownership (IAM-004, IAM-005)', () => {
     expect(await assignedSets()).toEqual(['content-editor']);
   });
 
+  it('I04: does not claim a manual replacement after the managed assignment was deleted', async () => {
+    await rule('r-editors', 'editors', 'content-editor');
+    await harness.services.mapping.reconcileIdentity(
+      userId,
+      'casdoor',
+      identity(['editors']),
+    );
+    const managed = (await harness.services.mapping.managedRows(userId))[0]!;
+
+    // Simulate: tracked assignment A was deleted and a person created B. The live assignment
+    // remains for the set, but our managed row still points at the deleted assignment id.
+    await harness.database
+      .connection()
+      .query.updateTable('managedPermissionAssignments')
+      .set({ assignmentId: 'deleted-assignment-id' })
+      .where('id', '=', managed.id)
+      .execute();
+
+    const result = await harness.services.mapping.reconcileIdentity(
+      userId,
+      'casdoor',
+      identity(['editors']),
+    );
+    expect(result.granted).toEqual([]);
+    expect(result.skipped).toEqual([
+      {
+        permissionSetKey: 'content-editor',
+        reason: 'MANUAL_ASSIGNMENT_EXISTS',
+      },
+    ]);
+    expect(await harness.services.mapping.managedRows(userId)).toHaveLength(0);
+    expect(await assignedSets()).toEqual(['content-editor']);
+
+    // A later reconcile that no longer desires the set must leave the manual grant alone.
+    await harness.services.mapping.reconcileIdentity(
+      userId,
+      'casdoor',
+      identity([]),
+    );
+    expect(await assignedSets()).toEqual(['content-editor']);
+  });
+
   it('keeps a set both rules want until the last rule stops matching', async () => {
     await rule('r-a', 'a', 'content-editor');
     await rule('r-b', 'b', 'content-editor');
