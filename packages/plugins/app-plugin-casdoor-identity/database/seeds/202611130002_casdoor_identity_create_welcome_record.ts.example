@@ -1,0 +1,17 @@
+import { defineSeed, type SeedDefinition } from '@nocobase/db';
+
+const seed: SeedDefinition = defineSeed({
+  name: '202611130002_casdoor_identity_create_welcome_record',
+
+  async run({ query }) {
+    await query
+      .insertInto('appPluginCasdoorIdentityRecords')
+      .values({
+        name: 'Welcome from @nocobase/app-plugin-casdoor-identity',
+        createdAt: new Date(),
+      })
+      .execute();
+  },
+});
+
+export default seed;
