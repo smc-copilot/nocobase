@@ -24,6 +24,19 @@ import {
 export interface CasdoorCredentialResolverOptions {
   readonly connection: () => DatabaseConnection;
   readonly config: () => CasdoorIdentityConfig | undefined;
+  /** First-login provisioning and admission; absent means bindings must already exist. */
+  readonly identity?: () =>
+    | {
+        onLogin(token: {
+          readonly issuer: string;
+          readonly subject: string;
+          readonly attributes: Readonly<Record<string, unknown>>;
+        }): Promise<{
+          readonly bindingId: string;
+          readonly localUserId: string;
+        }>;
+      }
+    | undefined;
 }
 
 interface ReadAccessTokenResult {
@@ -145,12 +158,26 @@ export function createCasdoorCredentialResolver(
     }
 
     const connection = options.connection();
-    const binding = await connection.query
-      .selectFrom('externalIdentities')
-      .select(['id', 'localUserId'])
-      .where('providerIssuer', '=', issuer)
-      .where('providerSubject', '=', subject)
-      .executeTakeFirst();
+    // With identity administration wired in, the first login provisions (when admission allows)
+    // and every login re-checks admission; without it the binding must already exist (P0).
+    const login = options.identity?.();
+    const binding = login
+      ? await login
+          .onLogin({
+            issuer,
+            subject,
+            attributes: payload,
+          })
+          .then((resolved) => ({
+            id: resolved.bindingId,
+            localUserId: resolved.localUserId,
+          }))
+      : await connection.query
+          .selectFrom('externalIdentities')
+          .select(['id', 'localUserId'])
+          .where('providerIssuer', '=', issuer)
+          .where('providerSubject', '=', subject)
+          .executeTakeFirst();
 
     if (!binding) {
       throw new ApiError({

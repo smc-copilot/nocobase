@@ -14,10 +14,12 @@ import {
   type AppApiRouteContribution,
   type AppRouteContribution,
 } from '@nocobase/app-server/router';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 
 import { CASDOOR_ACCESS_TOKEN_SCHEME } from '../config.js';
+import { casdoorIdentityAdminToken } from '../tokens.js';
+import { createAdminRouter } from './admin.js';
 
 const tags = ['CasdoorIdentity'];
 
@@ -42,12 +44,14 @@ export const apiRoutes: AppApiRouteContribution<AppPluginApplication> =
 
     const routes = new Hono<Env>();
     routes.onError((error, context) => apiErrorHandler(error, context));
+    // Scoped to `/me` so Casdoor credentials are admitted only where a route opts in; the admin
+    // routes below take sessions only.
     routes.use(
-      '*',
+      '/me',
       container.resolve(authenticationToken).required({ scopedKeys: true }),
     );
     if (container.has(authorizationToken)) {
-      routes.use('*', container.resolve(authorizationToken).middleware());
+      routes.use('/me', container.resolve(authorizationToken).middleware());
     }
 
     routes.get(
@@ -74,6 +78,33 @@ export const apiRoutes: AppApiRouteContribution<AppPluginApplication> =
         });
       },
     );
+
+    if (container.has(casdoorIdentityAdminToken)) {
+      const authentication = container.resolve(authenticationToken);
+      const authorization = container.has(authorizationToken)
+        ? container.resolve(authorizationToken)
+        : undefined;
+      routes.route(
+        '/',
+        createAdminRouter({
+          services: () => container.resolve(casdoorIdentityAdminToken),
+          authenticate: [
+            authentication.required(),
+            ...(authorization ? [authorization.middleware()] : []),
+          ],
+          // Without the authorization plugin nothing can be granted, so nothing is allowed.
+          authorize: async (context, item, action) =>
+            authorization
+              ? Boolean(
+                  await (context as Context<Env>).get('authz')?.can({
+                    resource: { type: 'settings', id: item },
+                    action,
+                  }),
+                )
+              : false,
+        }) as unknown as Hono<Env>,
+      );
+    }
 
     return router.route('/casdoorIdentity', routes);
   });
