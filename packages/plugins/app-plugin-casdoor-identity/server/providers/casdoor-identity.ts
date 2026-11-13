@@ -4,7 +4,6 @@ import { databaseManagerToken } from '@nocobase/db';
 import { ServiceProvider } from '@nocobase/service-provider';
 
 import type { CasdoorIdentityConfig } from '../config.js';
-import { CASDOOR_ACCESS_TOKEN_SCHEME } from '../config.js';
 import { createCasdoorCredentialResolver } from '../credential-resolver.js';
 import { DefaultCasdoorIdentityService } from '../services/casdoor-identity.js';
 import { casdoorIdentityServiceToken } from '../tokens.js';
@@ -40,6 +39,9 @@ export class CasdoorIdentityProvider extends ServiceProvider<AppPluginApplicatio
     }
     this.booted = true;
     const auth = container.resolve(authenticationToken);
+    // Admission stays on each route's `describeRoute().security` + `required({ scopedKeys: true })`.
+    // Do not call `addCredentialRoutePolicy(() => true)` — that would admit Casdoor credentials on
+    // every host route that only expected sessions or API keys.
     this.releases.push(
       auth.addCredentialResolver(
         createCasdoorCredentialResolver({
@@ -48,11 +50,6 @@ export class CasdoorIdentityProvider extends ServiceProvider<AppPluginApplicatio
           config: () =>
             this.app.config.get<CasdoorIdentityConfig>('casdoorIdentity'),
         }),
-      ),
-    );
-    this.releases.push(
-      auth.addCredentialRoutePolicy((_context, credential) =>
-        credential.scheme === CASDOOR_ACCESS_TOKEN_SCHEME ? true : undefined,
       ),
     );
   }

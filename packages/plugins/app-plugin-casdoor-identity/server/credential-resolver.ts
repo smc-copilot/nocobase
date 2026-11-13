@@ -7,6 +7,7 @@ import type { DatabaseConnection } from '@nocobase/db';
 import {
   createLocalJWKSet,
   createRemoteJWKSet,
+  decodeJwt,
   jwtVerify,
   type JWTPayload,
   type JSONWebKeySet,
@@ -25,13 +26,38 @@ export interface CasdoorCredentialResolverOptions {
   readonly config: () => CasdoorIdentityConfig | undefined;
 }
 
-function readAccessToken(headers: Headers): string | undefined {
+interface ReadAccessTokenResult {
+  readonly token: string;
+  /** True when the dedicated Casdoor header was used (always claim this token). */
+  readonly dedicated: boolean;
+}
+
+function readAccessToken(headers: Headers): ReadAccessTokenResult | undefined {
   const dedicated = headers.get(CASDOOR_ACCESS_TOKEN_HEADER)?.trim();
-  if (dedicated) return dedicated;
+  if (dedicated) return { token: dedicated, dedicated: true };
   const authorization = headers.get('authorization');
   if (!authorization) return undefined;
   const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
-  return match?.[1]?.trim() || undefined;
+  const token = match?.[1]?.trim();
+  if (!token) return undefined;
+  return { token, dedicated: false };
+}
+
+/**
+ * Bearer tokens that are not Casdoor access tokens (e.g. Better Auth session tokens) must fall
+ * through to the next credential resolver / session lookup. Only claim a Bearer JWT when its
+ * unverified `iss` matches the configured Casdoor issuer.
+ */
+function bearerClaimsOurIssuer(
+  token: string,
+  issuer: string | undefined,
+): boolean {
+  if (!issuer) return false;
+  try {
+    return decodeJwt(token).iss === issuer;
+  } catch {
+    return false;
+  }
 }
 
 function jwksGetKey(config: CasdoorIdentityConfig): JWTVerifyGetKey {
@@ -94,11 +120,18 @@ export function createCasdoorCredentialResolver(
   options: CasdoorCredentialResolverOptions,
 ): CredentialResolver {
   return async (headers) => {
-    const token = readAccessToken(headers);
-    if (!token) return undefined;
+    const presented = readAccessToken(headers);
+    if (!presented) return undefined;
 
     const config = options.config() ?? {};
-    const payload = await verifyAccessToken(token, config);
+    if (
+      !presented.dedicated &&
+      !bearerClaimsOurIssuer(presented.token, config.issuer)
+    ) {
+      return undefined;
+    }
+
+    const payload = await verifyAccessToken(presented.token, config);
     const issuer =
       typeof payload.iss === 'string' ? payload.iss : config.issuer;
     const subject = typeof payload.sub === 'string' ? payload.sub : undefined;
