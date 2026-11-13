@@ -25,6 +25,10 @@ export const TEMPLATE_ALIASES: Readonly<Record<string, TemplateAlias>> = {
   default: { packageName: '@nocobase/app-template-default' },
   examples: { packageName: '@nocobase/app-template-examples' },
   'multi-portal': { packageName: '@nocobase/app-template-multi-portal' },
+  'smc-control': { packageName: '@nocobase/app-template-smc-control' },
+  'integration-demo': {
+    packageName: '@nocobase/app-template-integration-demo',
+  },
 };
 
 export const DEFAULT_TEMPLATE = 'default';
