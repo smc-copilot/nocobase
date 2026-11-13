@@ -20,6 +20,7 @@ import scheduler from '@nocobase/app-plugin-scheduler/server';
 import file from '@nocobase/app-plugin-file/server';
 import mail from '@nocobase/app-plugin-mail/server';
 import releases from '@nocobase/app-plugin-releases/server';
+import casdoorIdentity from '@nocobase/app-plugin-casdoor-identity/server';
 
 const serverPlugins: AppServerPlugins = defineServerPlugins([
   concurrency,
@@ -38,6 +39,8 @@ const serverPlugins: AppServerPlugins = defineServerPlugins([
   file,
   scheduler,
   mail,
+  // Control owns identity for its own operators; Business UI Adapter stays on Demo Apps.
+  casdoorIdentity,
   // Release management reads the caller's roles through `releasesAccessToken`, which
   // `server/providers/releases-access.ts` binds from the authorization plugin, so it is
   // contributed after authentication and authorization.

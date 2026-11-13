@@ -19,6 +19,8 @@ import {
 import scheduler from '@nocobase/app-plugin-scheduler/server';
 import file from '@nocobase/app-plugin-file/server';
 import mail from '@nocobase/app-plugin-mail/server';
+import casdoorIdentity from '@nocobase/app-plugin-casdoor-identity/server';
+import businessUiAdapter from '@nocobase/app-plugin-business-ui-adapter/server';
 
 const serverPlugins: AppServerPlugins = defineServerPlugins([
   concurrency,
@@ -37,6 +39,9 @@ const serverPlugins: AppServerPlugins = defineServerPlugins([
   file,
   scheduler,
   mail,
+  // Identity before Adapter: token resolution and subject bindings must exist for protocol routes.
+  casdoorIdentity,
+  businessUiAdapter,
   foundation,
 ]);
 

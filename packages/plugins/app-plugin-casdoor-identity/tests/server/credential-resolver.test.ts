@@ -60,24 +60,38 @@ async function createEphemeralJwtIssuer(): Promise<{
   readonly privateKey: KeyLike;
   readonly jwk: JWK;
   readonly sign: (subject?: string) => Promise<string>;
+  readonly signClaims: (claims: {
+    readonly audience?: string | string[];
+    readonly subject?: string;
+    readonly exp?: string | number | false;
+  }) => Promise<string>;
 }> {
   const { privateKey, publicKey } = await generateKeyPair('RS256');
   const jwk = await exportJWK(publicKey);
   jwk.kid = 'test-casdoor';
   jwk.alg = 'RS256';
   jwk.use = 'sig';
+  const signClaims = async (claims: {
+    readonly audience?: string | string[];
+    readonly subject?: string;
+    readonly exp?: string | number | false;
+  }) => {
+    let builder = new SignJWT({})
+      .setProtectedHeader({ alg: 'RS256', kid: 'test-casdoor' })
+      .setIssuer(ISSUER)
+      .setAudience(claims.audience ?? AUDIENCE)
+      .setSubject(claims.subject ?? SUBJECT)
+      .setIssuedAt();
+    if (claims.exp !== false) {
+      builder = builder.setExpirationTime(claims.exp ?? '5m');
+    }
+    return builder.sign(privateKey);
+  };
   return {
     privateKey,
     jwk,
-    sign: async (subject = SUBJECT) =>
-      new SignJWT({})
-        .setProtectedHeader({ alg: 'RS256', kid: 'test-casdoor' })
-        .setIssuer(ISSUER)
-        .setAudience(AUDIENCE)
-        .setSubject(subject)
-        .setIssuedAt()
-        .setExpirationTime('5m')
-        .sign(privateKey),
+    sign: async (subject = SUBJECT) => signClaims({ subject }),
+    signClaims,
   };
 }
 
@@ -87,6 +101,11 @@ describe('Casdoor credential resolver', () => {
   let auth: Auth;
   let userId: string;
   let signToken: (subject?: string) => Promise<string>;
+  let signClaims: (claims: {
+    readonly audience?: string | string[];
+    readonly subject?: string;
+    readonly exp?: string | number | false;
+  }) => Promise<string>;
   let jwk: JWK;
   let router: Hono<AuthEnv>;
 
@@ -105,6 +124,7 @@ describe('Casdoor credential resolver', () => {
 
     const issuer = await createEphemeralJwtIssuer();
     signToken = issuer.sign;
+    signClaims = issuer.signClaims;
     jwk = issuer.jwk;
 
     auth = new Auth({
@@ -226,6 +246,30 @@ describe('Casdoor credential resolver', () => {
     expect(await response.json()).toMatchObject({
       error: { reason: 'SUBJECT_BINDING_REQUIRED' },
     });
+  });
+
+  it('I03: rejects a token whose audience does not match the configured audience', async () => {
+    await clearBindings();
+    await bindSubject();
+    const response = await router.request('/casdoorIdentity/me', {
+      headers: {
+        [CASDOOR_ACCESS_TOKEN_HEADER]: await signClaims({
+          audience: 'wrong-audience',
+        }),
+      },
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('I03: rejects a token that has no exp claim', async () => {
+    await clearBindings();
+    await bindSubject();
+    const response = await router.request('/casdoorIdentity/me', {
+      headers: {
+        [CASDOOR_ACCESS_TOKEN_HEADER]: await signClaims({ exp: false }),
+      },
+    });
+    expect(response.status).toBe(401);
   });
 
   it('DENY disabled: bound user disabled via UserAdministrationService is rejected', async () => {

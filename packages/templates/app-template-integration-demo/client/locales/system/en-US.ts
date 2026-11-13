@@ -147,6 +147,7 @@ const systemEnUS = {
   'auth.methods': 'Sign-in methods',
   'auth.or': 'Or continue with',
   'auth.continueWith': 'Continue with {provider}',
+  'auth.casdoor': 'Casdoor',
   'auth.about': 'About this application',
   'auth.platform': 'AI-native application platform',
   'auth.marketingTitleFirst': 'AI + NocoBase',

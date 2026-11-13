@@ -1,4 +1,5 @@
 import type { Auth } from '@nocobase/app-plugin-authentication/server';
+import type { SecretsService } from '@nocobase/app-server/secrets';
 import type { DatabaseManager } from '@nocobase/db';
 
 import {
@@ -20,14 +21,24 @@ import {
   randomId,
   randomTicketPlaintext,
   secretsEqual,
-  sha256Hex,
 } from '../crypto.js';
+
+/** Purpose bound into sealed OAuth authorization codes (FIX-05). */
+const OAUTH_CODE_SEAL_PURPOSE =
+  '@nocobase/app-plugin-business-ui-adapter/oauth-code';
+
+/** Legacy SHA-256 digests cannot be opened; consume must refuse them and require re-auth. */
+function looksLikeLegacyCodeDigest(value: string): boolean {
+  return /^[0-9a-f]{64}$/i.test(value);
+}
 import { serializeReceipt, type DualNamedReceipt } from '../dto.js';
 import { ProtocolError } from '../errors.js';
 import {
-  businessRejectIfNeeded,
-  parseGenericRequestFields,
-} from '../handlers/generic-request.js';
+  denyWithoutPermissionRef,
+  type BusinessAccessChecker,
+  type BusinessAction,
+} from '../business-access.js';
+import { parseGenericRequestFields } from '../handlers/generic-request.js';
 
 type ConnectionRow = {
   id: string;
@@ -91,13 +102,24 @@ export interface ProtocolServices {
       recordId?: string;
       subject_sub?: string;
       subjectSub?: string;
+      /** Nested subject as Octop sends it (preferred over flat subject_sub). */
+      subject?: { issuer?: string; sub?: string };
+      nonce?: string;
+      action?: string;
+      connection_id?: string;
+      connectionId?: string;
     },
   ): Promise<Record<string, unknown>>;
   redeemTicket(
     connectionId: string,
     body: { ticket?: string; nonce?: string },
     request: Request,
-  ): Promise<{ html: string; setCookies: string[] }>;
+  ): Promise<{
+    html: string;
+    setCookies: string[];
+    /** Approved Octop origins for CSP frame-ancestors. */
+    frameAncestors: readonly string[];
+  }>;
   saveDocument(
     connectionId: string,
     userId: string,
@@ -141,6 +163,7 @@ export interface ProtocolServices {
     permissionRef?: string | null;
     enabled?: boolean;
   }): Promise<FormRow>;
+  listForms(): Promise<readonly FormRow[]>;
   reconcileUnknownOperations(): Promise<number>;
 }
 
@@ -156,8 +179,145 @@ export function createProtocolServices(deps: {
   database: () => DatabaseManager;
   auth: () => Auth;
   config: () => BusinessUiAdapterConfig;
+  /** Application secrets for sealing OAuth codes; required when consuming codes. */
+  secrets?: () => SecretsService | undefined;
+  /**
+   * Business document authorization. Defaults to deny-without-permissionRef so a
+   * local identity / active binding alone never grants document actions (FIX-08).
+   */
+  authorizeBusiness?: BusinessAccessChecker;
 }): ProtocolServices {
   const db = () => deps.database().connection().query;
+  const authorizeBusiness = deps.authorizeBusiness ?? denyWithoutPermissionRef;
+
+  async function assertBusinessAccess(
+    userId: string,
+    permissionRef: string | null | undefined,
+    action: BusinessAction,
+    recordId?: string | null,
+  ): Promise<void> {
+    const allowed = await authorizeBusiness({
+      userId,
+      permissionRef,
+      action,
+      recordId,
+    });
+    if (!allowed) {
+      throw new ProtocolError(
+        'PERMISSION_DENIED',
+        403,
+        'Business permission denied for this form action',
+      );
+    }
+  }
+
+  async function ensureSubmitSlot(
+    interactionId: string,
+    connectionId: string,
+    userId: string,
+  ): Promise<string> {
+    const interaction = await db()
+      .selectFrom('businessUiInteractions')
+      .select(['submitSlotOperationId', 'latestSubmitOperationId'])
+      .where('interactionId', '=', interactionId)
+      .executeTakeFirst();
+    const existing =
+      (interaction?.submitSlotOperationId as string | null | undefined) ||
+      (interaction?.latestSubmitOperationId as string | null | undefined);
+    if (existing) return existing;
+
+    const operationId = randomId('op');
+    const createdAt = now();
+    await db()
+      .insertInto('businessUiOperations')
+      .values({
+        id: randomId('operation'),
+        operationId,
+        interactionId,
+        connectionId,
+        localUserId: userId,
+        idempotencyKey: `slot:${interactionId}`,
+        requestDigest: hashRequest({ slot: interactionId }),
+        kind: 'submit',
+        status: 'PENDING',
+        resultType: null,
+        result: null,
+        safeRetry: false,
+        attemptCount: 0,
+        sideEffectConfirmed: null,
+        createdAt,
+        updatedAt: createdAt,
+      })
+      .execute();
+    await db()
+      .updateTable('businessUiInteractions')
+      .set({
+        submitSlotOperationId: operationId,
+        latestSubmitOperationId: operationId,
+        updatedAt: createdAt,
+      })
+      .where('interactionId', '=', interactionId)
+      .where('submitSlotOperationId', 'is', null)
+      .execute();
+    const confirmed = await db()
+      .selectFrom('businessUiInteractions')
+      .select('submitSlotOperationId')
+      .where('interactionId', '=', interactionId)
+      .executeTakeFirst();
+    const confirmedSlot = confirmed?.submitSlotOperationId;
+    return typeof confirmedSlot === 'string' && confirmedSlot
+      ? confirmedSlot
+      : operationId;
+  }
+
+  function requireSecrets(): SecretsService {
+    const secrets = deps.secrets?.();
+    if (!secrets?.ready) {
+      throw new ProtocolError(
+        'SECRETS_NOT_CONFIGURED',
+        503,
+        'secrets.keys is required to store and return OAuth authorization codes',
+      );
+    }
+    return secrets;
+  }
+
+  function sealOAuthCode(
+    code: string,
+    connectionId: string,
+    stateDigest: string,
+  ): string {
+    return requireSecrets().seal(code, {
+      purpose: OAUTH_CODE_SEAL_PURPOSE,
+      aad: [connectionId, stateDigest],
+    });
+  }
+
+  function openOAuthCode(
+    sealed: string,
+    connectionId: string,
+    stateDigest: string,
+  ): string {
+    if (looksLikeLegacyCodeDigest(sealed)) {
+      throw new ProtocolError(
+        'TICKET_EXPIRED',
+        403,
+        'Stored OAuth code uses a legacy digest that cannot be recovered; re-authorize',
+      );
+    }
+    try {
+      return requireSecrets().open(sealed, {
+        purpose: OAUTH_CODE_SEAL_PURPOSE,
+        aad: [connectionId, stateDigest],
+      });
+    } catch {
+      throw new ProtocolError(
+        'TICKET_EXPIRED',
+        403,
+        'Stored OAuth code cannot be decrypted; re-authorize',
+      );
+    }
+  }
 
   async function requireConnection(
     connectionId: string,
@@ -330,6 +490,7 @@ export function createProtocolServices(deps: {
         );
       }
       const config = deps.config();
+      // Path fields stay at the top level — Octop's evaluate_handshake reads them there (FIX-04).
       return {
         protocol: PROTOCOL,
         ok: true,
@@ -342,20 +503,22 @@ export function createProtocolServices(deps: {
         features: {
           form_registry: true,
           tickets: true,
-          documents: true,
+          receipts: true,
           interactions: true,
-          operations: true,
-          oauth_code_handoff: true,
+          user_auth_methods: ['oauth2'],
+          oauth_pkce_s256: true,
+          oauth_authorization_code: true,
+          receipt_schema_v11: true,
+          query_status: true,
+          safe_retry: true,
         },
-        paths: {
-          ticket_path: '/v1/tickets',
-          redeem_path: '/v1/tickets/redeem',
-          interaction_path: '/v1/interactions/{id}',
-          operation_path: '/v1/operations/{id}',
-          save_path: '/v1/documents/save',
-          submit_path: '/v1/documents/submit',
-          resolve_path: '/v1/forms/resolve',
-        },
+        ticket_path: '/v1/tickets',
+        redeem_path: '/v1/tickets/redeem',
+        interaction_path: '/v1/interactions/{id}',
+        operation_path: '/v1/operations/{id}',
+        resolve_path: '/v1/forms/resolve',
+        save_path: '/v1/documents/save',
+        submit_path: '/v1/documents/submit',
       };
     },
 
@@ -386,7 +549,7 @@ export function createProtocolServices(deps: {
           id: randomId('oauth'),
           stateDigest,
           connectionId,
-          encryptedCode: sha256Hex(`bui-oauth-code:${code}`),
+          encryptedCode: sealOAuthCode(code, connectionId, stateDigest),
           expiresAt: addSeconds(createdAt, OAUTH_CODE_TTL_SECONDS),
           consumedAt: null,
           createdAt,
@@ -422,6 +585,11 @@ export function createProtocolServices(deps: {
       if (new Date(row.expiresAt as Date) < now()) {
         throw new ProtocolError('TICKET_EXPIRED', 403, 'OAuth code expired');
       }
+      const plaintext = openOAuthCode(
+        String(row.encryptedCode),
+        connectionId,
+        stateDigest,
+      );
       const updated = await db()
         .updateTable('businessUiOAuthCodes')
         .set({ consumedAt: now() })
@@ -435,27 +603,69 @@ export function createProtocolServices(deps: {
           'OAuth code already consumed',
         );
       }
+      // FIX-05: return the original authorization code to the authenticated plugin.
       return {
         pending: false,
         status: 'ready',
-        code_digest: row.encryptedCode,
+        code: plaintext,
         connection_id: connectionId,
       };
     },
 
     async issueTicket(connectionId, userId, body) {
-      await requireConnection(connectionId);
+      const connection = await requireConnection(connectionId);
       const formRef = body.formRef ?? body.form_ref;
       const schemaVersion = body.schemaVersion ?? body.schema_version ?? '1';
-      const subjectSub = body.subjectSub ?? body.subject_sub;
       if (!formRef) {
         throw new ProtocolError('INVALID_ARGUMENT', 400, 'formRef is required');
       }
       const form = await requireForm(formRef, schemaVersion);
+      // Prefer nested subject (Octop); flat subject_sub remains for older callers.
+      // Never infer the subject from "the user's first binding" (FIX-07).
+      const nestedSubject = body.subject;
+      const subjectSub =
+        nestedSubject?.sub?.trim() ||
+        body.subjectSub?.trim() ||
+        body.subject_sub?.trim();
+      const subjectIssuer = nestedSubject?.issuer?.trim();
+      if (subjectIssuer && subjectIssuer !== connection.octopIssuer) {
+        throw new ProtocolError(
+          'SUBJECT_MISMATCH',
+          403,
+          'subject.issuer does not match the connection issuer',
+        );
+      }
+      if (!subjectSub) {
+        throw new ProtocolError(
+          'INVALID_ARGUMENT',
+          400,
+          'subject.sub (or subject_sub) is required',
+        );
+      }
       const binding = await requireBinding(connectionId, userId, subjectSub);
+      await assertBusinessAccess(
+        userId,
+        form.permissionRef,
+        form.mode === 'detail' ? 'view' : 'issue',
+        body.recordId ?? body.record_id ?? null,
+      );
       const interactionId =
         body.interactionId ?? body.interaction_id ?? randomId('int');
       const recordId = body.recordId ?? body.record_id ?? null;
+      const nonce = body.nonce?.trim();
+      if (!nonce) {
+        throw new ProtocolError(
+          'INVALID_ARGUMENT',
+          400,
+          'nonce is required when issuing a ticket',
+        );
+      }
+      const action =
+        typeof body.action === 'string' && body.action.trim()
+          ? body.action.trim()
+          : form.mode === 'detail'
+            ? 'view'
+            : 'edit';
       const createdAt = now();
 
       const interaction = await db()
@@ -475,6 +685,7 @@ export function createProtocolServices(deps: {
             recordId,
             latestReceiptId: null,
             latestSubmitOperationId: null,
+            submitSlotOperationId: null,
             createdAt,
             updatedAt: createdAt,
           })
@@ -486,6 +697,12 @@ export function createProtocolServices(deps: {
           'Interaction belongs to another subject',
         );
       }
+
+      const submitSlotOperationId = await ensureSubmitSlot(
+        interactionId,
+        connectionId,
+        userId,
+      );
 
       const ticket = randomTicketPlaintext();
       const ticketDigest = hashTicket(ticket);
@@ -500,10 +717,14 @@ export function createProtocolServices(deps: {
           interactionId,
           formRef: form.formRef,
           schemaVersion: form.schemaVersion,
+          nonce,
+          action,
+          bindingRevision: binding.id,
           context: {
             recordId,
             documentType: form.documentType,
             mode: form.mode,
+            permissionRef: form.permissionRef,
           },
           expiresAt: addSeconds(createdAt, TICKET_TTL_SECONDS),
           consumedAt: null,
@@ -522,12 +743,14 @@ export function createProtocolServices(deps: {
         formRef: form.formRef,
         interaction_id: interactionId,
         interactionId,
+        operation_id: submitSlotOperationId,
+        operationId: submitSlotOperationId,
         redeem_url: `${base}/v1/tickets/redeem`,
       };
     },
 
     async redeemTicket(connectionId, body, request) {
-      await requireConnection(connectionId);
+      const connection = await requireConnection(connectionId);
       const ticket = body.ticket?.trim();
       const nonce = body.nonce?.trim();
       if (!ticket || !nonce) {
@@ -553,6 +776,10 @@ export function createProtocolServices(deps: {
         interactionId: string;
         formRef: string;
         schemaVersion: string;
+        nonce: string | null;
+        action: string | null;
+        bindingRevision: string | null;
+        subjectBindingId: string;
         context: unknown;
         expiresAt: Date;
         consumedAt: Date | null;
@@ -566,6 +793,28 @@ export function createProtocolServices(deps: {
       }
       if (new Date(ticketRow.expiresAt) < now()) {
         throw new ProtocolError('TICKET_EXPIRED', 403, 'Ticket expired');
+      }
+      if (ticketRow.nonce && ticketRow.nonce !== nonce) {
+        throw new ProtocolError(
+          'INVALID_ARGUMENT',
+          400,
+          'nonce does not match the issued ticket',
+        );
+      }
+      // Binding must still be the active revision recorded on the ticket.
+      if (ticketRow.bindingRevision) {
+        const binding = await db()
+          .selectFrom('businessUiSubjectBindings')
+          .select(['id', 'status'])
+          .where('id', '=', ticketRow.bindingRevision)
+          .executeTakeFirst();
+        if (!binding || binding.status !== 'active') {
+          throw new ProtocolError(
+            'SUBJECT_BINDING_REQUIRED',
+            403,
+            'Subject binding was revoked; re-issue the ticket',
+          );
+        }
       }
 
       const existing = await deps.auth().getSession(request.headers, {
@@ -610,7 +859,31 @@ export function createProtocolServices(deps: {
         }),
         { disableRefresh: true },
       );
-      const authSessionRef = session?.session?.id ?? randomId('session');
+      if (!session?.session?.id) {
+        throw new ProtocolError(
+          'AUTH_REQUIRED',
+          401,
+          'Failed to resolve a real session reference after sign-in',
+        );
+      }
+      const authSessionRef = session.session.id;
+      const context = (ticketRow.context ?? {}) as {
+        recordId?: string | null;
+        documentType?: string;
+        mode?: string;
+        permissionRef?: string | null;
+      };
+      const mode = context.mode === 'detail' ? 'detail' : 'edit';
+      await assertBusinessAccess(
+        ticketRow.localUserId,
+        context.permissionRef,
+        mode === 'detail' ? 'view' : 'issue',
+        context.recordId,
+      );
+      const actionBounds =
+        mode === 'detail'
+          ? (['view_document', 'close'] as const)
+          : (['save', 'submit', 'view_document', 'close'] as const);
       const createdAt = now();
       await db()
         .insertInto('businessUiEmbedContexts')
@@ -622,16 +895,41 @@ export function createProtocolServices(deps: {
           localUserId: ticketRow.localUserId,
           formRef: ticketRow.formRef,
           schemaVersion: ticketRow.schemaVersion,
-          actionBounds: ['save', 'submit', 'view_document', 'close'],
+          mode,
+          nonce,
+          actionBounds: [...actionBounds],
           expiresAt: addSeconds(createdAt, EMBED_TTL_SECONDS),
           createdAt,
         })
         .execute();
 
-      const context = (ticketRow.context ?? {}) as {
-        recordId?: string | null;
-        documentType?: string;
-      };
+      let detailFields:
+        { title: string; description: string; quantity: number } | undefined;
+      if (mode === 'detail' && context.recordId) {
+        const formal = await db()
+          .selectFrom('integrationTestDocuments')
+          .selectAll()
+          .where('formalRecordId', '=', context.recordId)
+          .executeTakeFirst();
+        if (!formal || formal.ownerId !== ticketRow.localUserId) {
+          throw new ProtocolError(
+            'PERMISSION_DENIED',
+            403,
+            'Detail record is not available',
+          );
+        }
+        detailFields = {
+          title: typeof formal.title === 'string' ? formal.title : '',
+          description:
+            typeof formal.description === 'string' ? formal.description : '',
+          quantity: Number(formal.quantity),
+        };
+      }
+
+      const allowedOrigins = Array.isArray(connection.allowedOrigins)
+        ? (connection.allowedOrigins as string[])
+        : [];
+      const targetOrigin = allowedOrigins[0] ?? '';
       const html = renderEmbedHtml({
         connectionId,
         interactionId: ticketRow.interactionId,
@@ -640,12 +938,30 @@ export function createProtocolServices(deps: {
         documentType: context.documentType ?? DOCUMENT_TYPE,
         recordId: context.recordId ?? '',
         nonce,
+        mode,
+        targetOrigin,
+        detailFields,
+        publicBaseUrl: deps.config().publicBaseUrl,
       });
-      return { html, setCookies };
+      return { html, setCookies, frameAncestors: allowedOrigins };
     },
 
     async saveDocument(connectionId, userId, sessionRef, body) {
       const embed = await loadEmbed(connectionId, userId, sessionRef);
+      const bounds = (embed.actionBounds as string[] | null) ?? [];
+      if (embed.mode === 'detail' || !bounds.includes('save')) {
+        throw new ProtocolError(
+          'PERMISSION_DENIED',
+          403,
+          'Save is not allowed in this embed context',
+        );
+      }
+      const form = await requireForm(
+        String(embed.formRef),
+        String(embed.schemaVersion),
+      );
+      await assertBusinessAccess(userId, form.permissionRef, 'save', null);
+
       const fields = parseGenericRequestFields({
         title: body.title,
         description: body.description,
@@ -699,18 +1015,34 @@ export function createProtocolServices(deps: {
             'Document belongs to another subject',
           );
         }
+        if (document.status === 'submitted') {
+          // Identified subsequent-action refusal on an existing formal record.
+          return serializeReceipt({
+            status: 'rejected',
+            documentType: DOCUMENT_TYPE,
+            recordId: (document.formalRecordId as string | null) ?? null,
+            formRef: String(embed.formRef),
+            schemaVersion: String(embed.schemaVersion),
+            recordVersion: Number(document.version),
+            allowedActions: ['view_document', 'close'],
+            interactionId: String(embed.interactionId),
+            result: {
+              type: 'BUSINESS_REJECTED',
+              status: 'BUSINESS_REJECTED',
+              code: 'ALREADY_SUBMITTED',
+              message: 'Submitted documents cannot be saved as drafts',
+              disclosable: true,
+              safe_retry: false,
+              idempotent: true,
+              side_effect: false,
+            },
+          });
+        }
         if (document.version !== expectedVersion) {
           throw new ProtocolError(
             'VERSION_CONFLICT',
             409,
             'Document version conflict',
-          );
-        }
-        if (document.status === 'submitted') {
-          throw new ProtocolError(
-            'INVALID_ARGUMENT',
-            400,
-            'Submitted documents cannot be saved as drafts',
           );
         }
         const result = await db()
@@ -747,50 +1079,72 @@ export function createProtocolServices(deps: {
         );
       }
       const savedDocument = document;
+      const operationId = await ensureSubmitSlot(
+        String(embed.interactionId),
+        connectionId,
+        userId,
+      );
 
       await db()
         .updateTable('businessUiInteractions')
         .set({
-          recordId: savedDocument.formalRecordId ?? savedDocument.draftId,
+          // Drafts do not own a formal record id; keep null until submit.
+          recordId:
+            typeof savedDocument.formalRecordId === 'string'
+              ? savedDocument.formalRecordId
+              : null,
           updatedAt,
         })
         .where('interactionId', '=', embed.interactionId)
         .execute();
 
+      // Draft must not claim SUCCESS submit semantics (FIX-09 / FIX-10).
       return serializeReceipt({
         status: 'draft',
         documentType: DOCUMENT_TYPE,
-        recordId:
-          (savedDocument.formalRecordId as string | null) ??
-          (savedDocument.draftId as string),
+        recordId: null,
         formRef: String(embed.formRef),
         schemaVersion: String(embed.schemaVersion),
         recordVersion: Number(savedDocument.version),
         allowedActions: ['save', 'submit', 'view_document', 'close'],
         interactionId: String(embed.interactionId),
+        operationId,
         summary: {
           title: savedDocument.title,
           quantity: savedDocument.quantity,
-        },
-        result: {
-          type: 'SUCCESS',
-          status: 'SUCCESS',
-          code: 'SAVED',
-          message: 'Draft saved',
-          disclosable: true,
-          safe_retry: true,
-          idempotent: true,
-          side_effect: true,
         },
       });
     },
 
     async submitDocument(connectionId, userId, sessionRef, body) {
       const embed = await loadEmbed(connectionId, userId, sessionRef);
+      const bounds = (embed.actionBounds as string[] | null) ?? [];
+      if (embed.mode === 'detail' || !bounds.includes('submit')) {
+        throw new ProtocolError(
+          'PERMISSION_DENIED',
+          403,
+          'Submit is not allowed in this embed context',
+        );
+      }
+      const form = await requireForm(
+        String(embed.formRef),
+        String(embed.schemaVersion),
+      );
+      await assertBusinessAccess(userId, form.permissionRef, 'submit', null);
+
       const idempotencyKey =
-        (typeof body.idempotency_key === 'string' && body.idempotency_key) ||
-        (typeof body.idempotencyKey === 'string' && body.idempotencyKey) ||
-        randomId('idem');
+        (typeof body.idempotency_key === 'string' &&
+          body.idempotency_key.trim()) ||
+        (typeof body.idempotencyKey === 'string' &&
+          body.idempotencyKey.trim()) ||
+        '';
+      if (!idempotencyKey) {
+        throw new ProtocolError(
+          'INVALID_ARGUMENT',
+          400,
+          'idempotency_key is required for submit',
+        );
+      }
       const requestDigest = hashRequest({
         title: body.title,
         description: body.description,
@@ -798,20 +1152,70 @@ export function createProtocolServices(deps: {
         record_version: body.record_version ?? body.recordVersion,
       });
 
-      const existingOp = await db()
+      const operationId = await ensureSubmitSlot(
+        String(embed.interactionId),
+        connectionId,
+        userId,
+      );
+      const slotOp = await db()
         .selectFrom('businessUiOperations')
         .selectAll()
-        .where('interactionId', '=', embed.interactionId)
-        .where('idempotencyKey', '=', idempotencyKey)
-        .executeTakeFirst();
-      if (existingOp) {
-        if (existingOp.requestDigest !== requestDigest) {
+        .where('operationId', '=', operationId)
+        .executeTakeFirstOrThrow();
+
+      // Bind the client idempotency key to the stable slot on first real submit.
+      const slotKey = String(slotOp.idempotencyKey);
+      if (slotKey.startsWith('slot:')) {
+        await db()
+          .updateTable('businessUiOperations')
+          .set({
+            idempotencyKey,
+            requestDigest,
+            updatedAt: now(),
+          })
+          .where('operationId', '=', operationId)
+          .where('idempotencyKey', '=', slotKey)
+          .execute();
+      } else if (slotKey !== idempotencyKey) {
+        // Same interaction must keep one submit identity; mismatched keys conflict.
+        const other = await db()
+          .selectFrom('businessUiOperations')
+          .selectAll()
+          .where('interactionId', '=', embed.interactionId)
+          .where('idempotencyKey', '=', idempotencyKey)
+          .executeTakeFirst();
+        if (!other) {
           throw new ProtocolError(
             'VERSION_CONFLICT',
             409,
-            'Idempotency key reused with different payload',
+            'Idempotency key does not match the interaction submit slot',
           );
         }
+      }
+
+      const existingOp = await db()
+        .selectFrom('businessUiOperations')
+        .selectAll()
+        .where('operationId', '=', operationId)
+        .executeTakeFirstOrThrow();
+      if (
+        !String(existingOp.idempotencyKey).startsWith('slot:') &&
+        existingOp.idempotencyKey === idempotencyKey &&
+        existingOp.requestDigest &&
+        existingOp.requestDigest !== requestDigest &&
+        existingOp.status !== 'PENDING' &&
+        existingOp.status !== 'FAILED'
+      ) {
+        throw new ProtocolError(
+          'VERSION_CONFLICT',
+          409,
+          'Idempotency key reused with different payload',
+        );
+      }
+      if (
+        existingOp.idempotencyKey === idempotencyKey &&
+        existingOp.requestDigest === requestDigest
+      ) {
         if (existingOp.status === 'SUCCEEDED') {
           const receipt = await db()
             .selectFrom('businessUiReceipts')
@@ -826,7 +1230,7 @@ export function createProtocolServices(deps: {
           return serializeReceipt({
             status: 'unknown',
             documentType: DOCUMENT_TYPE,
-            recordId: 'UNKNOWN',
+            recordId: null,
             formRef: embed.formRef as string,
             schemaVersion: embed.schemaVersion as string,
             recordVersion: 0,
@@ -841,7 +1245,7 @@ export function createProtocolServices(deps: {
               disclosable: true,
               safe_retry: false,
               idempotent: true,
-              side_effect: true,
+              side_effect: null,
             },
           });
         }
@@ -852,7 +1256,6 @@ export function createProtocolServices(deps: {
         description: body.description,
         quantity: body.quantity,
       });
-      const reject = businessRejectIfNeeded(fields);
       const expectedVersion =
         typeof body.record_version === 'number'
           ? body.record_version
@@ -860,44 +1263,39 @@ export function createProtocolServices(deps: {
             ? body.recordVersion
             : undefined;
 
-      const operationId = randomId('op');
       const createdAt = now();
-
-      // Persist operation before side effects (?11.4).
       await db()
-        .insertInto('businessUiOperations')
-        .values({
-          id: randomId('operation'),
-          operationId,
-          interactionId: embed.interactionId,
-          connectionId,
-          localUserId: userId,
+        .updateTable('businessUiOperations')
+        .set({
           idempotencyKey,
           requestDigest,
-          kind: 'submit',
           status: 'UNKNOWN',
           resultType: 'UNKNOWN',
           result: null,
           safeRetry: false,
-          createdAt,
+          sideEffectConfirmed: null,
+          attemptCount: Number(existingOp.attemptCount ?? 0),
           updatedAt: createdAt,
         })
+        .where('operationId', '=', operationId)
         .execute();
 
       await db()
         .updateTable('businessUiInteractions')
         .set({
           latestSubmitOperationId: operationId,
+          submitSlotOperationId: operationId,
           updatedAt: createdAt,
         })
         .where('interactionId', '=', embed.interactionId)
         .execute();
 
+      // Fault: leave UNKNOWN before any document write (not a lost-response proof).
       if (deps.config().faultInjection?.unknownOnSubmit) {
         return serializeReceipt({
           status: 'unknown',
           documentType: DOCUMENT_TYPE,
-          recordId: 'UNKNOWN',
+          recordId: null,
           formRef: embed.formRef as string,
           schemaVersion: embed.schemaVersion as string,
           recordVersion: 0,
@@ -912,43 +1310,54 @@ export function createProtocolServices(deps: {
             disclosable: true,
             safe_retry: false,
             idempotent: true,
-            side_effect: true,
+            side_effect: null,
           },
         });
       }
 
-      if (reject) {
-        await db()
-          .updateTable('businessUiOperations')
-          .set({
-            status: 'BUSINESS_REJECTED',
-            resultType: 'BUSINESS_REJECTED',
-            result: { code: 'BUSINESS_REJECTED', message: reject.message },
-            updatedAt: now(),
-          })
-          .where('operationId', '=', operationId)
-          .execute();
-        return serializeReceipt({
-          status: 'rejected',
+      // Fault: confirmed failure with no side effect — eligible for safe_retry.
+      if (deps.config().faultInjection?.failBeforeWrite) {
+        const failedResult = {
+          type: 'TECHNICAL_ERROR',
+          status: 'FAILED',
+          code: 'WRITE_PRECHECK_FAILED',
+          message: 'Fault injection failed before document write',
+          disclosable: true,
+          safe_retry: true,
+          idempotent: true,
+          side_effect: false as boolean | null,
+          request: {
+            title: fields.title,
+            description: fields.description,
+            quantity: fields.quantity,
+            record_version: expectedVersion ?? 0,
+          },
+        };
+        const failedPayload = serializeReceipt({
+          status: 'failed',
           documentType: DOCUMENT_TYPE,
-          recordId: 'REJECTED',
+          recordId: null,
           formRef: embed.formRef as string,
           schemaVersion: embed.schemaVersion as string,
           recordVersion: expectedVersion ?? 0,
           allowedActions: ['close'],
           interactionId: embed.interactionId as string,
           operationId,
-          result: {
-            type: 'BUSINESS_REJECTED',
-            status: 'BUSINESS_REJECTED',
-            code: 'BUSINESS_REJECTED',
-            message: reject.message,
-            disclosable: true,
-            safe_retry: false,
-            idempotent: true,
-            side_effect: false,
-          },
+          result: failedResult,
         });
+        await db()
+          .updateTable('businessUiOperations')
+          .set({
+            status: 'FAILED',
+            resultType: 'FAILED',
+            result: failedResult,
+            safeRetry: true,
+            sideEffectConfirmed: false,
+            updatedAt: now(),
+          })
+          .where('operationId', '=', operationId)
+          .execute();
+        return failedPayload;
       }
 
       const document = await db()
@@ -956,6 +1365,43 @@ export function createProtocolServices(deps: {
         .selectAll()
         .where('interactionId', '=', embed.interactionId)
         .executeTakeFirst();
+
+      if (document?.status === 'submitted' && document.formalRecordId) {
+        const rejected = serializeReceipt({
+          status: 'rejected',
+          documentType: DOCUMENT_TYPE,
+          recordId: document.formalRecordId as string,
+          formRef: embed.formRef as string,
+          schemaVersion: embed.schemaVersion as string,
+          recordVersion: Number(document.version),
+          allowedActions: ['view_document', 'close'],
+          interactionId: embed.interactionId as string,
+          operationId,
+          result: {
+            type: 'BUSINESS_REJECTED',
+            status: 'BUSINESS_REJECTED',
+            code: 'ALREADY_SUBMITTED',
+            message: 'Document was already submitted',
+            disclosable: true,
+            safe_retry: false,
+            idempotent: true,
+            side_effect: false,
+          },
+        });
+        await db()
+          .updateTable('businessUiOperations')
+          .set({
+            status: 'BUSINESS_REJECTED',
+            resultType: 'BUSINESS_REJECTED',
+            result: rejected.result,
+            safeRetry: false,
+            sideEffectConfirmed: false,
+            updatedAt: now(),
+          })
+          .where('operationId', '=', operationId)
+          .execute();
+        return rejected;
+      }
 
       await deps.database().transaction(async (connection) => {
         const q = connection.query;
@@ -1079,6 +1525,8 @@ export function createProtocolServices(deps: {
             status: 'SUCCEEDED',
             resultType: 'SUCCESS',
             result: payload.result,
+            safeRetry: false,
+            sideEffectConfirmed: true,
             updatedAt: now(),
           })
           .where('operationId', '=', operationId)
@@ -1089,6 +1537,7 @@ export function createProtocolServices(deps: {
             recordId: formalRecordId,
             latestReceiptId: receiptId,
             latestSubmitOperationId: operationId,
+            submitSlotOperationId: operationId,
             updatedAt: now(),
           })
           .where('interactionId', '=', embed.interactionId)
@@ -1118,6 +1567,22 @@ export function createProtocolServices(deps: {
           'Interaction not found',
         );
       }
+      await assertBusinessAccess(
+        userId,
+        (
+          await db()
+            .selectFrom('businessUiForms')
+            .select('permissionRef')
+            .where('formRef', '=', FORM_REFS.edit)
+            .executeTakeFirst()
+        )?.permissionRef as string | null | undefined,
+        'query',
+        interaction.recordId as string | null,
+      );
+      const operationId =
+        (interaction.submitSlotOperationId as string | null) ||
+        (interaction.latestSubmitOperationId as string | null) ||
+        null;
       let receiptPayload: DualNamedReceipt | undefined;
       if (interaction.latestReceiptId) {
         const receipt = await db()
@@ -1127,14 +1592,36 @@ export function createProtocolServices(deps: {
           .executeTakeFirst();
         receiptPayload = receipt?.payload as DualNamedReceipt | undefined;
       }
+      // FIX-09 / FIX-10: flatten; always expose the stable submit operation_id.
+      if (receiptPayload) {
+        return {
+          success: true,
+          ...receiptPayload,
+          interaction_id: interactionId,
+          interactionId,
+          operation_id: operationId ?? receiptPayload.operation_id,
+          operationId: operationId ?? receiptPayload.operationId,
+        };
+      }
       return {
+        success: true,
+        status: 'draft',
         interaction_id: interactionId,
         interactionId,
-        record_id: interaction.recordId,
-        recordId: interaction.recordId,
-        latest_submit_operation_id: interaction.latestSubmitOperationId,
-        latestSubmitOperationId: interaction.latestSubmitOperationId,
-        receipt: receiptPayload ?? null,
+        record_id: null,
+        recordId: null,
+        operation_id: operationId,
+        operationId,
+        document_type: DOCUMENT_TYPE,
+        documentType: DOCUMENT_TYPE,
+        form_ref: FORM_REFS.edit,
+        formRef: FORM_REFS.edit,
+        schema_version: '1',
+        schemaVersion: '1',
+        record_version: 0,
+        recordVersion: 0,
+        allowed_actions: ['save', 'submit', 'view_document', 'close'],
+        allowedActions: ['save', 'submit', 'view_document', 'close'],
       };
     },
 
@@ -1153,12 +1640,28 @@ export function createProtocolServices(deps: {
           'Operation not found',
         );
       }
+      await assertBusinessAccess(userId, 'generic.request:edit', 'query', null);
       const receipt = await db()
         .selectFrom('businessUiReceipts')
         .selectAll()
         .where('operationId', '=', operationId)
         .executeTakeFirst();
+      const receiptPayload = receipt
+        ? (receipt.payload as DualNamedReceipt)
+        : undefined;
+      if (receiptPayload) {
+        return {
+          success: true,
+          query_only: true,
+          ...receiptPayload,
+          operation_id: operationId,
+          operationId,
+          safe_retry: operation.safeRetry,
+          safeRetry: operation.safeRetry,
+        };
+      }
       return {
+        success: false,
         query_only: true,
         operation_id: operationId,
         operationId,
@@ -1167,19 +1670,43 @@ export function createProtocolServices(deps: {
         resultType: operation.resultType,
         safe_retry: operation.safeRetry,
         safeRetry: operation.safeRetry,
-        receipt: receipt ? receipt.payload : null,
+        record_id: null,
+        recordId: null,
+        result:
+          operation.status === 'UNKNOWN' || operation.resultType === 'UNKNOWN'
+            ? {
+                type: 'TECHNICAL_ERROR',
+                status: 'UNKNOWN',
+                code: 'UNKNOWN',
+                message: 'Operation result is not yet known',
+                disclosable: true,
+                safe_retry: false,
+                idempotent: true,
+                side_effect: null,
+              }
+            : operation.result,
       };
     },
 
     async retryOperation(connectionId, userId, operationId) {
-      const operation = await this.queryOperation(
-        connectionId,
-        userId,
-        operationId,
-      );
+      await requireConnection(connectionId);
+      const operation = await db()
+        .selectFrom('businessUiOperations')
+        .selectAll()
+        .where('operationId', '=', operationId)
+        .where('connectionId', '=', connectionId)
+        .executeTakeFirst();
+      if (!operation || operation.localUserId !== userId) {
+        throw new ProtocolError(
+          'OPERATION_NOT_FOUND',
+          404,
+          'Operation not found',
+        );
+      }
+      await assertBusinessAccess(userId, 'generic.request:edit', 'retry', null);
       if (
         operation.status === 'UNKNOWN' ||
-        operation.result_type === 'UNKNOWN'
+        operation.resultType === 'UNKNOWN'
       ) {
         throw new ProtocolError(
           'RETRY_NOT_SAFE',
@@ -1187,17 +1714,78 @@ export function createProtocolServices(deps: {
           'UNKNOWN operations cannot be retried',
         );
       }
-      if (!operation.safe_retry || operation.status !== 'FAILED') {
+      if (
+        operation.status !== 'FAILED' ||
+        !operation.safeRetry ||
+        operation.sideEffectConfirmed === true
+      ) {
         throw new ProtocolError(
           'RETRY_NOT_SAFE',
           403,
           'Retry is not safe for this operation',
         );
       }
-      throw new ProtocolError(
-        'RETRY_NOT_SAFE',
-        403,
-        'No safe FAILED operations are eligible in this build',
+
+      const prior = (operation.result ?? {}) as {
+        request?: {
+          title?: string;
+          description?: string;
+          quantity?: number;
+          record_version?: number;
+        };
+      };
+      const request = prior.request;
+      if (
+        !request ||
+        typeof request.title !== 'string' ||
+        typeof request.quantity !== 'number'
+      ) {
+        throw new ProtocolError(
+          'RETRY_NOT_SAFE',
+          403,
+          'Original request payload is not available for safe retry',
+        );
+      }
+
+      const attemptCount = Number(operation.attemptCount ?? 0) + 1;
+      await db()
+        .updateTable('businessUiOperations')
+        .set({
+          attemptCount,
+          status: 'PENDING',
+          resultType: null,
+          updatedAt: now(),
+        })
+        .where('operationId', '=', operationId)
+        .execute();
+
+      const embed = await db()
+        .selectFrom('businessUiEmbedContexts')
+        .selectAll()
+        .where('connectionId', '=', connectionId)
+        .where('localUserId', '=', userId)
+        .where('interactionId', '=', operation.interactionId)
+        .orderBy('createdAt', 'desc')
+        .executeTakeFirst();
+      if (!embed) {
+        throw new ProtocolError(
+          'EMBED_CONTEXT_REQUIRED',
+          403,
+          'Embed context required to retry',
+        );
+      }
+
+      return this.submitDocument(
+        connectionId,
+        userId,
+        String(embed.authSessionRef),
+        {
+          title: request.title,
+          description: request.description ?? '',
+          quantity: request.quantity,
+          record_version: request.record_version ?? 0,
+          idempotency_key: String(operation.idempotencyKey),
+        },
       );
     },
 
@@ -1280,6 +1868,16 @@ export function createProtocolServices(deps: {
       return { id, ...values, createdAt } as FormRow;
     },
 
+    async listForms() {
+      const rows = await db()
+        .selectFrom('businessUiForms')
+        .selectAll()
+        .orderBy('formRef', 'asc')
+        .orderBy('schemaVersion', 'asc')
+        .execute();
+      return rows as FormRow[];
+    },
+
     async reconcileUnknownOperations() {
       const unknowns = await db()
         .selectFrom('businessUiOperations')
@@ -1293,19 +1891,47 @@ export function createProtocolServices(deps: {
           .selectAll()
           .where('operationId', '=', operation.operationId)
           .executeTakeFirst();
-        if (!receipt) continue;
-        await db()
-          .updateTable('businessUiOperations')
-          .set({
-            status: 'SUCCEEDED',
-            resultType: 'SUCCESS',
-            result: (receipt.payload as DualNamedReceipt).result ?? null,
-            updatedAt: now(),
-          })
-          .where('operationId', '=', operation.operationId)
-          .where('status', '=', 'UNKNOWN')
-          .execute();
-        fixed += 1;
+        if (!receipt) {
+          // No receipt and no other proof of completion — keep UNKNOWN.
+          continue;
+        }
+        const payload = receipt.payload as DualNamedReceipt;
+        const result = payload.result as
+          { status?: string; type?: string } | undefined;
+        const resultStatus = result?.status ?? result?.type;
+        if (resultStatus === 'SUCCESS') {
+          await db()
+            .updateTable('businessUiOperations')
+            .set({
+              status: 'SUCCEEDED',
+              resultType: 'SUCCESS',
+              result: payload.result ?? null,
+              sideEffectConfirmed: true,
+              updatedAt: now(),
+            })
+            .where('operationId', '=', operation.operationId)
+            .where('status', '=', 'UNKNOWN')
+            .execute();
+          fixed += 1;
+        } else if (
+          resultStatus === 'FAILED' ||
+          resultStatus === 'BUSINESS_REJECTED'
+        ) {
+          await db()
+            .updateTable('businessUiOperations')
+            .set({
+              status: resultStatus,
+              resultType: resultStatus,
+              result: payload.result ?? null,
+              sideEffectConfirmed: false,
+              updatedAt: now(),
+            })
+            .where('operationId', '=', operation.operationId)
+            .where('status', '=', 'UNKNOWN')
+            .execute();
+          fixed += 1;
+        }
+        // Other receipt shapes do not prove SUCCESS — leave UNKNOWN.
       }
       return fixed;
     },
@@ -1320,8 +1946,26 @@ function renderEmbedHtml(input: {
   documentType: string;
   recordId: string;
   nonce: string;
+  mode: 'edit' | 'detail';
+  targetOrigin: string;
+  detailFields?: { title: string; description: string; quantity: number };
+  publicBaseUrl?: string;
 }): string {
-  const base = `/business-ui/connections/${encodeURIComponent(input.connectionId)}/v1`;
+  const configuredBase = input.publicBaseUrl?.replace(/\/$/, '');
+  const base = configuredBase
+    ? `${configuredBase}/v1`
+    : `/business-ui/connections/${encodeURIComponent(input.connectionId)}/v1`;
+  const readonly = input.mode === 'detail';
+  const titleValue = escapeHtml(input.detailFields?.title ?? '');
+  const descriptionValue = escapeHtml(input.detailFields?.description ?? '');
+  const quantityValue = input.detailFields?.quantity ?? 1;
+  const actions = readonly
+    ? ''
+    : `<div class="actions">
+      <button type="button" id="save">Save</button>
+      <button type="submit" id="submit">Submit</button>
+    </div>`;
+  const fieldAttrs = readonly ? 'readonly disabled' : '';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -1337,35 +1981,50 @@ function renderEmbedHtml(input: {
   </style>
 </head>
 <body>
-  <h1>Generic request</h1>
-  <p class="meta">form ${escapeHtml(input.formRef)} ? interaction ${escapeHtml(input.interactionId)}</p>
+  <h1>Generic request${readonly ? ' (detail)' : ''}</h1>
+  <p class="meta">form ${escapeHtml(input.formRef)} · interaction ${escapeHtml(input.interactionId)}</p>
   <form id="doc">
     <input type="hidden" name="nonce" value="${escapeHtml(input.nonce)}">
-    <label>Title <input name="title" required maxlength="512"></label>
-    <label>Description <textarea name="description" rows="4" maxlength="4000"></textarea></label>
-    <label>Quantity <input name="quantity" type="number" min="1" max="1000000" value="1" required></label>
-    <div class="actions">
-      <button type="button" id="save">Save</button>
-      <button type="submit" id="submit">Submit</button>
-    </div>
+    <label>Title <input name="title" required maxlength="512" value="${titleValue}" ${fieldAttrs}></label>
+    <label>Description <textarea name="description" rows="4" maxlength="4000" ${fieldAttrs}>${descriptionValue}</textarea></label>
+    <label>Quantity <input name="quantity" type="number" min="1" max="1000000" value="${quantityValue}" required ${fieldAttrs}></label>
+    ${actions}
   </form>
   <pre id="out" class="meta"></pre>
   <script>
     const base = ${JSON.stringify(base)};
+    const targetOrigin = ${JSON.stringify(input.targetOrigin)};
+    const interactionId = ${JSON.stringify(input.interactionId)};
+    const nonce = ${JSON.stringify(input.nonce)};
+    const readonly = ${readonly ? 'true' : 'false'};
     const form = document.getElementById('doc');
     const out = document.getElementById('out');
     let recordVersion = 0;
+    function hint(phase) {
+      if (!targetOrigin || !window.parent || window.parent === window) return;
+      window.parent.postMessage(
+        { type: 'business-ui/hint', interactionId: interactionId, nonce: nonce, phase: phase },
+        targetOrigin
+      );
+    }
     async function post(path, body) {
-      const response = await fetch(base + path, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const json = await response.json();
-      out.textContent = JSON.stringify(json, null, 2);
-      if (json.record_version != null) recordVersion = json.record_version;
-      return json;
+      hint('start');
+      try {
+        const response = await fetch(base + path, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const json = await response.json();
+        out.textContent = JSON.stringify(json, null, 2);
+        if (json.record_version != null) recordVersion = json.record_version;
+        hint(response.ok ? 'complete' : 'error');
+        return json;
+      } catch (error) {
+        hint('error');
+        throw error;
+      }
     }
     function payload() {
       const data = new FormData(form);
@@ -1374,14 +2033,18 @@ function renderEmbedHtml(input: {
         description: data.get('description'),
         quantity: Number(data.get('quantity')),
         record_version: recordVersion,
-        idempotency_key: 'embed-' + ${JSON.stringify(input.interactionId)},
+        idempotency_key: 'embed-' + interactionId,
       };
     }
-    document.getElementById('save').onclick = () => post('/documents/save', payload());
-    form.onsubmit = (event) => {
-      event.preventDefault();
-      post('/documents/submit', payload());
-    };
+    if (!readonly) {
+      document.getElementById('save').onclick = () => post('/documents/save', payload());
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        post('/documents/submit', payload());
+      };
+    } else {
+      form.onsubmit = (event) => event.preventDefault();
+    }
   </script>
 </body>
 </html>`;

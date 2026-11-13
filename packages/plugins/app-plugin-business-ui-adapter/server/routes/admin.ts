@@ -7,11 +7,11 @@ import {
   describeRoute,
   listResponse,
 } from '@nocobase/app-server/router';
-import { Hono, type MiddlewareHandler } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 
-import { ERROR_DOMAIN } from '../errors.js';
-import { ProtocolError } from '../errors.js';
+import { SETTINGS_CONNECTIONS, SETTINGS_FORMS } from '../config.js';
+import { ERROR_DOMAIN, ProtocolError } from '../errors.js';
 import type { ProtocolServices } from '../services/protocol.js';
 
 const tags = ['BusinessUiAdapter'];
@@ -72,18 +72,40 @@ function mapError(error: unknown): never {
   throw error;
 }
 
+const forbidden = (item: string, action: string): ApiError =>
+  new ApiError({
+    status: 'PERMISSION_DENIED',
+    reason: 'BUSINESS_UI_ADMIN_FORBIDDEN',
+    domain: ERROR_DOMAIN,
+    message: `The ${action} action on ${item} is required.`,
+  });
+
 export function createAdminRouter(options: {
   services: () => ProtocolServices;
   authenticate: MiddlewareHandler[];
+  authorize: (
+    context: Context,
+    item: string,
+    action: string,
+  ) => Promise<boolean>;
 }): Hono {
   const router = new Hono();
   router.onError((error, context) => apiErrorHandler(error, context));
   for (const middleware of options.authenticate) {
     router.use('*', middleware);
   }
+  const permit =
+    (item: string, action: string): MiddlewareHandler =>
+    async (context, next) => {
+      if (!(await options.authorize(context, item, action))) {
+        throw forbidden(item, action);
+      }
+      await next();
+    };
 
   router.post(
     '/connections',
+    permit(SETTINGS_CONNECTIONS, 'configure'),
     describeRoute({
       tags,
       summary: 'Create or update a Business UI connection',
@@ -114,6 +136,7 @@ export function createAdminRouter(options: {
 
   router.post(
     '/forms',
+    permit(SETTINGS_FORMS, 'configure'),
     describeRoute({
       tags,
       summary: 'Create or update a registered Business UI form',
@@ -146,6 +169,7 @@ export function createAdminRouter(options: {
 
   router.get(
     '/forms',
+    permit(SETTINGS_FORMS, 'read'),
     describeRoute({
       tags,
       summary: 'List registered Business UI forms (configuration list)',
@@ -156,7 +180,18 @@ export function createAdminRouter(options: {
       },
     }),
     async (context) => {
-      return context.json({ data: [], meta: { total: 0 } });
+      const rows = await options.services().listForms();
+      return context.json({
+        data: rows.map((row) => ({
+          formRef: row.formRef,
+          schemaVersion: row.schemaVersion,
+          mode: row.mode,
+          handlerKey: row.handlerKey,
+          documentType: row.documentType,
+          enabled: row.enabled,
+        })),
+        meta: { total: rows.length },
+      });
     },
   );
 

@@ -1,15 +1,19 @@
+import { resolveAppUrl, useClientApplication } from '@nocobase/app-client';
 import {
+  useAuthentication,
   usePasswordResetCapability,
   useSignUpAvailable,
 } from '@nocobase/app-plugin-authentication/client';
 import { usePasswordLogin } from '@nocobase/app-plugin-authentication/client/actions';
 import { useTranslation } from '@nocobase/i18n/client';
 import type { ReactElement } from 'react';
+import { useCallback } from 'react';
 import { Link } from 'react-router';
 
 import { PasswordLoginForm } from '#extensions/nocobase-auth-forms/password-login-form';
 import { AuthMethods } from '#extensions/nocobase-auth-methods/auth-methods';
 
+import '../../casdoor-public-config.js';
 import { AuthPage } from './shared.js';
 
 export default function LoginPage(): ReactElement {
@@ -18,6 +22,19 @@ export default function LoginPage(): ReactElement {
   // The sign-up link follows the server: it is hidden while `auth.emailAndPassword` turns sign-up off.
   const signUpAvailable = useSignUpAvailable();
   const resetCapability = usePasswordResetCapability();
+  const { client } = useAuthentication();
+  const browserSignIn =
+    useClientApplication().config.public.get(
+      'casdoorIdentity.browserSignIn',
+    ) === true;
+
+  const signInWithCasdoor = useCallback(() => {
+    // better-auth 1.7.5: `genericOAuth` providers are social providers (`signIn.social`), not `signIn.oauth2`.
+    void client.signIn.social({
+      provider: 'casdoor',
+      callbackURL: resolveAppUrl('/'),
+    });
+  }, [client]);
 
   return (
     <AuthPage
@@ -67,6 +84,17 @@ export default function LoginPage(): ReactElement {
             label: t('auth.password'),
           },
         ]}
+        providers={
+          browserSignIn
+            ? [
+                {
+                  id: 'casdoor',
+                  label: t('auth.casdoor'),
+                  onClick: signInWithCasdoor,
+                },
+              ]
+            : []
+        }
       />
     </AuthPage>
   );

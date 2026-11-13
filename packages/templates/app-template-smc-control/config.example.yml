@@ -172,6 +172,25 @@ auth:
   session:
     storeSessionInDatabase: true
 
+# Casdoor identity (JWT credential path). Browser OAuth uses CASDOOR_ISSUER,
+# CASDOOR_CLIENT_ID and CASDOOR_CLIENT_SECRET together; omit all three to keep
+# local password sign-in only. Register the redirect URI
+# <origin>/<base path>/api/auth/oauth2/callback/casdoor in the Casdoor application.
+# casdoorIdentity:
+#   issuer: https://sso.example.com
+#   audience: smc-control
+#   jwksUri: https://sso.example.com/.well-known/jwks
+#   mappablePermissionSets:
+#     - content-editor
+#   directory:
+#     endpoint: https://sso.example.com
+#     organization: acme
+#     clientId: nocobase-sync
+#     clientSecret: set-through-CASDOOR_DIRECTORY_CLIENT_SECRET
+#   sync:
+#     cron: '*/15 * * * *'
+#     timezone: UTC
+
 notification:
   # provider remains a compatibility alias for type; both must match when supplied.
   channels:
@@ -200,6 +219,13 @@ database:
       dialect: sqlite
       database: database.sqlite
       debug: false
+      # Target SMC deployments use PostgreSQL. Example (set credentials privately):
+      # dialect: postgres
+      # host: 127.0.0.1
+      # port: 5432
+      # database: smc_control
+      # username: postgres
+      # password: replace-with-the-password
       # For Oracle, use dialect: oracle and replace database with serviceName: FREEPDB1.
       # For SQL Server, use dialect: mssql and configure encrypt and trustServerCertificate.
       schemaManagement: managed

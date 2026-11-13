@@ -106,13 +106,24 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
     );
 
     // Browser embed entry: returns HTML and Set-Cookie; not OpenAPI-documented management API.
+    // Octop posts `application/x-www-form-urlencoded`; JSON remains accepted for tests.
     routes.post('/tickets/redeem', (context) =>
       runProtocol(context, async () => {
         const connectionId = context.req.param('connectionId')!;
-        const body = (await context.req.json().catch(() => ({}))) as {
-          ticket?: string;
-          nonce?: string;
-        };
+        const contentType = context.req.header('content-type') ?? '';
+        let body: { ticket?: string; nonce?: string };
+        if (contentType.includes('application/x-www-form-urlencoded')) {
+          const form = await context.req.parseBody();
+          body = {
+            ticket: typeof form.ticket === 'string' ? form.ticket : undefined,
+            nonce: typeof form.nonce === 'string' ? form.nonce : undefined,
+          };
+        } else {
+          body = (await context.req.json().catch(() => ({}))) as {
+            ticket?: string;
+            nonce?: string;
+          };
+        }
         const result = await services().redeemTicket(
           connectionId,
           body,
@@ -121,6 +132,12 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
         const headers = new Headers({
           'content-type': 'text/html; charset=utf-8',
         });
+        if (result.frameAncestors.length > 0) {
+          headers.set(
+            'content-security-policy',
+            `frame-ancestors ${result.frameAncestors.join(' ')}`,
+          );
+        }
         for (const cookie of result.setCookies) {
           headers.append('set-cookie', cookie);
         }

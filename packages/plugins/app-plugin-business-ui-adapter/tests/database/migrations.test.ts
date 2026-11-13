@@ -57,3 +57,72 @@ describeMigration('business_ui_adapter_202611130001_create_collections', {
     await expectCollection('integrationTestDocuments').not.toExist();
   },
 });
+
+describeMigration(
+  'business_ui_adapter_202611140001_ticket_nonce_and_submit_slot',
+  {
+    sources: migrations,
+    up: async ({ expectCollection }) => {
+      await expectCollection('businessUiTickets').toHaveField('nonce', {
+        type: 'string',
+        nullable: true,
+        length: 255,
+      });
+      await expectCollection('businessUiTickets').toHaveField('action', {
+        type: 'string',
+        nullable: true,
+        length: 64,
+      });
+      await expectCollection('businessUiTickets').toHaveField(
+        'bindingRevision',
+        {
+          type: 'string',
+          nullable: true,
+          length: 64,
+        },
+      );
+      await expectCollection('businessUiInteractions').toHaveField(
+        'submitSlotOperationId',
+        {
+          type: 'string',
+          nullable: true,
+          length: 128,
+        },
+      );
+      await expectCollection('businessUiOperations').toHaveField(
+        'attemptCount',
+        {
+          type: 'integer',
+          nullable: false,
+        },
+      );
+      await expectCollection('businessUiOperations').toHaveField(
+        'sideEffectConfirmed',
+        {
+          type: 'boolean',
+          nullable: true,
+        },
+      );
+      await expectCollection('businessUiEmbedContexts').toHaveField('mode', {
+        type: 'string',
+        nullable: true,
+        length: 32,
+      });
+      await expectCollection('businessUiEmbedContexts').toHaveField('nonce', {
+        type: 'string',
+        nullable: true,
+        length: 255,
+      });
+    },
+    down: async ({ expectCollection }) => {
+      await expectCollection('businessUiTickets').not.toHaveField('nonce');
+      await expectCollection('businessUiInteractions').not.toHaveField(
+        'submitSlotOperationId',
+      );
+      await expectCollection('businessUiOperations').not.toHaveField(
+        'attemptCount',
+      );
+      await expectCollection('businessUiEmbedContexts').not.toHaveField('mode');
+    },
+  },
+);

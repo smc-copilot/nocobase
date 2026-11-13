@@ -4,6 +4,7 @@ import { ProtocolError } from '../../server/errors.js';
 import {
   CONNECTION_ID,
   createAdapterHarness,
+  PERMISSION_EDIT,
   SERVICE_SECRET,
   type AdapterHarness,
 } from '../helpers/harness.js';
@@ -32,6 +33,13 @@ describe('business-ui.v1 protocol flow', () => {
     );
     expect(handshake.ok).toBe(true);
     expect(handshake.protocol).toBe('business-ui.v1');
+    expect(handshake.ticket_path).toBe('/v1/tickets');
+    expect(handshake.redeem_path).toBe('/v1/tickets/redeem');
+    expect(handshake.paths).toBeUndefined();
+    expect(
+      (handshake.features as { user_auth_methods?: string[] })
+        .user_auth_methods,
+    ).toEqual(['oauth2']);
 
     await harness.services.oauthCallback(CONNECTION_ID, {
       code: 'auth-code-1',
@@ -49,18 +57,34 @@ describe('business-ui.v1 protocol flow', () => {
       { state: 'state-1' },
     );
     expect(consumed.pending).toBe(false);
+    expect(consumed.code).toBe('auth-code-1');
+    expect(consumed.code_digest).toBeUndefined();
 
     const ticket = await harness.services.issueTicket(CONNECTION_ID, userId, {
       formRef: 'generic.request.edit',
       schemaVersion: '1',
-      subjectSub: 'octop-alice',
+      subject: {
+        issuer: 'https://octop.test.local',
+        sub: 'octop-alice',
+      },
+      nonce: 'issue-nonce-1',
     });
     expect(ticket.ticket).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(ticket.expires_in).toBe(60);
+    expect(ticket.operation_id).toBeTruthy();
+    const slotOperationId = ticket.operation_id as string;
+
+    await expect(
+      harness.services.redeemTicket(
+        CONNECTION_ID,
+        { ticket: ticket.ticket as string, nonce: 'wrong-nonce' },
+        new Request('http://localhost/x', { method: 'POST' }),
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
 
     const redeem = await harness.services.redeemTicket(
       CONNECTION_ID,
-      { ticket: ticket.ticket as string, nonce: 'nonce-1' },
+      { ticket: ticket.ticket as string, nonce: 'issue-nonce-1' },
       new Request(
         'http://localhost/business-ui/connections/site-a/v1/tickets/redeem',
         {
@@ -69,12 +93,14 @@ describe('business-ui.v1 protocol flow', () => {
       ),
     );
     expect(redeem.html).toContain('Generic request');
+    expect(redeem.html).toContain('id="save"');
     expect(redeem.setCookies.length).toBeGreaterThan(0);
+    expect(redeem.frameAncestors).toContain('https://octop.test.local');
 
     await expect(
       harness.services.redeemTicket(
         CONNECTION_ID,
-        { ticket: ticket.ticket as string, nonce: 'nonce-2' },
+        { ticket: ticket.ticket as string, nonce: 'issue-nonce-1' },
         new Request('http://localhost/x', { method: 'POST' }),
       ),
     ).rejects.toMatchObject({ code: 'TICKET_REPLAYED' });
@@ -85,6 +111,17 @@ describe('business-ui.v1 protocol flow', () => {
     });
     expect(session?.user.id).toBe(userId);
     const sessionRef = session!.session.id;
+
+    const beforeSubmit = await harness.services.getInteraction(
+      CONNECTION_ID,
+      userId,
+      ticket.interaction_id as string,
+    );
+    expect(beforeSubmit.success).toBe(true);
+    expect(beforeSubmit.status).toBe('draft');
+    expect(beforeSubmit.record_id).toBeNull();
+    expect(beforeSubmit.operation_id).toBe(slotOperationId);
+    expect(beforeSubmit.result).toBeUndefined();
 
     const saved = await harness.services.saveDocument(
       CONNECTION_ID,
@@ -97,8 +134,11 @@ describe('business-ui.v1 protocol flow', () => {
         record_version: 0,
       },
     );
+    expect(saved.status).toBe('draft');
+    expect(saved.record_id).toBeNull();
     expect(saved.record_version).toBe(1);
-    expect(saved.record_id).toBeTruthy();
+    expect(saved.result).toBeUndefined();
+    expect(saved.operation_id).toBe(slotOperationId);
     expect(saved.documentType).toBe(saved.document_type);
 
     await expect(
@@ -125,7 +165,7 @@ describe('business-ui.v1 protocol flow', () => {
     expect(submitted.status).toBe('submitted');
     expect(submitted.record_id).toMatch(/^REQ-/);
     expect(submitted.result).toMatchObject({ status: 'SUCCESS' });
-    const operationId = submitted.operationId as string;
+    expect(submitted.operationId).toBe(slotOperationId);
 
     const again = await harness.services.submitDocument(
       CONNECTION_ID,
@@ -139,33 +179,134 @@ describe('business-ui.v1 protocol flow', () => {
         idempotency_key: 'submit-1',
       },
     );
-    expect(again.operationId).toBe(operationId);
+    expect(again.operationId).toBe(slotOperationId);
     expect(again.record_id).toBe(submitted.record_id);
+
+    await expect(
+      harness.services.submitDocument(CONNECTION_ID, userId, sessionRef, {
+        title: 'Different payload',
+        description: 'd',
+        quantity: 9,
+        record_version: 1,
+        idempotency_key: 'submit-1',
+      }),
+    ).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
 
     const interaction = await harness.services.getInteraction(
       CONNECTION_ID,
       userId,
       submitted.interactionId as string,
     );
-    expect(interaction.latestSubmitOperationId).toBe(operationId);
-    expect(interaction.receipt).toMatchObject({
-      record_id: submitted.record_id,
-    });
+    expect(interaction.success).toBe(true);
+    expect(interaction.operation_id).toBe(slotOperationId);
+    expect(interaction.record_id).toBe(submitted.record_id);
+    expect(interaction.receipt).toBeUndefined();
 
     const queried = await harness.services.queryOperation(
       CONNECTION_ID,
       userId,
-      operationId,
+      slotOperationId,
     );
     expect(queried.query_only).toBe(true);
-    expect(queried.status).toBe('SUCCEEDED');
+    expect(queried.success).toBe(true);
+    expect(queried.status).toBe('submitted');
+    expect(queried.receipt).toBeUndefined();
 
     await expect(
-      harness.services.retryOperation(CONNECTION_ID, userId, operationId),
+      harness.services.retryOperation(CONNECTION_ID, userId, slotOperationId),
     ).rejects.toBeInstanceOf(ProtocolError);
   });
 
-  it('rejects UNKNOWN retries and recovers via reconcile when a receipt exists', async () => {
+  it('rejects users without business permission (three-state auth)', async () => {
+    harness = await createAdapterHarness();
+    const allowed = await harness.createLocalUser('allowed@example.com');
+    const denied = await harness.createLocalUser(
+      'denied@example.com',
+      undefined,
+      {
+        grantDefaults: false,
+      },
+    );
+    await harness.bindSubject('octop-allowed', allowed);
+    await harness.bindSubject('octop-denied', denied);
+    await harness.seedDefaults();
+
+    await expect(
+      harness.services.issueTicket(CONNECTION_ID, denied, {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-denied' },
+        nonce: 'n-denied',
+      }),
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+
+    const ticket = await harness.services.issueTicket(CONNECTION_ID, allowed, {
+      formRef: 'generic.request.edit',
+      schemaVersion: '1',
+      subject: { issuer: 'https://octop.test.local', sub: 'octop-allowed' },
+      nonce: 'n-allowed',
+    });
+    const redeem = await harness.services.redeemTicket(
+      CONNECTION_ID,
+      { ticket: ticket.ticket as string, nonce: 'n-allowed' },
+      new Request('http://localhost/x', { method: 'POST' }),
+    );
+    const cookie = redeem.setCookies.map((c) => c.split(';')[0]).join('; ');
+    const session = await harness.auth.getSession(new Headers({ cookie }), {
+      disableRefresh: true,
+    });
+    const sessionRef = session!.session.id;
+
+    await harness.services.saveDocument(CONNECTION_ID, allowed, sessionRef, {
+      title: 'ok',
+      description: '',
+      quantity: 1,
+      record_version: 0,
+    });
+    const submitted = await harness.services.submitDocument(
+      CONNECTION_ID,
+      allowed,
+      sessionRef,
+      {
+        title: 'ok',
+        description: '',
+        quantity: 1,
+        record_version: 1,
+        idempotency_key: 'auth-submit',
+      },
+    );
+    expect(submitted.record_id).toMatch(/^REQ-/);
+
+    // Subsequent write on an already-submitted record is a disclosable business rejection.
+    const rejected = await harness.services.saveDocument(
+      CONNECTION_ID,
+      allowed,
+      sessionRef,
+      {
+        title: 'again',
+        description: '',
+        quantity: 1,
+        record_version: Number(submitted.record_version),
+      },
+    );
+    expect(rejected.result).toMatchObject({
+      status: 'BUSINESS_REJECTED',
+      code: 'ALREADY_SUBMITTED',
+    });
+    expect(rejected.record_id).toBe(submitted.record_id);
+
+    harness.revokeAccess(allowed, [PERMISSION_EDIT]);
+    await expect(
+      harness.services.issueTicket(CONNECTION_ID, allowed, {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-allowed' },
+        nonce: 'n-revoked',
+      }),
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+  });
+
+  it('rejects UNKNOWN retries and recovers via reconcile when a SUCCESS receipt exists', async () => {
     harness = await createAdapterHarness({
       faultInjection: { unknownOnSubmit: true },
     });
@@ -176,10 +317,12 @@ describe('business-ui.v1 protocol flow', () => {
     const ticket = await harness.services.issueTicket(CONNECTION_ID, userId, {
       formRef: 'generic.request.edit',
       schemaVersion: '1',
+      subject: { issuer: 'https://octop.test.local', sub: 'octop-bob' },
+      nonce: 'n-unknown',
     });
     const redeem = await harness.services.redeemTicket(
       CONNECTION_ID,
-      { ticket: ticket.ticket as string, nonce: 'n' },
+      { ticket: ticket.ticket as string, nonce: 'n-unknown' },
       new Request('http://localhost/x', { method: 'POST' }),
     );
     const cookie = redeem.setCookies.map((c) => c.split(';')[0]).join('; ');
@@ -200,7 +343,11 @@ describe('business-ui.v1 protocol flow', () => {
         idempotency_key: 'u-1',
       },
     );
-    expect(unknown.result).toMatchObject({ status: 'UNKNOWN' });
+    expect(unknown.result).toMatchObject({
+      status: 'UNKNOWN',
+      side_effect: null,
+    });
+    expect(unknown.record_id).toBeNull();
     const operationId = unknown.operationId as string;
 
     await expect(
@@ -212,7 +359,172 @@ describe('business-ui.v1 protocol flow', () => {
       userId,
       unknown.interactionId as string,
     );
-    expect(interaction.latestSubmitOperationId).toBe(operationId);
+    expect(interaction.operation_id ?? interaction.operationId).toBe(
+      operationId,
+    );
+  });
+
+  it('safe-retries a FAILED operation that never wrote (failBeforeWrite)', async () => {
+    harness = await createAdapterHarness({
+      faultInjection: { failBeforeWrite: true },
+    });
+    const userId = await harness.createLocalUser('retry@example.com');
+    await harness.bindSubject('octop-retry', userId);
+    await harness.seedDefaults();
+
+    const ticket = await harness.services.issueTicket(CONNECTION_ID, userId, {
+      formRef: 'generic.request.edit',
+      schemaVersion: '1',
+      subject: { issuer: 'https://octop.test.local', sub: 'octop-retry' },
+      nonce: 'n-retry',
+    });
+    const redeem = await harness.services.redeemTicket(
+      CONNECTION_ID,
+      { ticket: ticket.ticket as string, nonce: 'n-retry' },
+      new Request('http://localhost/x', { method: 'POST' }),
+    );
+    const cookie = redeem.setCookies.map((c) => c.split(';')[0]).join('; ');
+    const session = await harness.auth.getSession(new Headers({ cookie }), {
+      disableRefresh: true,
+    });
+    const sessionRef = session!.session.id;
+
+    const failed = await harness.services.submitDocument(
+      CONNECTION_ID,
+      userId,
+      sessionRef,
+      {
+        title: 'Will fail',
+        description: '',
+        quantity: 3,
+        record_version: 0,
+        idempotency_key: 'retry-1',
+      },
+    );
+    expect(failed.result).toMatchObject({
+      status: 'FAILED',
+      safe_retry: true,
+      side_effect: false,
+    });
+    const operationId = failed.operationId as string;
+
+    // Clear the one-shot fault so the retry can complete.
+    harness.config.current = {};
+    const recovered = await harness.services.retryOperation(
+      CONNECTION_ID,
+      userId,
+      operationId,
+    );
+    expect(recovered.status).toBe('submitted');
+    expect(recovered.operationId).toBe(operationId);
+    expect(recovered.record_id).toMatch(/^REQ-/);
+
+    const docs = await harness.database
+      .connection()
+      .query.selectFrom('integrationTestDocuments')
+      .selectAll()
+      .where('interactionId', '=', failed.interactionId as string)
+      .execute();
+    expect(docs).toHaveLength(1);
+  });
+
+  it('detail redeem is read-only and rejects writes', async () => {
+    harness = await createAdapterHarness();
+    const userId = await harness.createLocalUser('detail@example.com');
+    await harness.bindSubject('octop-detail', userId);
+    await harness.seedDefaults();
+
+    const editTicket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      userId,
+      {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-detail' },
+        nonce: 'n-edit',
+      },
+    );
+    const editRedeem = await harness.services.redeemTicket(
+      CONNECTION_ID,
+      { ticket: editTicket.ticket as string, nonce: 'n-edit' },
+      new Request('http://localhost/x', { method: 'POST' }),
+    );
+    const editCookie = editRedeem.setCookies
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    const editSession = await harness.auth.getSession(
+      new Headers({ cookie: editCookie }),
+      { disableRefresh: true },
+    );
+    const submitted = await harness.services.submitDocument(
+      CONNECTION_ID,
+      userId,
+      editSession!.session.id,
+      {
+        title: 'Detail source',
+        description: 'body',
+        quantity: 4,
+        record_version: 0,
+        idempotency_key: 'detail-src',
+      },
+    );
+    const recordId = submitted.record_id as string;
+
+    const detailTicket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      userId,
+      {
+        formRef: 'generic.request.detail',
+        schemaVersion: '1',
+        recordId,
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-detail' },
+        nonce: 'n-detail',
+      },
+    );
+    const detailRedeem = await harness.services.redeemTicket(
+      CONNECTION_ID,
+      { ticket: detailTicket.ticket as string, nonce: 'n-detail' },
+      new Request('http://localhost/x', { method: 'POST' }),
+    );
+    expect(detailRedeem.html).toContain('(detail)');
+    expect(detailRedeem.html).not.toContain('id="save"');
+    expect(detailRedeem.html).toContain('Detail source');
+    expect(detailRedeem.html).toContain('business-ui/hint');
+
+    const detailCookie = detailRedeem.setCookies
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    const detailSession = await harness.auth.getSession(
+      new Headers({ cookie: detailCookie }),
+      { disableRefresh: true },
+    );
+    await expect(
+      harness.services.saveDocument(
+        CONNECTION_ID,
+        userId,
+        detailSession!.session.id,
+        {
+          title: 'hack',
+          description: '',
+          quantity: 1,
+          record_version: 0,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+    await expect(
+      harness.services.submitDocument(
+        CONNECTION_ID,
+        userId,
+        detailSession!.session.id,
+        {
+          title: 'hack',
+          description: '',
+          quantity: 1,
+          record_version: 0,
+          idempotency_key: 'hack',
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
   });
 
   it('rejects unregistered form refs and URL form refs', async () => {
@@ -233,6 +545,8 @@ describe('business-ui.v1 protocol flow', () => {
       harness.services.issueTicket(CONNECTION_ID, userId, {
         formRef: 'missing.form',
         schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-carol' },
+        nonce: 'n-missing',
       }),
     ).rejects.toMatchObject({ code: 'FORM_NOT_REGISTERED' });
   });

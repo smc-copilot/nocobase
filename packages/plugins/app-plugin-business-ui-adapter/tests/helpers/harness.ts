@@ -11,9 +11,11 @@ import {
   createTestDatabase,
   type TestDatabase,
 } from '@nocobase/app-testing/server';
+import { createSecretsService } from '@nocobase/app-server/secrets';
 import { createMigrator, type DatabaseManager } from '@nocobase/db';
 
 import type { BusinessUiAdapterConfig } from '../../server/config.js';
+import { createAllowlistAccessChecker } from '../../server/business-access.js';
 import {
   createProtocolServices,
   type ProtocolServices,
@@ -26,6 +28,8 @@ const BASE_URL = 'http://localhost/api/auth';
 export const PASSWORD = 'password-at-least-8';
 export const CONNECTION_ID = 'site-a';
 export const SERVICE_SECRET = 'connection-service-secret';
+export const PERMISSION_EDIT = 'generic.request:edit';
+export const PERMISSION_VIEW = 'generic.request:view';
 
 function packageMigrations(packageName: string): string {
   return path.join(
@@ -41,7 +45,20 @@ export interface AdapterHarness {
   readonly users: UserAdministrationService;
   readonly services: ProtocolServices;
   readonly config: { current: BusinessUiAdapterConfig };
-  readonly createLocalUser: (email: string, name?: string) => Promise<string>;
+  readonly grants: Map<string, Set<string>>;
+  readonly createLocalUser: (
+    email: string,
+    name?: string,
+    options?: { grantDefaults?: boolean },
+  ) => Promise<string>;
+  readonly grantAccess: (
+    userId: string,
+    permissionRefs: readonly string[],
+  ) => void;
+  readonly revokeAccess: (
+    userId: string,
+    permissionRefs: readonly string[],
+  ) => void;
   readonly bindSubject: (subject: string, userId: string) => Promise<string>;
   readonly seedDefaults: () => Promise<void>;
   readonly close: () => Promise<void>;
@@ -86,11 +103,35 @@ export async function createAdapterHarness(
     auth,
   });
   const config = { current: initialConfig };
+  const secrets = createSecretsService({
+    keys: [
+      {
+        version: 1,
+        key: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      },
+    ],
+  });
+  const grants = new Map<string, Set<string>>();
   const services = createProtocolServices({
     database: () => database,
     auth: () => auth,
     config: () => config.current,
+    secrets: () => secrets,
+    authorizeBusiness: createAllowlistAccessChecker(grants),
   });
+
+  const grantAccess = (userId: string, permissionRefs: readonly string[]) => {
+    for (const ref of permissionRefs) {
+      const set = grants.get(ref) ?? new Set<string>();
+      set.add(userId);
+      grants.set(ref, set);
+    }
+  };
+  const revokeAccess = (userId: string, permissionRefs: readonly string[]) => {
+    for (const ref of permissionRefs) {
+      grants.get(ref)?.delete(userId);
+    }
+  };
 
   return {
     testDatabase,
@@ -99,8 +140,16 @@ export async function createAdapterHarness(
     users,
     services,
     config,
-    createLocalUser: async (email, name = email) =>
-      (await users.create({ name, email, password: PASSWORD })).id,
+    grants,
+    createLocalUser: async (email, name = email, options) => {
+      const id = (await users.create({ name, email, password: PASSWORD })).id;
+      if (options?.grantDefaults !== false) {
+        grantAccess(id, [PERMISSION_EDIT, PERMISSION_VIEW]);
+      }
+      return id;
+    },
+    grantAccess,
+    revokeAccess,
     bindSubject: async (subject, userId) => {
       const id = randomId('binding');
       const now = new Date();
@@ -150,12 +199,14 @@ export async function createAdapterHarness(
         schemaVersion: '1',
         mode: 'edit',
         handlerKey: 'generic-request',
+        permissionRef: PERMISSION_EDIT,
       });
       await services.upsertForm({
         formRef: 'generic.request.detail',
         schemaVersion: '1',
         mode: 'detail',
         handlerKey: 'generic-request',
+        permissionRef: PERMISSION_VIEW,
       });
     },
     close: async () => {

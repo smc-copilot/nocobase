@@ -108,13 +108,33 @@ async function verifyAccessToken(
       message: 'casdoorIdentity.issuer is required.',
     });
   }
+  const audience = verifyAudience(config);
+  if (audience == null || (Array.isArray(audience) && audience.length === 0)) {
+    throw new ApiError({
+      status: 'FAILED_PRECONDITION',
+      reason: 'CASDOOR_AUDIENCE_NOT_CONFIGURED',
+      domain: 'casdoor-identity',
+      message:
+        'casdoorIdentity.audience is required; resource APIs reject tokens without an expected audience.',
+    });
+  }
   try {
     const { payload } = await jwtVerify(token, jwksGetKey(config), {
       issuer: config.issuer,
-      audience: verifyAudience(config),
+      audience,
     });
+    // Resource access tokens must carry a finite expiry (I03); reject lifetime-less JWTs.
+    if (typeof payload.exp !== 'number') {
+      throw new ApiError({
+        status: 'UNAUTHENTICATED',
+        reason: 'AUTH_REQUIRED',
+        domain: 'casdoor-identity',
+        message: 'The Casdoor access token is missing a required exp claim.',
+      });
+    }
     return payload;
-  } catch {
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
     throw new ApiError({
       status: 'UNAUTHENTICATED',
       reason: 'AUTH_REQUIRED',

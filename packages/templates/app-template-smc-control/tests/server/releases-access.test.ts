@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   PUBLISHER_SET,
   permissionsForSets,
+  publisherAuthorizationGrants,
 } from '../../server/lib/releases-permissions.js';
 
 describe('permissionsForSets', () => {
@@ -28,5 +29,33 @@ describe('permissionsForSets', () => {
     const none = permissionsForSets(['member'], 'u2');
     expect(none.scopes['rel.apps/view']).toBe('none');
     expect(none.pages['rel-apps']).toBe(false);
+  });
+});
+
+describe('publisherAuthorizationGrants', () => {
+  it('includes page:rel-apps/access alongside Releases business grants (FIX-16 dual config)', () => {
+    const grants = publisherAuthorizationGrants();
+    expect(grants).toEqual(
+      expect.arrayContaining([
+        {
+          resource: { type: 'page', id: 'rel-apps' },
+          actions: [{ action: 'access' }],
+        },
+        expect.objectContaining({
+          resource: { type: 'rel', id: 'rel.apps' },
+        }),
+        {
+          resource: { type: 'settings', id: 'rel.environments' },
+          actions: [{ action: 'read' }],
+        },
+      ]),
+    );
+    const pageGrant = grants.find(
+      (grant) =>
+        grant.resource.type === 'page' && grant.resource.id === 'rel-apps',
+    );
+    expect(pageGrant?.actions.map((action) => action.action)).toEqual([
+      'access',
+    ]);
   });
 });

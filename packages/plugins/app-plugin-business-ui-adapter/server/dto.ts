@@ -7,7 +7,8 @@
 
 export interface SevenFieldCore {
   documentType: string;
-  recordId: string;
+  /** Formal record id only; null until a submitted document exists (never draftId/UNKNOWN). */
+  recordId: string | null;
   formRef: string;
   schemaVersion: string;
   recordVersion: number;
@@ -23,7 +24,8 @@ export interface ReceiptResult {
   disclosable: boolean;
   safe_retry: boolean;
   idempotent: boolean;
-  side_effect: boolean;
+  /** Null when the side-effect state is still unknown (UNKNOWN operations). */
+  side_effect: boolean | null;
 }
 
 export interface ReceiptDtoInput extends SevenFieldCore {

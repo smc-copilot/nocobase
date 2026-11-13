@@ -27,6 +27,8 @@ import snowflake from './snowflake.js';
 import users from './users.js';
 import knowledge from './knowledge.js';
 import foundation from './foundation.js';
+import casdoorIdentity from './casdoor-identity.js';
+import businessUiAdapter from './business-ui-adapter.js';
 
 const defaultConfigs: AppConfigFactory<{
   mailers: ReturnType<typeof mailers>;
@@ -54,6 +56,8 @@ const defaultConfigs: AppConfigFactory<{
   users: ReturnType<typeof users>;
   knowledge: ReturnType<typeof knowledge>;
   foundation: ReturnType<typeof foundation>;
+  casdoorIdentity: ReturnType<typeof casdoorIdentity>;
+  businessUiAdapter: ReturnType<typeof businessUiAdapter>;
 }> = defaultAppConfigs({
   mailers,
   auth,
@@ -80,6 +84,8 @@ const defaultConfigs: AppConfigFactory<{
   users,
   knowledge,
   foundation,
+  casdoorIdentity,
+  businessUiAdapter,
 });
 
 export default defaultConfigs;

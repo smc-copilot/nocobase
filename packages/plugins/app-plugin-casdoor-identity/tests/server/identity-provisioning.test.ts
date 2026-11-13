@@ -99,10 +99,31 @@ describe('first login and repeat login (IAM-001, IAM-002, IAM-003)', () => {
     await expect(
       harness.services.provisioning.onLogin(token('alice')),
     ).rejects.toMatchObject({
-      reason: 'SUBJECT_BINDING_REQUIRED',
+      reason: 'IDENTITY_PROVIDER_DISABLED',
       status: 'PERMISSION_DENIED',
     });
     expect(await count('user')).toBe(0);
+  });
+
+  it('I01: refuses repeat login when the provider is disabled, even with an existing binding', async () => {
+    await registerProvider(harness);
+    const first = await harness.services.provisioning.onLogin(token('alice'));
+    expect(first.created).toBe(true);
+    await harness.services.providers.upsert(
+      {
+        providerId: 'casdoor',
+        issuer: ISSUER,
+        admissionPolicy: { allowOrganizations: ['acme'] },
+        enabled: false,
+      },
+      null,
+    );
+    await expect(
+      harness.services.provisioning.onLogin(token('alice')),
+    ).rejects.toMatchObject({
+      reason: 'IDENTITY_PROVIDER_DISABLED',
+      status: 'PERMISSION_DENIED',
+    });
   });
 
   it('refuses every user when the provider has no admission allow entries', async () => {
