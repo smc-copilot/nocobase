@@ -38,6 +38,10 @@ import {
   type BusinessAccessChecker,
   type BusinessAction,
 } from '../business-access.js';
+import {
+  grantContextFromCredentialData,
+  type GrantContext,
+} from '../grants.js';
 import { parseGenericRequestFields } from '../handlers/generic-request.js';
 
 type ConnectionRow = {
@@ -47,6 +51,7 @@ type ConnectionRow = {
   allowedOrigins: unknown;
   serviceSecretHash: string;
   enabled: boolean;
+  clientId: string | null;
 };
 
 type FormRow = {
@@ -60,45 +65,13 @@ type FormRow = {
   enabled: boolean;
 };
 
-type BindingRow = {
-  id: string;
-  connectionId: string;
-  octopSubject: string;
-  localUserId: string;
-  externalIdentityId: string;
-  status: string;
-  revision: number;
-};
-
-function asRevisionText(value: unknown): string {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return String(value);
+function revisionNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isInteger(value)) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : undefined;
   }
-  if (typeof value === 'string') {
-    return value;
-  }
-  return '';
-}
-
-function errorReason(error: unknown): string | undefined {
-  if (!error || typeof error !== 'object' || !('reason' in error)) {
-    return undefined;
-  }
-  const reason = Reflect.get(error, 'reason');
-  return typeof reason === 'string' ? reason : undefined;
-}
-
-function toBindingRow(row: object): BindingRow {
-  const record = row as Record<string, unknown>;
-  return {
-    id: String(record.id),
-    connectionId: String(record.connectionId),
-    octopSubject: String(record.octopSubject),
-    localUserId: String(record.localUserId),
-    externalIdentityId: String(record.externalIdentityId),
-    status: String(record.status),
-    revision: Number(record.revision ?? 1),
-  };
+  return undefined;
 }
 
 export interface ProtocolServices {
@@ -120,6 +93,7 @@ export interface ProtocolServices {
     authorization: string | undefined,
     body: { state?: string },
   ): Promise<Record<string, unknown>>;
+  grantFromCredential(userId: string, credentialData: unknown): GrantContext;
   issueTicket(
     connectionId: string,
     userId: string,
@@ -141,6 +115,7 @@ export interface ProtocolServices {
       connection_id?: string;
       connectionId?: string;
     },
+    grant: GrantContext,
   ): Promise<Record<string, unknown>>;
   redeemTicket(
     connectionId: string,
@@ -185,6 +160,8 @@ export interface ProtocolServices {
     allowedOrigins: string[];
     serviceSecret: string;
     enabled?: boolean;
+    /** Agent client this connection accepts tokens for. Required before handshake. */
+    clientId?: string | null;
   }): Promise<ConnectionRow>;
   upsertForm(input: {
     formRef: string;
@@ -219,28 +196,23 @@ export function createProtocolServices(deps: {
    */
   authorizeBusiness?: BusinessAccessChecker;
   /**
-   * NEXT-05 / N22: fail closed when a directory-authoritative identity has a
-   * stale or missing attribute snapshot. Called on issue/save/submit/retry.
+   * Turns an agent access-token payload into the grant that authorizes this call.
+   * Identity comes from the authenticated user, never from the Octop subject body.
    */
-  assertIdentityFresh?: (userId: string) => Promise<void>;
+  getAgentCredential?: (
+    userId: string,
+    credentialData: unknown,
+  ) => GrantContext | undefined;
+  /** Loads the current grant. Throws when it is missing, revoked, or expired. */
+  requireGrant?: (grantId: string) => Promise<GrantContext>;
+  /** This application's token audience. Empty skips the check. */
+  audience?: () => string;
 }): ProtocolServices {
   const db = () => deps.database().connection().query;
   const authorizeBusiness = deps.authorizeBusiness ?? denyWithoutPermissionRef;
 
-  async function assertIdentityFresh(userId: string): Promise<void> {
-    if (!deps.assertIdentityFresh) return;
-    try {
-      await deps.assertIdentityFresh(userId);
-    } catch (error) {
-      if (errorReason(error) === 'DIRECTORY_SNAPSHOT_STALE') {
-        throw new ProtocolError(
-          'PERMISSION_DENIED',
-          403,
-          'Directory attribute snapshot is stale; sync identity before continuing',
-        );
-      }
-      throw error;
-    }
+  function grantRequired(message: string): never {
+    throw new ProtocolError('GRANT_REQUIRED', 403, message);
   }
 
   async function assertBusinessAccess(
@@ -515,41 +487,57 @@ export function createProtocolServices(deps: {
     return form;
   }
 
-  async function requireBinding(
-    connectionId: string,
-    localUserId: string,
-    subjectSub?: string,
-  ): Promise<BindingRow> {
-    let query = db()
-      .selectFrom('businessUiSubjectBindings')
-      .selectAll()
-      .where('connectionId', '=', connectionId)
-      .where('localUserId', '=', localUserId)
-      .where('status', '=', 'active');
-    if (subjectSub) {
-      query = query.where('octopSubject', '=', subjectSub);
+  function assertAudience(grant: GrantContext): void {
+    const expected = deps.audience?.();
+    if (expected && grant.audience !== expected) {
+      grantRequired('Agent grant audience does not match this application');
     }
-    const row = await query.executeTakeFirst();
-    if (!row) {
-      throw new ProtocolError(
-        'SUBJECT_BINDING_REQUIRED',
-        403,
-        'Subject binding required',
-      );
+  }
+
+  function assertScope(grant: GrantContext, action: BusinessAction): void {
+    const scopes = grant.scopes ?? [];
+    const read = action === 'view' || action === 'query';
+    const allowed = read
+      ? scopes.includes('business-ui:view') ||
+        scopes.includes('business-ui:edit')
+      : scopes.includes('business-ui:edit');
+    if (!allowed) {
+      grantRequired('Agent grant scope does not cover this action');
     }
-    if (subjectSub && row.octopSubject !== subjectSub) {
-      throw new ProtocolError(
-        'SUBJECT_MISMATCH',
-        403,
-        'Subject does not match binding',
-      );
+  }
+
+  function assertClient(connection: ConnectionRow, grant: GrantContext): void {
+    if (!connection.clientId || connection.clientId !== grant.clientId) {
+      grantRequired('Agent client does not match this connection');
     }
-    return toBindingRow(row);
+  }
+
+  async function loadActiveGrant(
+    grantId: string,
+    expectedRevision: number,
+    connection: ConnectionRow,
+  ): Promise<GrantContext> {
+    if (!deps.requireGrant) {
+      grantRequired('Agent authorization is required');
+    }
+    let grant: GrantContext;
+    try {
+      grant = await deps.requireGrant(grantId);
+    } catch (error) {
+      if (error instanceof ProtocolError) throw error;
+      grantRequired('Agent grant is not active');
+    }
+    if (grant.grantId !== grantId || grant.revision !== expectedRevision) {
+      grantRequired('Agent grant revision changed; re-open the form');
+    }
+    assertClient(connection, grant);
+    assertAudience(grant);
+    return grant;
   }
 
   /**
-   * Load embed and re-verify connection enabled, binding revision, and current
-   * business permission on every protected action (NEXT-03).
+   * Load embed and re-verify the connection, grant revision, and current
+   * business permission on every protected action.
    */
   async function loadEmbed(
     connectionId: string,
@@ -557,7 +545,7 @@ export function createProtocolServices(deps: {
     sessionRef: string,
     action: BusinessAction = 'save',
   ) {
-    await requireConnection(connectionId);
+    const connection = await requireConnection(connectionId);
     const embed = await db()
       .selectFrom('businessUiEmbedContexts')
       .selectAll()
@@ -581,57 +569,29 @@ export function createProtocolServices(deps: {
     if (new Date(embed.expiresAt as Date) < now()) {
       throw new ProtocolError('AUTH_REQUIRED', 401, 'Embed context expired');
     }
-    if (!embed.nonce || embed.bindingRevision == null) {
+    const embedGrantId =
+      typeof embed.grantId === 'string' ? embed.grantId : undefined;
+    const grantRevision = revisionNumber(embed.grantRevision);
+    if (!embed.nonce || !embedGrantId || grantRevision == null) {
       throw new ProtocolError(
         'EMBED_CONTEXT_REQUIRED',
         403,
-        'Embed context is missing revision constraints; re-open the form',
+        'Embed context is missing grant constraints; re-open the form',
       );
     }
-
-    const bindingId =
-      typeof embed.subjectBindingId === 'string'
-        ? embed.subjectBindingId
-        : null;
-    let binding: BindingRow | undefined;
-    if (bindingId) {
-      const row = await db()
-        .selectFrom('businessUiSubjectBindings')
-        .selectAll()
-        .where('id', '=', bindingId)
-        .executeTakeFirst();
-      binding = row ? toBindingRow(row) : undefined;
-    } else {
-      const interaction = await db()
-        .selectFrom('businessUiInteractions')
-        .select(['subjectBindingId'])
-        .where('interactionId', '=', String(embed.interactionId))
-        .executeTakeFirst();
-      if (typeof interaction?.subjectBindingId === 'string') {
-        const row = await db()
-          .selectFrom('businessUiSubjectBindings')
-          .selectAll()
-          .where('id', '=', interaction.subjectBindingId)
-          .executeTakeFirst();
-        binding = row ? toBindingRow(row) : undefined;
-      }
-    }
-    if (!binding || binding.status !== 'active') {
+    const grant = await loadActiveGrant(
+      embedGrantId,
+      grantRevision,
+      connection,
+    );
+    if (grant.localUserId !== userId) {
       throw new ProtocolError(
-        'SUBJECT_BINDING_REQUIRED',
+        'SUBJECT_MISMATCH',
         403,
-        'Subject binding was revoked; re-open the form',
+        'Embed context belongs to another user',
       );
     }
-    if (
-      asRevisionText(binding.revision) !== asRevisionText(embed.bindingRevision)
-    ) {
-      throw new ProtocolError(
-        'SUBJECT_BINDING_REQUIRED',
-        403,
-        'Subject binding revision changed; re-open the form',
-      );
-    }
+    assertScope(grant, action);
 
     const form = await requireForm(
       String(embed.formRef),
@@ -667,34 +627,49 @@ export function createProtocolServices(deps: {
     return `${form.formRef}@${form.schemaVersion}@${form.permissionRef ?? ''}@${form.enabled ? '1' : '0'}`;
   }
 
-  /** Ensure the interaction's subject binding is still active (query/retry paths). */
-  async function assertInteractionBindingActive(
+  /** Ensure the interaction's grant is still active at the stored revision. */
+  async function assertInteractionGrantActive(
     interactionId: string,
+    action: BusinessAction,
   ): Promise<void> {
     const interaction = await db()
       .selectFrom('businessUiInteractions')
-      .select(['subjectBindingId'])
+      .select([
+        'grantId',
+        'grantRevision',
+        'connectionId',
+        'clientId',
+        'localUserId',
+      ])
       .where('interactionId', '=', interactionId)
       .executeTakeFirst();
-    if (!interaction?.subjectBindingId) {
-      throw new ProtocolError(
-        'SUBJECT_BINDING_REQUIRED',
-        403,
-        'Subject binding required',
-      );
+    const grantId =
+      typeof interaction?.grantId === 'string'
+        ? interaction.grantId
+        : undefined;
+    const revision = revisionNumber(interaction?.grantRevision);
+    if (!interaction || !grantId || revision == null) {
+      grantRequired('Agent authorization is required');
     }
-    const binding = await db()
-      .selectFrom('businessUiSubjectBindings')
-      .select(['status'])
-      .where('id', '=', interaction.subjectBindingId as string)
-      .executeTakeFirst();
-    if (!binding || binding.status !== 'active') {
-      throw new ProtocolError(
-        'SUBJECT_BINDING_REQUIRED',
-        403,
-        'Subject binding was revoked',
-      );
+    const connectionId =
+      typeof interaction.connectionId === 'string'
+        ? interaction.connectionId
+        : undefined;
+    if (!connectionId) {
+      grantRequired('Agent authorization is required');
     }
+    const connection = await requireConnection(connectionId);
+    const grant = await loadActiveGrant(grantId, revision, connection);
+    if (grant.localUserId !== interaction.localUserId) {
+      grantRequired('Agent grant does not match this interaction');
+    }
+    if (
+      typeof interaction.clientId === 'string' &&
+      interaction.clientId !== grant.clientId
+    ) {
+      grantRequired('Agent client does not match this connection');
+    }
+    assertScope(grant, action);
   }
 
   function receiptFromPayload(payload: DualNamedReceipt): DualNamedReceipt {
@@ -702,6 +677,16 @@ export function createProtocolServices(deps: {
   }
 
   return {
+    grantFromCredential(userId, credentialData) {
+      const grant =
+        deps.getAgentCredential?.(userId, credentialData) ??
+        grantContextFromCredentialData(userId, credentialData);
+      if (!grant || grant.localUserId !== userId || !grant.grantId) {
+        grantRequired('Agent authorization is required');
+      }
+      return grant;
+    },
+
     async handshake(connectionId, authorization, body) {
       const connection = await requireConnection(connectionId);
       assertServiceCredential(connection, authorization);
@@ -728,6 +713,9 @@ export function createProtocolServices(deps: {
           400,
           'instance_issuer does not match connection',
         );
+      }
+      if (!connection.clientId) {
+        grantRequired('Connection is not linked to an agent client');
       }
       const config = deps.config();
       // Path fields stay at the top level — Octop's evaluate_handshake reads them there (FIX-04).
@@ -852,17 +840,26 @@ export function createProtocolServices(deps: {
       };
     },
 
-    async issueTicket(connectionId, userId, body) {
-      await assertIdentityFresh(userId);
+    async issueTicket(connectionId, userId, body, grant) {
+      if (!grant?.grantId || grant.localUserId !== userId) {
+        grantRequired('Agent authorization is required');
+      }
       const connection = await requireConnection(connectionId);
+      const active = await loadActiveGrant(
+        grant.grantId,
+        grant.revision,
+        connection,
+      );
+      if (active.localUserId !== userId) {
+        grantRequired('Agent authorization is required');
+      }
       const formRef = body.formRef ?? body.form_ref;
       const schemaVersion = body.schemaVersion ?? body.schema_version ?? '1';
       if (!formRef) {
         throw new ProtocolError('INVALID_ARGUMENT', 400, 'formRef is required');
       }
       const form = await requireForm(formRef, schemaVersion);
-      // Prefer nested subject (Octop); flat subject_sub remains for older callers.
-      // Never infer the subject from "the user's first binding" (FIX-07).
+      // Subject is an audit field only. It never selects the local user.
       const nestedSubject = body.subject;
       const subjectSub =
         nestedSubject?.sub?.trim() ||
@@ -883,11 +880,12 @@ export function createProtocolServices(deps: {
           'subject.sub (or subject_sub) is required',
         );
       }
-      const binding = await requireBinding(connectionId, userId, subjectSub);
+      const businessAction = form.mode === 'detail' ? 'view' : 'issue';
+      assertScope(active, businessAction);
       await assertBusinessAccess(
         userId,
         form.permissionRef,
-        form.mode === 'detail' ? 'view' : 'issue',
+        businessAction,
         body.recordId ?? body.record_id ?? null,
       );
       const interactionId =
@@ -921,7 +919,10 @@ export function createProtocolServices(deps: {
             id: randomId('interaction'),
             interactionId,
             connectionId,
-            subjectBindingId: binding.id,
+            subjectBindingId: null,
+            grantId: active.grantId,
+            grantRevision: active.revision,
+            clientId: active.clientId,
             localUserId: userId,
             recordId,
             latestReceiptId: null,
@@ -937,6 +938,11 @@ export function createProtocolServices(deps: {
           403,
           'Interaction belongs to another subject',
         );
+      } else if (
+        interaction.grantId !== active.grantId ||
+        revisionNumber(interaction.grantRevision) !== active.revision
+      ) {
+        grantRequired('Interaction is bound to another agent grant');
       }
 
       const submitSlotOperationId = await ensureSubmitSlot(
@@ -953,21 +959,29 @@ export function createProtocolServices(deps: {
           id: randomId('ticket'),
           ticketDigest,
           connectionId,
-          subjectBindingId: binding.id,
+          subjectBindingId: null,
+          grantId: active.grantId,
+          grantRevision: active.revision,
+          clientId: active.clientId,
           localUserId: userId,
           interactionId,
           formRef: form.formRef,
           schemaVersion: form.schemaVersion,
           nonce,
           action,
-          bindingRevision: String(binding.revision ?? 1),
+          bindingRevision: String(active.revision),
           context: {
             recordId,
             documentType: form.documentType,
             mode: form.mode,
             permissionRef: form.permissionRef,
-            subjectBindingId: binding.id,
             formConfigVersion: formConfigVersionOf(form),
+            subject: {
+              issuer: subjectIssuer ?? connection.octopIssuer,
+              sub: subjectSub,
+            },
+            grantId: active.grantId,
+            clientId: active.clientId,
           },
           expiresAt: addSeconds(createdAt, TICKET_TTL_SECONDS),
           consumedAt: null,
@@ -1022,7 +1036,10 @@ export function createProtocolServices(deps: {
         nonce: string | null;
         action: string | null;
         bindingRevision: string | null;
-        subjectBindingId: string;
+        grantId: string | null;
+        grantRevision: number | string | null;
+        clientId: string | null;
+        subjectBindingId: string | null;
         context: unknown;
         expiresAt: Date;
         consumedAt: Date | null;
@@ -1044,33 +1061,17 @@ export function createProtocolServices(deps: {
           'nonce does not match the issued ticket',
         );
       }
-      // Binding must still be active at the revision captured on the ticket (NEXT-03).
-      // Legacy tickets that stored binding.id are rejected (non-numeric revision).
-      if (
-        !ticketRow.bindingRevision ||
-        !/^\d+$/.test(ticketRow.bindingRevision)
-      ) {
-        throw new ProtocolError(
-          'TICKET_REPLAYED',
-          403,
-          'Ticket lacks a valid binding revision; re-issue the ticket',
-        );
+      const ticketRevision = revisionNumber(ticketRow.grantRevision);
+      if (!ticketRow.grantId || ticketRevision == null) {
+        grantRequired('Ticket has no agent grant; re-issue the ticket');
       }
-      const binding = await db()
-        .selectFrom('businessUiSubjectBindings')
-        .selectAll()
-        .where('id', '=', ticketRow.subjectBindingId)
-        .executeTakeFirst();
-      if (
-        !binding ||
-        binding.status !== 'active' ||
-        asRevisionText(binding.revision ?? 1) !== ticketRow.bindingRevision
-      ) {
-        throw new ProtocolError(
-          'SUBJECT_BINDING_REQUIRED',
-          403,
-          'Subject binding was revoked or revised; re-issue the ticket',
-        );
+      const grant = await loadActiveGrant(
+        ticketRow.grantId,
+        ticketRevision,
+        connection,
+      );
+      if (grant.localUserId !== ticketRow.localUserId) {
+        grantRequired('Agent grant does not match this ticket');
       }
 
       const existing = await deps.auth().getSession(request.headers, {
@@ -1128,10 +1129,10 @@ export function createProtocolServices(deps: {
         documentType?: string;
         mode?: string;
         permissionRef?: string | null;
-        subjectBindingId?: string;
         formConfigVersion?: string;
       };
       const mode = context.mode === 'detail' ? 'detail' : 'edit';
+      assertScope(grant, mode === 'detail' ? 'view' : 'issue');
       await assertBusinessAccess(
         ticketRow.localUserId,
         context.permissionRef,
@@ -1153,9 +1154,11 @@ export function createProtocolServices(deps: {
           localUserId: ticketRow.localUserId,
           formRef: ticketRow.formRef,
           schemaVersion: ticketRow.schemaVersion,
-          subjectBindingId:
-            context.subjectBindingId ?? ticketRow.subjectBindingId,
-          bindingRevision: ticketRow.bindingRevision,
+          subjectBindingId: null,
+          grantId: grant.grantId,
+          grantRevision: grant.revision,
+          clientId: grant.clientId,
+          bindingRevision: String(grant.revision),
           formConfigVersion: context.formConfigVersion ?? null,
           mode,
           nonce,
@@ -1209,7 +1212,6 @@ export function createProtocolServices(deps: {
     },
 
     async saveDocument(connectionId, userId, sessionRef, body) {
-      await assertIdentityFresh(userId);
       const embed = await loadEmbed(connectionId, userId, sessionRef, 'save');
       const bounds = (embed.actionBounds as string[] | null) ?? [];
       if (embed.mode === 'detail' || !bounds.includes('save')) {
@@ -1376,7 +1378,6 @@ export function createProtocolServices(deps: {
     },
 
     async submitDocument(connectionId, userId, sessionRef, body) {
-      await assertIdentityFresh(userId);
       const embed = await loadEmbed(connectionId, userId, sessionRef, 'submit');
       const bounds = (embed.actionBounds as string[] | null) ?? [];
       if (embed.mode === 'detail' || !bounds.includes('submit')) {
@@ -1869,7 +1870,7 @@ export function createProtocolServices(deps: {
           'Interaction not found',
         );
       }
-      await assertInteractionBindingActive(interactionId);
+      await assertInteractionGrantActive(interactionId, 'query');
       const scope = await permissionScopeForInteraction(interactionId);
       await assertBusinessAccess(
         userId,
@@ -2052,7 +2053,10 @@ export function createProtocolServices(deps: {
           'Operation not found',
         );
       }
-      await assertInteractionBindingActive(operation.interactionId as string);
+      await assertInteractionGrantActive(
+        operation.interactionId as string,
+        'query',
+      );
       const scope = await permissionScopeForInteraction(
         operation.interactionId as string,
       );
@@ -2128,8 +2132,10 @@ export function createProtocolServices(deps: {
           'Operation not found',
         );
       }
-      await assertIdentityFresh(userId);
-      await assertInteractionBindingActive(operation.interactionId as string);
+      await assertInteractionGrantActive(
+        operation.interactionId as string,
+        'retry',
+      );
       const scope = await permissionScopeForInteraction(
         operation.interactionId as string,
       );
@@ -2231,11 +2237,16 @@ export function createProtocolServices(deps: {
         .selectAll()
         .where('connectionId', '=', input.connectionId)
         .executeTakeFirst();
+      const clientId =
+        input.clientId === undefined
+          ? ((existing?.clientId as string | null | undefined) ?? null)
+          : input.clientId;
       const values = {
         connectionId: input.connectionId,
         octopIssuer: input.octopIssuer,
         allowedOrigins: input.allowedOrigins,
         serviceSecretHash: hashServiceSecret(input.serviceSecret),
+        clientId,
         enabled: input.enabled ?? true,
         updatedAt: createdAt,
       };

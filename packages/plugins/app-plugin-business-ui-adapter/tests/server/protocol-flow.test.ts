@@ -19,7 +19,7 @@ describe('business-ui.v1 protocol flow', () => {
   it('handshakes, tickets, redeems, saves, submits, and queries idempotently', async () => {
     harness = await createAdapterHarness();
     const userId = await harness.createLocalUser('alice@example.com');
-    await harness.bindSubject('octop-alice', userId);
+    await harness.authorizeAgent(userId);
     await harness.seedDefaults();
 
     const handshake = await harness.services.handshake(
@@ -60,15 +60,20 @@ describe('business-ui.v1 protocol flow', () => {
     expect(consumed.code).toBe('auth-code-1');
     expect(consumed.code_digest).toBeUndefined();
 
-    const ticket = await harness.services.issueTicket(CONNECTION_ID, userId, {
-      formRef: 'generic.request.edit',
-      schemaVersion: '1',
-      subject: {
-        issuer: 'https://octop.test.local',
-        sub: 'octop-alice',
+    const ticket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      userId,
+      {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: {
+          issuer: 'https://octop.test.local',
+          sub: 'octop-alice',
+        },
+        nonce: 'issue-nonce-1',
       },
-      nonce: 'issue-nonce-1',
-    });
+      harness.grantFor(userId),
+    );
     expect(ticket.ticket).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(ticket.expires_in).toBe(60);
     expect(ticket.operation_id).toBeTruthy();
@@ -227,25 +232,35 @@ describe('business-ui.v1 protocol flow', () => {
         grantDefaults: false,
       },
     );
-    await harness.bindSubject('octop-allowed', allowed);
-    await harness.bindSubject('octop-denied', denied);
+    await harness.authorizeAgent(allowed);
+    await harness.authorizeAgent(denied);
     await harness.seedDefaults();
 
     await expect(
-      harness.services.issueTicket(CONNECTION_ID, denied, {
-        formRef: 'generic.request.edit',
-        schemaVersion: '1',
-        subject: { issuer: 'https://octop.test.local', sub: 'octop-denied' },
-        nonce: 'n-denied',
-      }),
+      harness.services.issueTicket(
+        CONNECTION_ID,
+        denied,
+        {
+          formRef: 'generic.request.edit',
+          schemaVersion: '1',
+          subject: { issuer: 'https://octop.test.local', sub: 'octop-denied' },
+          nonce: 'n-denied',
+        },
+        harness.grantFor(denied),
+      ),
     ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
 
-    const ticket = await harness.services.issueTicket(CONNECTION_ID, allowed, {
-      formRef: 'generic.request.edit',
-      schemaVersion: '1',
-      subject: { issuer: 'https://octop.test.local', sub: 'octop-allowed' },
-      nonce: 'n-allowed',
-    });
+    const ticket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      allowed,
+      {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-allowed' },
+        nonce: 'n-allowed',
+      },
+      harness.grantFor(allowed),
+    );
     const redeem = await harness.services.redeemTicket(
       CONNECTION_ID,
       { ticket: ticket.ticket as string, nonce: 'n-allowed' },
@@ -297,12 +312,17 @@ describe('business-ui.v1 protocol flow', () => {
 
     harness.revokeAccess(allowed, [PERMISSION_EDIT]);
     await expect(
-      harness.services.issueTicket(CONNECTION_ID, allowed, {
-        formRef: 'generic.request.edit',
-        schemaVersion: '1',
-        subject: { issuer: 'https://octop.test.local', sub: 'octop-allowed' },
-        nonce: 'n-revoked',
-      }),
+      harness.services.issueTicket(
+        CONNECTION_ID,
+        allowed,
+        {
+          formRef: 'generic.request.edit',
+          schemaVersion: '1',
+          subject: { issuer: 'https://octop.test.local', sub: 'octop-allowed' },
+          nonce: 'n-revoked',
+        },
+        harness.grantFor(allowed),
+      ),
     ).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
   });
 
@@ -311,15 +331,20 @@ describe('business-ui.v1 protocol flow', () => {
       faultInjection: { unknownOnSubmit: true },
     });
     const userId = await harness.createLocalUser('bob@example.com');
-    await harness.bindSubject('octop-bob', userId);
+    await harness.authorizeAgent(userId);
     await harness.seedDefaults();
 
-    const ticket = await harness.services.issueTicket(CONNECTION_ID, userId, {
-      formRef: 'generic.request.edit',
-      schemaVersion: '1',
-      subject: { issuer: 'https://octop.test.local', sub: 'octop-bob' },
-      nonce: 'n-unknown',
-    });
+    const ticket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      userId,
+      {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-bob' },
+        nonce: 'n-unknown',
+      },
+      harness.grantFor(userId),
+    );
     const redeem = await harness.services.redeemTicket(
       CONNECTION_ID,
       { ticket: ticket.ticket as string, nonce: 'n-unknown' },
@@ -371,15 +396,20 @@ describe('business-ui.v1 protocol flow', () => {
       faultInjection: { loseSubmitResponse: true },
     });
     const userId = await harness.createLocalUser('lost@example.com');
-    await harness.bindSubject('octop-lost', userId);
+    await harness.authorizeAgent(userId);
     await harness.seedDefaults();
 
-    const ticket = await harness.services.issueTicket(CONNECTION_ID, userId, {
-      formRef: 'generic.request.edit',
-      schemaVersion: '1',
-      subject: { issuer: 'https://octop.test.local', sub: 'octop-lost' },
-      nonce: 'n-lost',
-    });
+    const ticket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      userId,
+      {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-lost' },
+        nonce: 'n-lost',
+      },
+      harness.grantFor(userId),
+    );
     const redeem = await harness.services.redeemTicket(
       CONNECTION_ID,
       { ticket: ticket.ticket as string, nonce: 'n-lost' },
@@ -433,15 +463,20 @@ describe('business-ui.v1 protocol flow', () => {
       faultInjection: { failBeforeWrite: true },
     });
     const userId = await harness.createLocalUser('retry@example.com');
-    await harness.bindSubject('octop-retry', userId);
+    await harness.authorizeAgent(userId);
     await harness.seedDefaults();
 
-    const ticket = await harness.services.issueTicket(CONNECTION_ID, userId, {
-      formRef: 'generic.request.edit',
-      schemaVersion: '1',
-      subject: { issuer: 'https://octop.test.local', sub: 'octop-retry' },
-      nonce: 'n-retry',
-    });
+    const ticket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      userId,
+      {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-retry' },
+        nonce: 'n-retry',
+      },
+      harness.grantFor(userId),
+    );
     const redeem = await harness.services.redeemTicket(
       CONNECTION_ID,
       { ticket: ticket.ticket as string, nonce: 'n-retry' },
@@ -508,7 +543,7 @@ describe('business-ui.v1 protocol flow', () => {
   it('detail redeem is read-only and rejects writes', async () => {
     harness = await createAdapterHarness();
     const userId = await harness.createLocalUser('detail@example.com');
-    await harness.bindSubject('octop-detail', userId);
+    await harness.authorizeAgent(userId);
     await harness.seedDefaults();
 
     const editTicket = await harness.services.issueTicket(
@@ -520,6 +555,7 @@ describe('business-ui.v1 protocol flow', () => {
         subject: { issuer: 'https://octop.test.local', sub: 'octop-detail' },
         nonce: 'n-edit',
       },
+      harness.grantFor(userId),
     );
     const editRedeem = await harness.services.redeemTicket(
       CONNECTION_ID,
@@ -557,6 +593,7 @@ describe('business-ui.v1 protocol flow', () => {
         subject: { issuer: 'https://octop.test.local', sub: 'octop-detail' },
         nonce: 'n-detail',
       },
+      harness.grantFor(userId),
     );
     const detailRedeem = await harness.services.redeemTicket(
       CONNECTION_ID,
@@ -617,14 +654,19 @@ describe('business-ui.v1 protocol flow', () => {
     ).rejects.toMatchObject({ code: 'FORM_NOT_REGISTERED' });
 
     const userId = await harness.createLocalUser('carol@example.com');
-    await harness.bindSubject('octop-carol', userId);
+    await harness.authorizeAgent(userId);
     await expect(
-      harness.services.issueTicket(CONNECTION_ID, userId, {
-        formRef: 'missing.form',
-        schemaVersion: '1',
-        subject: { issuer: 'https://octop.test.local', sub: 'octop-carol' },
-        nonce: 'n-missing',
-      }),
+      harness.services.issueTicket(
+        CONNECTION_ID,
+        userId,
+        {
+          formRef: 'missing.form',
+          schemaVersion: '1',
+          subject: { issuer: 'https://octop.test.local', sub: 'octop-carol' },
+          nonce: 'n-missing',
+        },
+        harness.grantFor(userId),
+      ),
     ).rejects.toMatchObject({ code: 'FORM_NOT_REGISTERED' });
   });
 });

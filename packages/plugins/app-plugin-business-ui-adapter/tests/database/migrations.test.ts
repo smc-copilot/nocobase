@@ -158,3 +158,54 @@ describeMigration(
     },
   },
 );
+
+describeMigration('business_ui_adapter_202611150001_grant_columns', {
+  sources: migrations,
+  up: async ({ expectCollection }) => {
+    await expectCollection('businessUiConnections').toHaveField('clientId', {
+      type: 'string',
+      nullable: true,
+      length: 255,
+    });
+    for (const name of [
+      'businessUiTickets',
+      'businessUiEmbedContexts',
+      'businessUiInteractions',
+    ]) {
+      await expectCollection(name).toHaveField('grantId', {
+        type: 'string',
+        nullable: true,
+        length: 64,
+      });
+      await expectCollection(name).toHaveField('grantRevision', {
+        type: 'integer',
+        nullable: true,
+      });
+      await expectCollection(name).toHaveField('clientId', {
+        type: 'string',
+        nullable: true,
+        length: 255,
+      });
+    }
+    await expectCollection('businessUiTickets').toHaveField(
+      'subjectBindingId',
+      { type: 'string', nullable: true, length: 64 },
+    );
+    await expectCollection('businessUiInteractions').toHaveField(
+      'subjectBindingId',
+      { type: 'string', nullable: true, length: 64 },
+    );
+  },
+  down: async ({ expectCollection }) => {
+    await expectCollection('businessUiConnections').not.toHaveField('clientId');
+    await expectCollection('businessUiTickets').not.toHaveField('grantId');
+    await expectCollection('businessUiEmbedContexts').not.toHaveField(
+      'grantId',
+    );
+    await expectCollection('businessUiInteractions').not.toHaveField('grantId');
+    await expectCollection('businessUiTickets').toHaveField(
+      'subjectBindingId',
+      { type: 'string', nullable: false, length: 64 },
+    );
+  },
+});

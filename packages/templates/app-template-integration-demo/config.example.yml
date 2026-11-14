@@ -149,6 +149,12 @@ auth:
 #     cron: '*/15 * * * *'
 #     timezone: UTC
 
+# Agent authorization (NocoBase-owned OAuth2 authorization server). Audience defaults
+# to APP_PUBLIC_ORIGIN. Casdoor remains an optional login source and is not required
+# for agent grants.
+# agentAuthorization:
+#   audience: https://demo.example.com
+
 # Business UI Adapter (business-ui.v1). Connections, forms and secrets are managed
 # through the admin API after the application starts; this section only labels the
 # handshake environment and optional public base URL for callbacks.

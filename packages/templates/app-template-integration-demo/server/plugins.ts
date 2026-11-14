@@ -20,6 +20,7 @@ import scheduler from '@nocobase/app-plugin-scheduler/server';
 import file from '@nocobase/app-plugin-file/server';
 import mail from '@nocobase/app-plugin-mail/server';
 import casdoorIdentity from '@nocobase/app-plugin-casdoor-identity/server';
+import agentAuthorization from '@nocobase/app-plugin-agent-authorization/server';
 import businessUiAdapter from '@nocobase/app-plugin-business-ui-adapter/server';
 
 const serverPlugins: AppServerPlugins = defineServerPlugins([
@@ -39,8 +40,10 @@ const serverPlugins: AppServerPlugins = defineServerPlugins([
   file,
   scheduler,
   mail,
-  // Identity before Adapter: token resolution and subject bindings must exist for protocol routes.
+  // Casdoor stays an optional login source. Agent authorization must register
+  // before the adapter so grant resolution exists for protocol routes.
   casdoorIdentity,
+  agentAuthorization,
   businessUiAdapter,
   foundation,
 ]);

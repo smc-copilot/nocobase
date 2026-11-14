@@ -1,6 +1,7 @@
+import { agentAuthorizationServiceToken } from '@nocobase/app-plugin-agent-authorization/server/tokens';
+import type { AgentAuthorizationServices } from '@nocobase/app-plugin-agent-authorization/server';
 import { authenticationToken } from '@nocobase/app-plugin-authentication/server';
 import { authorizationToken } from '@nocobase/app-plugin-authorization';
-import { casdoorIdentityAdminToken } from '@nocobase/app-plugin-casdoor-identity/server/tokens';
 import type { AppPluginApplication } from '@nocobase/app-server/plugins';
 import { secretsServiceToken } from '@nocobase/app-server/secrets';
 import { databaseManagerToken } from '@nocobase/db';
@@ -11,8 +12,31 @@ import {
   denyWithoutPermissionRef,
 } from '../business-access.js';
 import type { BusinessUiAdapterConfig } from '../config.js';
+import { ProtocolError } from '../errors.js';
+import {
+  grantContextFromCredentialData,
+  type GrantContext,
+} from '../grants.js';
 import { createProtocolServices } from '../services/protocol.js';
 import { businessUiAdapterServiceToken } from '../tokens.js';
+
+function toGrantContext(row: {
+  readonly id: string;
+  readonly clientId: string;
+  readonly localUserId: string;
+  readonly audience: string;
+  readonly scopes: readonly string[];
+  readonly revision: number;
+}): GrantContext {
+  return {
+    grantId: row.id,
+    clientId: row.clientId,
+    localUserId: row.localUserId,
+    audience: row.audience,
+    scopes: row.scopes,
+    revision: row.revision,
+  };
+}
 
 /**
  * Registers protocol services and periodically reconciles UNKNOWN operations
@@ -29,8 +53,12 @@ export class BusinessUiAdapterProvider extends ServiceProvider<AppPluginApplicat
   }
 
   public override register(): void {
-    this.app.container.singleton(businessUiAdapterServiceToken, (resolver) =>
-      createProtocolServices({
+    this.app.container.singleton(businessUiAdapterServiceToken, (resolver) => {
+      const agent = (): AgentAuthorizationServices | undefined =>
+        this.app.container.has(agentAuthorizationServiceToken)
+          ? resolver.resolve(agentAuthorizationServiceToken)
+          : undefined;
+      return createProtocolServices({
         database: () => resolver.resolve(databaseManagerToken),
         auth: () => resolver.resolve(authenticationToken),
         config: () => this.config(),
@@ -43,14 +71,37 @@ export class BusinessUiAdapterProvider extends ServiceProvider<AppPluginApplicat
               resolver.resolve(authorizationToken),
             )
           : denyWithoutPermissionRef,
-        assertIdentityFresh: this.app.container.has(casdoorIdentityAdminToken)
-          ? (userId) =>
-              resolver
-                .resolve(casdoorIdentityAdminToken)
-                .provisioning.assertDirectorySnapshotFresh(userId)
-          : undefined,
-      }),
-    );
+        getAgentCredential: (userId, credentialData) =>
+          grantContextFromCredentialData(userId, credentialData),
+        requireGrant: async (grantId) => {
+          const services = agent();
+          if (!services) {
+            throw new ProtocolError(
+              'GRANT_REQUIRED',
+              403,
+              'Agent authorization is required',
+            );
+          }
+          try {
+            return toGrantContext(await services.grants.requireActive(grantId));
+          } catch (error) {
+            if (error instanceof ProtocolError) throw error;
+            throw new ProtocolError(
+              'GRANT_REQUIRED',
+              403,
+              'Agent grant is not active',
+            );
+          }
+        },
+        audience: () => {
+          const configured = this.app.config.get<{ audience?: string }>(
+            'agentAuthorization',
+          )?.audience;
+          const origin = (this.app as { publicOrigin?: string }).publicOrigin;
+          return configured || origin || '';
+        },
+      });
+    });
   }
 
   public override async boot(): Promise<void> {

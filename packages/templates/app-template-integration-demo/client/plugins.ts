@@ -8,6 +8,7 @@ import {
   type AppClientPlugins,
 } from '@nocobase/app-client/plugins';
 import apiKeys from '@nocobase/app-plugin-api-keys/client';
+import agentAuthorization from '@nocobase/app-plugin-agent-authorization/client/plugin';
 import authentication from '@nocobase/app-plugin-authentication/client';
 import authorization from '@nocobase/app-plugin-authorization/client';
 import databaseExplorer from '@nocobase/app-plugin-database-explorer/client';
@@ -22,6 +23,7 @@ import mail from '@nocobase/app-plugin-mail/client';
 // Array order is contribution order. A plugin is enabled by appearing in this
 // list; removing its entry and its import disables it.
 const clientPlugins: AppClientPlugins = defineClientPlugins([
+  agentAuthorization(),
   authentication(),
   authorization(),
   defaultAccess(),

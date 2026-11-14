@@ -1,7 +1,9 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createAgentAuthorizationServices } from '@nocobase/app-plugin-agent-authorization/server';
 import {
   Auth,
   createUserAdministrationService,
@@ -16,15 +18,22 @@ import { createMigrator, type DatabaseManager } from '@nocobase/db';
 
 import type { BusinessUiAdapterConfig } from '../../server/config.js';
 import { createAllowlistAccessChecker } from '../../server/business-access.js';
+import { ProtocolError } from '../../server/errors.js';
+import {
+  grantContextFromCredentialData,
+  type GrantContext,
+} from '../../server/grants.js';
 import {
   createProtocolServices,
   type ProtocolServices,
 } from '../../server/services/protocol.js';
-import { randomId } from '../../server/crypto.js';
 
 const require = createRequire(import.meta.url);
 export const ISSUER = 'https://octop.test.local';
 const BASE_URL = 'http://localhost/api/auth';
+const AUDIENCE = 'http://localhost';
+const REDIRECT_URI = 'https://octop.test.local/oauth/callback';
+const AGENT_SCOPES = ['business-ui:view', 'business-ui:edit'] as const;
 export const PASSWORD = 'password-at-least-8';
 export const CONNECTION_ID = 'site-a';
 export const SERVICE_SECRET = 'connection-service-secret';
@@ -36,6 +45,14 @@ function packageMigrations(packageName: string): string {
     path.dirname(require.resolve(`${packageName}/package.json`)),
     'database/migrations',
   );
+}
+
+function pkcePair(): { verifier: string; challenge: string } {
+  const verifier = randomBytes(32).toString('base64url');
+  const challenge = createHash('sha256')
+    .update(verifier, 'utf8')
+    .digest('base64url');
+  return { verifier, challenge };
 }
 
 export interface AdapterHarness {
@@ -59,7 +76,11 @@ export interface AdapterHarness {
     userId: string,
     permissionRefs: readonly string[],
   ) => void;
-  readonly bindSubject: (subject: string, userId: string) => Promise<string>;
+  /** Creates an agent client grant and returns the opaque access token plus grant. */
+  readonly authorizeAgent: (
+    userId: string,
+  ) => Promise<{ accessToken: string; grant: GrantContext }>;
+  readonly grantFor: (userId: string) => GrantContext;
   readonly seedDefaults: () => Promise<void>;
   readonly close: () => Promise<void>;
 }
@@ -79,8 +100,8 @@ export async function createAdapterHarness(
       packageMigrations('@nocobase/app-plugin-authorization'),
     ],
     [
-      '@nocobase/app-plugin-casdoor-identity',
-      packageMigrations('@nocobase/app-plugin-casdoor-identity'),
+      '@nocobase/app-plugin-agent-authorization',
+      packageMigrations('@nocobase/app-plugin-agent-authorization'),
     ],
     [
       '@nocobase/app-plugin-business-ui-adapter',
@@ -112,12 +133,54 @@ export async function createAdapterHarness(
     ],
   });
   const grants = new Map<string, Set<string>>();
+  const agent = createAgentAuthorizationServices({
+    database: () => database,
+    config: () => ({ audience: AUDIENCE }),
+    defaultAudience: () => AUDIENCE,
+  });
+  const grantsByUser = new Map<string, GrantContext>();
+  let clientReady: Promise<string> | undefined;
+  const ensureClient = (): Promise<string> => {
+    clientReady ??= agent.clients
+      .create({
+        name: 'Octop test agent',
+        redirectUris: [REDIRECT_URI],
+        allowedScopes: [...AGENT_SCOPES],
+        allowedOrigins: ['https://octop.test.local'],
+      })
+      .then((created) => created.clientId);
+    return clientReady;
+  };
+
   const services = createProtocolServices({
     database: () => database,
     auth: () => auth,
     config: () => config.current,
     secrets: () => secrets,
     authorizeBusiness: createAllowlistAccessChecker(grants),
+    audience: () => AUDIENCE,
+    getAgentCredential: (userId, credentialData) =>
+      grantContextFromCredentialData(userId, credentialData),
+    requireGrant: async (grantId) => {
+      try {
+        const row = await agent.grants.requireActive(grantId);
+        return {
+          grantId: row.id,
+          clientId: row.clientId,
+          localUserId: row.localUserId,
+          audience: row.audience,
+          scopes: row.scopes,
+          revision: row.revision,
+        };
+      } catch (error) {
+        if (error instanceof ProtocolError) throw error;
+        throw new ProtocolError(
+          'GRANT_REQUIRED',
+          403,
+          'Agent grant is not active',
+        );
+      }
+    },
   });
 
   const grantAccess = (userId: string, permissionRefs: readonly string[]) => {
@@ -150,50 +213,57 @@ export async function createAdapterHarness(
     },
     grantAccess,
     revokeAccess,
-    bindSubject: async (subject, userId) => {
-      const id = randomId('binding');
-      const now = new Date();
-      const externalId = randomId('ext');
-      await database
-        .connection()
-        .query.insertInto('externalIdentities')
-        .values({
-          id: externalId,
-          providerIssuer: ISSUER,
-          providerSubject: subject,
-          localUserId: userId,
-          lastSyncedAt: now,
-          lastSeenEnabled: true,
-          disabledBySyncAt: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .execute();
-      await database
-        .connection()
-        .query.insertInto('businessUiSubjectBindings')
-        .values({
-          id,
-          connectionId: CONNECTION_ID,
-          octopSubject: subject,
-          localUserId: userId,
-          externalIdentityId: externalId,
-          status: 'active',
-          revision: 1,
-          activeLocalUserId: userId,
-          createdBy: null,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .execute();
-      return id;
+    authorizeAgent: async (userId) => {
+      const clientId = await ensureClient();
+      const row = await agent.grants.createOrReuse({
+        clientId,
+        localUserId: userId,
+        audience: AUDIENCE,
+        scopes: [...AGENT_SCOPES],
+      });
+      const { verifier, challenge } = pkcePair();
+      const code = await agent.oauth.createAuthorizationCode({
+        clientId,
+        localUserId: userId,
+        grantId: row.id,
+        redirectUri: REDIRECT_URI,
+        codeChallenge: challenge,
+        scope: AGENT_SCOPES.join(' '),
+      });
+      const tokens = await agent.oauth.exchangeAuthorizationCode({
+        clientId,
+        code,
+        redirectUri: REDIRECT_URI,
+        codeVerifier: verifier,
+      });
+      const grant: GrantContext = {
+        grantId: row.id,
+        clientId: row.clientId,
+        localUserId: row.localUserId,
+        audience: row.audience,
+        scopes: row.scopes,
+        revision: row.revision,
+      };
+      grantsByUser.set(userId, grant);
+      return { accessToken: tokens.access_token, grant };
+    },
+    grantFor: (userId) => {
+      const grant = grantsByUser.get(userId);
+      if (!grant) {
+        throw new Error(
+          `No agent grant for ${userId}; call authorizeAgent first`,
+        );
+      }
+      return grant;
     },
     seedDefaults: async () => {
+      const clientId = await ensureClient();
       await services.upsertConnection({
         connectionId: CONNECTION_ID,
         octopIssuer: ISSUER,
         allowedOrigins: ['https://octop.test.local'],
         serviceSecret: SERVICE_SECRET,
+        clientId,
         enabled: true,
       });
       await services.upsertForm({

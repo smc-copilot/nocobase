@@ -16,7 +16,7 @@ Only whitelisted handlers may be registered. This package ships `generic-request
 
 ## Identity
 
-User access tokens are admitted through Authentication issued credentials (Casdoor via `@nocobase/app-plugin-casdoor-identity`). Subject pre-bindings come from `businessUiSubjectBindings` owned by that plugin.
+User access tokens are admitted through Authentication issued credentials (`agentAccessToken` from `@nocobase/app-plugin-agent-authorization`). Each connection is linked to an agent client, and tickets, embeds, and interactions are constrained by that user's grant. The Octop subject in the request body is stored for audit and does not select the local user.
 
 ## Develop
 

@@ -19,8 +19,6 @@ export const FORM_REFS: {
 
 export const DOCUMENT_TYPE = 'generic.request';
 
-export const CASDOOR_ACCESS_TOKEN_SCHEME = 'casdoorAccessToken';
-
 export interface BusinessUiAdapterConfig {
   environment?: string;
   publicBaseUrl?: string;

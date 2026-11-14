@@ -2,6 +2,7 @@ export const ERROR_DOMAIN = 'businessUiAdapter';
 
 export type ProtocolErrorCode =
   | 'AUTH_REQUIRED'
+  | 'GRANT_REQUIRED'
   | 'ACCOUNT_DISABLED'
   | 'PERMISSION_DENIED'
   | 'SUBJECT_BINDING_REQUIRED'

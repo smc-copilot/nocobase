@@ -1,6 +1,6 @@
 import { authenticationToken } from '@nocobase/app-plugin-authentication/server';
 import type { AuthEnv } from '@nocobase/app-plugin-authentication/server';
-import { CASDOOR_ACCESS_TOKEN_SCHEME } from '@nocobase/app-plugin-casdoor-identity/server';
+import { AGENT_ACCESS_TOKEN_SCHEME } from '@nocobase/app-plugin-agent-authorization/server';
 import type { AppPluginApplication } from '@nocobase/app-server/plugins';
 import {
   defineRootRoutes,
@@ -16,10 +16,10 @@ type Env = { Variables: AuthEnv['Variables'] };
 
 const tags = ['BusinessUiProtocol'];
 
-/** Session cookie or Casdoor resource access token (scoped credential). */
+/** Session cookie or agent access token (scoped credential). */
 const userSecurity: Array<Record<string, string[]>> = [
   { cookieAuth: [] },
-  { [CASDOOR_ACCESS_TOKEN_SCHEME]: [] },
+  { [AGENT_ACCESS_TOKEN_SCHEME]: [] },
 ];
 
 function bearer(context: Context): string | undefined {
@@ -115,12 +115,17 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
       (context) =>
         runProtocol(context, async () => {
           const connectionId = context.req.param('connectionId')!;
-          const userId = context.get('auth')!.user.id;
+          const session = context.get('auth')!;
+          const userId = session.user.id;
+          const grant = services().grantFromCredential(
+            userId,
+            session.credential?.data,
+          );
           const body = (await context.req.json().catch(() => ({}))) as Record<
             string,
             unknown
           >;
-          return services().issueTicket(connectionId, userId, body);
+          return services().issueTicket(connectionId, userId, body, grant);
         }),
     );
 
@@ -164,7 +169,7 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
       }),
     );
 
-    // Session-only: embed cookie from redeem; Casdoor resource tokens must not substitute.
+    // Session-only: embed cookie from redeem; agent access tokens must not substitute.
     routes.post('/documents/save', auth.required(), (context) =>
       runProtocol(context, async () => {
         const connectionId = context.req.param('connectionId')!;

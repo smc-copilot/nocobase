@@ -21,6 +21,7 @@ const ConnectionSchema = z.object({
   octopIssuer: z.string(),
   allowedOrigins: z.array(z.string()),
   enabled: z.boolean(),
+  clientId: z.string().nullable(),
 });
 
 const FormSchema = z.object({
@@ -38,6 +39,7 @@ const UpsertConnectionInput = z.strictObject({
   allowedOrigins: z.array(z.string().url()).max(50),
   serviceSecret: z.string().min(8).max(255),
   enabled: z.boolean().optional(),
+  clientId: z.string().min(1).max(255).optional(),
 });
 
 const UpsertFormInput = z.strictObject({
@@ -126,6 +128,7 @@ export function createAdminRouter(options: {
             octopIssuer: row.octopIssuer,
             allowedOrigins: row.allowedOrigins as string[],
             enabled: row.enabled,
+            clientId: row.clientId ?? null,
           },
         });
       } catch (error) {

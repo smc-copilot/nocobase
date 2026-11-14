@@ -7,12 +7,12 @@ description: Wire the Octop business-ui.v1 adapter into a NocoBase application â
 
 ## When to use
 
-Use this Skill when an application must speak Octop `business-ui.v1` against registered connections without modifying Octop or Casdoor.
+Use this Skill when an application must speak Octop `business-ui.v1` against registered connections. User authorization comes from `@nocobase/app-plugin-agent-authorization` grants.
 
 ## Install
 
 - Server plugin `@nocobase/app-plugin-business-ui-adapter/server`.
-- Peer `@nocobase/app-plugin-casdoor-identity` for subject bindings and token resolution.
+- Peer `@nocobase/app-plugin-agent-authorization` for agent clients, grants, and `agentAccessToken` resolution. Register it before this plugin.
 - Configure `businessUiAdapter.publicBaseUrl` for absolute `redeem_url` values.
 
 ## Contracts

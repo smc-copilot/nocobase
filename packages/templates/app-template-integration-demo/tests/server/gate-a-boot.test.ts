@@ -41,6 +41,7 @@ test('boots Demo with migrations and declares every /api route (N28)', async ({
     octopIssuer: 'https://octop.integration-demo.test',
     allowedOrigins: ['https://octop.integration-demo.test'],
     serviceSecret: SERVICE_SECRET,
+    clientId: 'demo-agent-client',
     enabled: true,
   });
 

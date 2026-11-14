@@ -17,13 +17,15 @@ Hosts: Control / demo Apps (local), Casdoor (typically `:8000`), remote Docker `
 
 ## What is ready locally
 
-- P0–P3 Gate A code and tests on `fix/v3-smc-integration-readiness`.
-- Templates assemble casdoor-identity and business-ui-adapter; Control registers Users/Permission Sets and dual publisher grants.
+- V2.0 Gate A on `feat/v3-agent-authorization`: `@nocobase/app-plugin-agent-authorization` + adapter grant wiring; see `prd/acceptance/gate-a-v2-report.md`.
+- Integration Demo registers agent-authorization before business-ui-adapter; Casdoor stays optional login only.
+- Ops for local Octop + Demo: `prd/acceptance/p4/agent-authorization-ops.md`.
 - Acceptance contracts under `prd/acceptance/contracts/`.
 
 ## Operator-owned inputs (not code defects)
 
 1. Octop host install package pinned to SHA `64689a5b9863d974783f0605ed7673a7d5f73b22`.
-2. Casdoor clients + exact Redirect URIs for Control and demo.
+2. Register Octop OAuth URLs against Demo `/api/agentAuthorization/oauth/*` and Adapter connection `clientId`.
 3. HTTPS/TLS material for iframe Cookie acceptance.
 4. Remote dual-host and backup credentials when claiming R40/R41.
+5. Casdoor is optional; do not treat it as a Gate A prerequisite.
