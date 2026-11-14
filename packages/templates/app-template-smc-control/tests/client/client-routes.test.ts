@@ -214,6 +214,18 @@ describe('app client routes', () => {
         name,
         authorizedAs: 'settings:authorization.default-access',
       })),
+      {
+        name: 'agentAuthorizationClients',
+        authorizedAs: 'settings:agentAuthorization.clients',
+      },
+      {
+        name: 'agentAuthorizationGrants',
+        authorizedAs: 'settings:agentAuthorization.grants',
+      },
+      {
+        name: 'agentAuthorizationAudit',
+        authorizedAs: 'settings:agentAuthorization.audit',
+      },
       { name: 'databaseExplorer', authorizedAs: 'database-explorer' },
     ]);
   });
@@ -235,6 +247,9 @@ describe('app client routes', () => {
       '/settings/default-access',
       '/settings/default-access/create',
       '/settings/default-access/:key/edit',
+      '/settings/agent-authorization/clients',
+      '/settings/agent-authorization/grants',
+      '/settings/agent-authorization/audit',
       '/settings/database-explorer',
     ]);
     for (const loader of componentLoadersIn(resolveRoutes().routes))

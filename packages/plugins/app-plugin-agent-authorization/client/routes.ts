@@ -5,6 +5,13 @@ import {
 
 const routes: AppClientRouteContribution = defineAppRoutes([
   {
+    name: 'authorize',
+    path: '/agent-authorization/authorize',
+    auth: 'required',
+    authz: 'skip',
+    componentLoader: () => import('./pages/authorize.js'),
+  },
+  {
     name: 'consent',
     path: '/agent-authorization/consent',
     auth: 'required',

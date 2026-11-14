@@ -7,8 +7,48 @@ export interface GrantContext {
   readonly clientId: string;
   readonly localUserId: string;
   readonly audience: string;
+  /** Full grant scopes. Effective access is the intersection below. */
   readonly scopes: readonly string[];
+  /**
+   * Scopes on the presented access token. Omitted means "same as `scopes`"
+   * so callers that only know the grant do not accidentally widen it.
+   */
+  readonly tokenScopes?: readonly string[];
+  /**
+   * Current client `allowedScopes`. Omitted means no extra client filter;
+   * the require-grant path loads them so a later client shrink takes effect.
+   */
+  readonly clientScopes?: readonly string[];
   readonly revision: number;
+}
+
+/**
+ * Who is calling a user-facing protocol route.
+ * An agent access token carries its grant; a browser session is limited to
+ * the embed redeemed into that session.
+ */
+export type CallerContext =
+  | { readonly kind: 'agent'; readonly grant: GrantContext }
+  | { readonly kind: 'embed'; readonly sessionRef: string };
+
+function intersect(
+  left: readonly string[],
+  right: readonly string[],
+): string[] {
+  const allowed = new Set(right);
+  return left.filter((scope) => allowed.has(scope));
+}
+
+/**
+ * grant.scopes ∩ tokenScopes ∩ clientScopes.
+ * Missing tokenScopes uses the grant scopes. Missing clientScopes adds no filter.
+ */
+export function effectiveScopes(grant: GrantContext): readonly string[] {
+  const grantScopes = grant.scopes ?? [];
+  const tokenScopes = grant.tokenScopes ?? grantScopes;
+  const narrowed = intersect(grantScopes, tokenScopes);
+  if (!grant.clientScopes) return narrowed;
+  return intersect(narrowed, grant.clientScopes);
 }
 
 /**
@@ -60,6 +100,7 @@ export function grantContextFromCredentialData(
     localUserId: userId,
     audience: typeof record.audience === 'string' ? record.audience : '',
     scopes,
+    tokenScopes: scopes,
     revision,
   };
 }

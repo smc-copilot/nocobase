@@ -7,6 +7,7 @@ import {
   defineClientPlugins,
   type AppClientPlugins,
 } from '@nocobase/app-client/plugins';
+import agentAuthorization from '@nocobase/app-plugin-agent-authorization/client/plugin';
 import apiKeys from '@nocobase/app-plugin-api-keys/client';
 import authentication from '@nocobase/app-plugin-authentication/client';
 import authorization from '@nocobase/app-plugin-authorization/client';
@@ -31,6 +32,7 @@ const clientPlugins: AppClientPlugins = defineClientPlugins([
   databaseExplorer(),
   users(),
   apiKeys(),
+  agentAuthorization(),
   i18n(),
   notificationInApp(),
   notification(),

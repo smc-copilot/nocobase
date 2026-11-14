@@ -140,6 +140,17 @@ export interface AgentAuthorizationServices {
       grantId: string,
       expectedRevision?: number,
     ): Promise<AgentGrantRow>;
+    /**
+     * Active grant whose client is enabled and whose local user is not disabled.
+     * Does not revive tokens; callers still honor `revokedAt` on each token.
+     */
+    requireUsable(
+      grantId: string,
+      expectedRevision?: number,
+    ): Promise<{
+      readonly grant: AgentGrantRow;
+      readonly client: AgentClientRow;
+    }>;
     listForUser(localUserId: string): Promise<readonly AgentGrantView[]>;
     listAdmin(filter?: {
       readonly clientId?: string;

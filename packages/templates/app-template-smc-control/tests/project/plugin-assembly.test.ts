@@ -7,6 +7,7 @@ describe('SMC Control plugin assembly', () => {
   it('registers Casdoor identity and Releases on the server', () => {
     const names = serverPlugins.plugins.map((plugin) => plugin.packageName);
     expect(names).toContain('@nocobase/app-plugin-casdoor-identity');
+    expect(names).toContain('@nocobase/app-plugin-agent-authorization');
     expect(names).toContain('@nocobase/app-plugin-releases');
     expect(names).not.toContain('@nocobase/app-plugin-business-ui-adapter');
   });
@@ -20,6 +21,9 @@ describe('SMC Control plugin assembly', () => {
     expect(manifest.dependencies['@nocobase/app-plugin-casdoor-identity']).toBe(
       'workspace:^',
     );
+    expect(
+      manifest.dependencies['@nocobase/app-plugin-agent-authorization'],
+    ).toBe('workspace:^');
     expect(manifest.dependencies['@nocobase/db-postgres']).toBe('workspace:^');
   });
 });

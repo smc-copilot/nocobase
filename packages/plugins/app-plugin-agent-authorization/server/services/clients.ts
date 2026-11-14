@@ -151,6 +151,7 @@ export function createClientService(database: () => DatabaseManager) {
       }
       if (input.allowedScopes) validateScopes(input.allowedScopes);
       const updatedAt = now();
+      const disabling = input.enabled === false && existing.enabled;
       await db()
         .updateTable('agentClients')
         .set({
@@ -175,6 +176,14 @@ export function createClientService(database: () => DatabaseManager) {
         })
         .where('clientId', '=', clientId)
         .execute();
+      if (disabling) {
+        await db()
+          .updateTable('agentTokens')
+          .set({ revokedAt: updatedAt })
+          .where('clientId', '=', clientId)
+          .where('revokedAt', 'is', null)
+          .execute();
+      }
       return toView((await load(clientId))!);
     },
 

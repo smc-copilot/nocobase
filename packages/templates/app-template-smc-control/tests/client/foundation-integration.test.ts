@@ -76,6 +76,7 @@ describe('default Foundation integration', () => {
       [
         'settingsSystem',
         [
+          ['agentAuthorizationAdmin', '/settings/agent-authorization/clients'],
           ['databaseExplorer', '/settings/database-explorer'],
           ['capabilityGuide', '/settings/capabilities'],
         ],

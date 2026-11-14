@@ -191,6 +191,11 @@ auth:
 #     cron: '*/15 * * * *'
 #     timezone: UTC
 
+# Agent authorization (NocoBase-owned OAuth2 authorization server). Audience defaults
+# to APP_PUBLIC_ORIGIN.
+# agentAuthorization:
+#   audience: https://control.example.com
+
 notification:
   # provider remains a compatibility alias for type; both must match when supplied.
   channels:

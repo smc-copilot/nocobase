@@ -111,7 +111,16 @@ export function createMeRouter(options: {
           message: 'Grant not found',
         });
       }
-      const revoked = await options.services().grants.revoke(grantId, userId);
+      const services = options.services();
+      const revoked = await services.grants.revoke(grantId, userId);
+      await services.audit.record({
+        clientId: revoked.clientId,
+        localUserId: userId,
+        grantId: revoked.grantId,
+        action: 'grant.revoke',
+        decision: 'revoke',
+        details: { via: 'me', revision: revoked.revision },
+      });
       return context.json({
         data: {
           grantId: revoked.grantId,

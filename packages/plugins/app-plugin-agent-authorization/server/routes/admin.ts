@@ -78,6 +78,10 @@ const GrantQuery = z.object({
   localUserId: z.string().min(1).max(64).optional(),
 });
 
+function actorId(context: Context): string | undefined {
+  return (context as unknown as Context<Env>).get('auth')?.user.id;
+}
+
 const forbidden = (item: string, action: string): ApiError =>
   new ApiError({
     status: 'PERMISSION_DENIED',
@@ -142,7 +146,15 @@ export function createAdminRouter(options: {
     apiValidator('json', CreateClientInput),
     async (context) => {
       const input = context.req.valid('json');
-      const created = await options.services().clients.create(input);
+      const services = options.services();
+      const created = await services.clients.create(input);
+      await services.audit.record({
+        clientId: created.clientId,
+        localUserId: actorId(context) ?? null,
+        action: 'client.create',
+        decision: 'allow',
+        details: { name: created.name, enabled: created.enabled },
+      });
       return context.json({ data: created });
     },
   );
@@ -192,7 +204,29 @@ export function createAdminRouter(options: {
     async (context) => {
       const { clientId } = context.req.valid('param');
       const input = context.req.valid('json');
-      const updated = await options.services().clients.update(clientId, input);
+      const services = options.services();
+      const updated = await services.clients.update(clientId, input);
+      await services.audit.record({
+        clientId,
+        localUserId: actorId(context) ?? null,
+        action: 'client.update',
+        decision: 'allow',
+        details: {
+          name: input.name,
+          description: input.description,
+          instanceLabel: input.instanceLabel,
+          redirectUris: input.redirectUris
+            ? [...input.redirectUris]
+            : undefined,
+          allowedScopes: input.allowedScopes
+            ? [...input.allowedScopes]
+            : undefined,
+          allowedOrigins: input.allowedOrigins
+            ? [...input.allowedOrigins]
+            : undefined,
+          enabled: input.enabled,
+        },
+      });
       return context.json({ data: updated });
     },
   );
@@ -212,7 +246,15 @@ export function createAdminRouter(options: {
     apiValidator('param', ClientParams),
     async (context) => {
       const { clientId } = context.req.valid('param');
-      const rotated = await options.services().clients.rotateSecret(clientId);
+      const services = options.services();
+      const rotated = await services.clients.rotateSecret(clientId);
+      await services.audit.record({
+        clientId,
+        localUserId: actorId(context) ?? null,
+        action: 'client.rotateSecret',
+        decision: 'allow',
+        details: { secretVersion: rotated.secretVersion },
+      });
       return context.json({ data: rotated });
     },
   );
@@ -273,8 +315,21 @@ export function createAdminRouter(options: {
     apiValidator('param', GrantParams),
     async (context) => {
       const { grantId } = context.req.valid('param');
-      const actor = (context as unknown as Context<Env>).get('auth')?.user.id;
-      const revoked = await options.services().grants.revoke(grantId, actor);
+      const actor = actorId(context);
+      const services = options.services();
+      const revoked = await services.grants.revoke(grantId, actor);
+      await services.audit.record({
+        clientId: revoked.clientId,
+        localUserId: actor ?? null,
+        grantId: revoked.grantId,
+        action: 'grant.revoke',
+        decision: 'revoke',
+        details: {
+          via: 'admin',
+          subjectUserId: revoked.localUserId,
+          revision: revoked.revision,
+        },
+      });
       return context.json({
         data: {
           grantId: revoked.grantId,

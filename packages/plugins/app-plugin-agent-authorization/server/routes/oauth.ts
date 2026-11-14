@@ -2,11 +2,13 @@ import type { AuthEnv } from '@nocobase/app-plugin-authentication/server';
 import {
   ApiError,
   apiErrorHandler,
+  apiErrorResponse,
   apiErrorResponses,
   apiValidator,
   dataResponse,
   describeRoute,
 } from '@nocobase/app-server/router';
+import { addBasePathToLocation } from '@nocobase/app-server/support';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 
@@ -26,6 +28,48 @@ const AuthorizeQuery = z.object({
   code_challenge: z.string().min(43).max(128),
   code_challenge_method: z.literal('S256'),
   scope: z.string().min(1).max(512),
+});
+
+const ConsentContextQuery = z.object({
+  client_id: z.string().min(1).max(128),
+  redirect_uri: z.string().url().max(1024).optional(),
+  scope: z.string().max(512).optional(),
+});
+
+interface ConsentContextGrant {
+  readonly grantId: string;
+  readonly expiresAt: string | null;
+  readonly status: string;
+}
+
+interface ConsentContextView {
+  readonly clientId: string;
+  readonly name: string;
+  readonly instanceLabel: string | null;
+  readonly audience: string;
+  readonly requestedScopes: readonly string[];
+  readonly allowedScopes: readonly string[];
+  readonly redirectUri: string | null;
+  readonly enabled: boolean;
+  readonly grant: ConsentContextGrant | null;
+}
+
+const ConsentContextSchema: z.ZodType<ConsentContextView> = z.object({
+  clientId: z.string(),
+  name: z.string(),
+  instanceLabel: z.string().nullable(),
+  audience: z.string(),
+  requestedScopes: z.array(z.string()),
+  allowedScopes: z.array(z.string()),
+  redirectUri: z.string().nullable(),
+  enabled: z.boolean(),
+  grant: z
+    .object({
+      grantId: z.string(),
+      expiresAt: z.string().nullable(),
+      status: z.string(),
+    })
+    .nullable(),
 });
 
 const ConsentBody = z.strictObject({
@@ -97,6 +141,26 @@ function basicClientCredentials(
   }
 }
 
+/**
+ * Browser Location for a path inside this application. The mount layer also prefixes
+ * `publicBasePath`, and skips a path that already carries it, so doing it here is safe.
+ *
+ * The `redirect` query value is the SPA path relative to the router basename.
+ * `AuthenticationGuard` navigates with React Router, which prepends that basename itself.
+ */
+function browserLocation(
+  publicBasePath: string,
+  pathWithQuery: string,
+): string {
+  return addBasePathToLocation(pathWithQuery, publicBasePath);
+}
+
+function authorizeResumePath(requestUrl: string): string {
+  const queryIndex = requestUrl.indexOf('?');
+  const search = queryIndex === -1 ? '' : requestUrl.slice(queryIndex);
+  return `/agent-authorization/authorize${search}`;
+}
+
 function redirectWithParams(
   redirectUri: string,
   params: Record<string, string | undefined>,
@@ -115,6 +179,7 @@ export function createOAuthRouter(options: {
   authenticate: MiddlewareHandler;
   optionalAuthenticate: MiddlewareHandler;
   defaultAudience: () => string;
+  publicBasePath: () => string;
 }): Hono {
   const router = new Hono();
   router.onError((error, context) => apiErrorHandler(error, context));
@@ -135,14 +200,16 @@ export function createOAuthRouter(options: {
         throw oauthError('INVALID_REQUEST', 'Invalid authorize parameters');
       }
       const query = parsed.data;
-      const authorizePath = `/api/agentAuthorization/oauth/authorize?${new URLSearchParams(
-        context.req.query(),
-      ).toString()}`;
-      // Browser-only: send unauthenticated users to login, then back here / consent.
+      // Unauthenticated browsers go to native login. After sign-in the SPA recovery
+      // page loads and performs a full navigation back to this API endpoint.
       const auth = (context as unknown as Context<Env>).get('auth');
       if (!auth?.user.id) {
+        const resumePath = authorizeResumePath(context.req.url);
         return context.redirect(
-          `/login?callbackURL=${encodeURIComponent(authorizePath)}`,
+          browserLocation(
+            options.publicBasePath(),
+            `/login?redirect=${encodeURIComponent(resumePath)}`,
+          ),
         );
       }
       const services = options.services();
@@ -192,8 +259,87 @@ export function createOAuthRouter(options: {
       });
       if (query.state) consent.set('state', query.state);
       return context.redirect(
-        `/agent-authorization/consent?${consent.toString()}`,
+        browserLocation(
+          options.publicBasePath(),
+          `/agent-authorization/consent?${consent.toString()}`,
+        ),
       );
+    },
+  );
+
+  router.get(
+    '/oauth/consent-context',
+    options.authenticate,
+    describeRoute({
+      tags,
+      summary: 'Read consent display metadata for an agent client',
+      operationId: 'agentAuthorizationConsentContext',
+      responses: {
+        200: dataResponse(ConsentContextSchema),
+        404: apiErrorResponse(404, 'Client not found'),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('query', ConsentContextQuery),
+    async (context) => {
+      const query = context.req.valid('query');
+      const userId = (context as unknown as Context<Env>).get('auth')?.user.id;
+      if (!userId) {
+        throw new ApiError({
+          status: 'UNAUTHENTICATED',
+          reason: 'AUTH_REQUIRED',
+          domain: ERROR_DOMAIN,
+          message: 'Sign in required',
+        });
+      }
+      const services = options.services();
+      const client = await services.clients.get(query.client_id);
+      if (!client) {
+        throw new ApiError({
+          status: 'NOT_FOUND',
+          reason: 'NOT_FOUND',
+          domain: ERROR_DOMAIN,
+          message: 'Client not found',
+        });
+      }
+      const audience = options.defaultAudience();
+      const requestedScopes = query.scope
+        ? parseScopes(query.scope)
+        : [...client.allowedScopes];
+      const coveringScopes = requestedScopes.filter((scope) =>
+        client.allowedScopes.includes(scope),
+      );
+      const grant =
+        coveringScopes.length > 0
+          ? await services.grants.findActiveCovering({
+              clientId: client.clientId,
+              localUserId: userId,
+              audience,
+              scopes: coveringScopes,
+            })
+          : undefined;
+      const redirectUri =
+        query.redirect_uri && client.redirectUris.includes(query.redirect_uri)
+          ? query.redirect_uri
+          : null;
+      const data: ConsentContextView = {
+        clientId: client.clientId,
+        name: client.name,
+        instanceLabel: client.instanceLabel,
+        audience,
+        requestedScopes,
+        allowedScopes: [...client.allowedScopes],
+        redirectUri,
+        enabled: client.enabled,
+        grant: grant
+          ? {
+              grantId: grant.id,
+              expiresAt: grant.expiresAt?.toISOString() ?? null,
+              status: grant.status,
+            }
+          : null,
+      };
+      return context.json({ data });
     },
   );
 

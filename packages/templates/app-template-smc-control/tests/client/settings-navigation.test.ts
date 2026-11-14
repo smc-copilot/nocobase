@@ -229,6 +229,7 @@ describe('System settings navigation', () => {
         'settingsSystem',
         [
           ['notificationManagement', '/settings/notifications/templates'],
+          ['agentAuthorizationAdmin', '/settings/agent-authorization/clients'],
           ['databaseExplorer', '/settings/database-explorer'],
         ],
       ],
@@ -262,7 +263,13 @@ it('places database browsing in System and hides its card when access is denied'
         ['permissionManagement', '/settings/roles'],
       ],
     ],
-    ['settingsSystem', [['databaseExplorer', '/settings/database-explorer']]],
+    [
+      'settingsSystem',
+      [
+        ['agentAuthorizationAdmin', '/settings/agent-authorization/clients'],
+        ['databaseExplorer', '/settings/database-explorer'],
+      ],
+    ],
   ]);
   expect(catalog(routes, new Set([routeKey(page)]))).toEqual([
     [
@@ -271,6 +278,10 @@ it('places database browsing in System and hides its card when access is denied'
         ['settingsUsers', '/settings/users'],
         ['permissionManagement', '/settings/roles'],
       ],
+    ],
+    [
+      'settingsSystem',
+      [['agentAuthorizationAdmin', '/settings/agent-authorization/clients']],
     ],
   ]);
 });

@@ -1,3 +1,4 @@
+import agentAuthorizationRoutes from './pages/settings/agent-authorization/routes.js';
 import databaseExplorerRoutes from './pages/settings/database-explorer/routes.js';
 import { createAppClientConfig } from '@nocobase/app-client';
 import { readAppClientRuntimeConfig } from '@nocobase/app-client/runtime';
@@ -81,6 +82,7 @@ export function createApplicationRoutes(
       settingsShellRoutes,
       systemSettingsRoutes,
       databaseExplorerRoutes,
+      agentAuthorizationRoutes,
     ],
     config.get<boolean>('notificationTemplates.invitationConfigured') === true,
   );

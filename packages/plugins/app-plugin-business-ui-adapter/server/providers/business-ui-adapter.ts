@@ -20,21 +20,25 @@ import {
 import { createProtocolServices } from '../services/protocol.js';
 import { businessUiAdapterServiceToken } from '../tokens.js';
 
-function toGrantContext(row: {
-  readonly id: string;
-  readonly clientId: string;
-  readonly localUserId: string;
-  readonly audience: string;
-  readonly scopes: readonly string[];
-  readonly revision: number;
+function toGrantContext(usable: {
+  readonly grant: {
+    readonly id: string;
+    readonly clientId: string;
+    readonly localUserId: string;
+    readonly audience: string;
+    readonly scopes: readonly string[];
+    readonly revision: number;
+  };
+  readonly client: { readonly allowedScopes: readonly string[] };
 }): GrantContext {
   return {
-    grantId: row.id,
-    clientId: row.clientId,
-    localUserId: row.localUserId,
-    audience: row.audience,
-    scopes: row.scopes,
-    revision: row.revision,
+    grantId: usable.grant.id,
+    clientId: usable.grant.clientId,
+    localUserId: usable.grant.localUserId,
+    audience: usable.grant.audience,
+    scopes: usable.grant.scopes,
+    clientScopes: usable.client.allowedScopes,
+    revision: usable.grant.revision,
   };
 }
 
@@ -83,7 +87,7 @@ export class BusinessUiAdapterProvider extends ServiceProvider<AppPluginApplicat
             );
           }
           try {
-            return toGrantContext(await services.grants.requireActive(grantId));
+            return toGrantContext(await services.grants.requireUsable(grantId));
           } catch (error) {
             if (error instanceof ProtocolError) throw error;
             throw new ProtocolError(

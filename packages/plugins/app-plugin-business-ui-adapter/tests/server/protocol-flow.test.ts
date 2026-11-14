@@ -12,6 +12,10 @@ import {
 describe('business-ui.v1 protocol flow', () => {
   let harness: AdapterHarness;
 
+  function agentCaller(userId: string) {
+    return { kind: 'agent' as const, grant: harness.grantFor(userId) };
+  }
+
   afterEach(async () => {
     await harness?.close();
   });
@@ -121,6 +125,7 @@ describe('business-ui.v1 protocol flow', () => {
       CONNECTION_ID,
       userId,
       ticket.interaction_id as string,
+      agentCaller(userId),
     );
     expect(beforeSubmit.success).toBe(true);
     expect(beforeSubmit.status).toBe('draft');
@@ -201,6 +206,7 @@ describe('business-ui.v1 protocol flow', () => {
       CONNECTION_ID,
       userId,
       submitted.interactionId as string,
+      agentCaller(userId),
     );
     expect(interaction.success).toBe(true);
     expect(interaction.operation_id).toBe(slotOperationId);
@@ -211,6 +217,7 @@ describe('business-ui.v1 protocol flow', () => {
       CONNECTION_ID,
       userId,
       slotOperationId,
+      agentCaller(userId),
     );
     expect(queried.query_only).toBe(true);
     expect(queried.success).toBe(true);
@@ -218,7 +225,12 @@ describe('business-ui.v1 protocol flow', () => {
     expect(queried.receipt).toBeUndefined();
 
     await expect(
-      harness.services.retryOperation(CONNECTION_ID, userId, slotOperationId),
+      harness.services.retryOperation(
+        CONNECTION_ID,
+        userId,
+        slotOperationId,
+        agentCaller(userId),
+      ),
     ).rejects.toBeInstanceOf(ProtocolError);
   });
 
@@ -376,13 +388,19 @@ describe('business-ui.v1 protocol flow', () => {
     const operationId = unknown.operationId as string;
 
     await expect(
-      harness.services.retryOperation(CONNECTION_ID, userId, operationId),
+      harness.services.retryOperation(
+        CONNECTION_ID,
+        userId,
+        operationId,
+        agentCaller(userId),
+      ),
     ).rejects.toMatchObject({ code: 'RETRY_NOT_SAFE' });
 
     const interaction = await harness.services.getInteraction(
       CONNECTION_ID,
       userId,
       unknown.interactionId as string,
+      agentCaller(userId),
     );
     expect(interaction.operation_id ?? interaction.operationId).toBe(
       operationId,
@@ -443,6 +461,7 @@ describe('business-ui.v1 protocol flow', () => {
       CONNECTION_ID,
       userId,
       lost.interactionId as string,
+      agentCaller(userId),
     );
     expect(before.status).toBe('unknown');
 
@@ -452,6 +471,7 @@ describe('business-ui.v1 protocol flow', () => {
       CONNECTION_ID,
       userId,
       lost.interactionId as string,
+      agentCaller(userId),
     );
     expect(after.status).toBe('submitted');
     expect(after.operation_id ?? after.operationId).toBe(operationId);
@@ -510,6 +530,7 @@ describe('business-ui.v1 protocol flow', () => {
       CONNECTION_ID,
       userId,
       failed.interactionId as string,
+      agentCaller(userId),
     );
     expect(failedInteraction.status).toBe('failed');
     expect(failedInteraction.result).toMatchObject({ status: 'FAILED' });
@@ -517,6 +538,7 @@ describe('business-ui.v1 protocol flow', () => {
       CONNECTION_ID,
       userId,
       operationId,
+      agentCaller(userId),
     );
     expect(failedQuery.status).toBe('FAILED');
 
@@ -526,6 +548,7 @@ describe('business-ui.v1 protocol flow', () => {
       CONNECTION_ID,
       userId,
       operationId,
+      agentCaller(userId),
     );
     expect(recovered.status).toBe('submitted');
     expect(recovered.operationId).toBe(operationId);

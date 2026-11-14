@@ -3,7 +3,10 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createAgentAuthorizationServices } from '@nocobase/app-plugin-agent-authorization/server';
+import {
+  createAgentAuthorizationServices,
+  type AgentAuthorizationServices,
+} from '@nocobase/app-plugin-agent-authorization/server';
 import {
   Auth,
   createUserAdministrationService,
@@ -31,8 +34,8 @@ import {
 const require = createRequire(import.meta.url);
 export const ISSUER = 'https://octop.test.local';
 const BASE_URL = 'http://localhost/api/auth';
-const AUDIENCE = 'http://localhost';
-const REDIRECT_URI = 'https://octop.test.local/oauth/callback';
+export const AUDIENCE = 'http://localhost';
+export const REDIRECT_URI = 'https://octop.test.local/oauth/callback';
 const AGENT_SCOPES = ['business-ui:view', 'business-ui:edit'] as const;
 export const PASSWORD = 'password-at-least-8';
 export const CONNECTION_ID = 'site-a';
@@ -61,6 +64,7 @@ export interface AdapterHarness {
   readonly auth: Auth;
   readonly users: UserAdministrationService;
   readonly services: ProtocolServices;
+  readonly agent: AgentAuthorizationServices;
   readonly config: { current: BusinessUiAdapterConfig };
   readonly grants: Map<string, Set<string>>;
   readonly createLocalUser: (
@@ -76,10 +80,18 @@ export interface AdapterHarness {
     userId: string,
     permissionRefs: readonly string[],
   ) => void;
-  /** Creates an agent client grant and returns the opaque access token plus grant. */
+  /**
+   * Creates or reuses an agent grant and exchanges a code for tokens.
+   * `scopes` narrows the issued token; omitted means view and edit.
+   */
   readonly authorizeAgent: (
     userId: string,
-  ) => Promise<{ accessToken: string; grant: GrantContext }>;
+    options?: { readonly scopes?: readonly string[] },
+  ) => Promise<{
+    accessToken: string;
+    refreshToken: string;
+    grant: GrantContext;
+  }>;
   readonly grantFor: (userId: string) => GrantContext;
   readonly seedDefaults: () => Promise<void>;
   readonly close: () => Promise<void>;
@@ -163,14 +175,15 @@ export async function createAdapterHarness(
       grantContextFromCredentialData(userId, credentialData),
     requireGrant: async (grantId) => {
       try {
-        const row = await agent.grants.requireActive(grantId);
+        const { grant, client } = await agent.grants.requireUsable(grantId);
         return {
-          grantId: row.id,
-          clientId: row.clientId,
-          localUserId: row.localUserId,
-          audience: row.audience,
-          scopes: row.scopes,
-          revision: row.revision,
+          grantId: grant.id,
+          clientId: grant.clientId,
+          localUserId: grant.localUserId,
+          audience: grant.audience,
+          scopes: grant.scopes,
+          clientScopes: client.allowedScopes,
+          revision: grant.revision,
         };
       } catch (error) {
         if (error instanceof ProtocolError) throw error;
@@ -202,6 +215,7 @@ export async function createAdapterHarness(
     auth,
     users,
     services,
+    agent,
     config,
     grants,
     createLocalUser: async (email, name = email, options) => {
@@ -213,13 +227,16 @@ export async function createAdapterHarness(
     },
     grantAccess,
     revokeAccess,
-    authorizeAgent: async (userId) => {
+    authorizeAgent: async (userId, options) => {
       const clientId = await ensureClient();
+      const tokenScopes = options?.scopes?.length
+        ? [...options.scopes]
+        : [...AGENT_SCOPES];
       const row = await agent.grants.createOrReuse({
         clientId,
         localUserId: userId,
         audience: AUDIENCE,
-        scopes: [...AGENT_SCOPES],
+        scopes: tokenScopes,
       });
       const { verifier, challenge } = pkcePair();
       const code = await agent.oauth.createAuthorizationCode({
@@ -228,7 +245,7 @@ export async function createAdapterHarness(
         grantId: row.id,
         redirectUri: REDIRECT_URI,
         codeChallenge: challenge,
-        scope: AGENT_SCOPES.join(' '),
+        scope: tokenScopes.join(' '),
       });
       const tokens = await agent.oauth.exchangeAuthorizationCode({
         clientId,
@@ -242,10 +259,16 @@ export async function createAdapterHarness(
         localUserId: row.localUserId,
         audience: row.audience,
         scopes: row.scopes,
+        tokenScopes,
+        clientScopes: [...AGENT_SCOPES],
         revision: row.revision,
       };
       grantsByUser.set(userId, grant);
-      return { accessToken: tokens.access_token, grant };
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        grant,
+      };
     },
     grantFor: (userId) => {
       const grant = grantsByUser.get(userId);

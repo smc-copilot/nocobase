@@ -64,6 +64,7 @@ function runConsumer(
   status?: string;
   result_type?: string;
   receipt_sequence?: number;
+  buttons?: string[];
 } {
   const result = spawnSync(python, ['-c', script, JSON.stringify(payload)], {
     encoding: 'utf8',
@@ -79,6 +80,7 @@ function runConsumer(
     status?: string;
     result_type?: string;
     receipt_sequence?: number;
+    buttons?: string[];
   };
 }
 
@@ -89,6 +91,19 @@ from business_ui.outbound import evaluate_handshake
 body = json.loads(sys.argv[1])
 ok, why, missing = evaluate_handshake(body)
 print(json.dumps({"ok": ok, "why": why, "missing": missing}))
+`;
+
+const BUTTONS_SCRIPT = `
+import sys, json
+sys.path.insert(0, ${JSON.stringify(FIXTURE_ROOT)})
+from business_ui.receipt import buttons_for
+state = json.loads(sys.argv[1])
+print(json.dumps({
+  "ok": True,
+  "why": None,
+  "missing": [],
+  "buttons": buttons_for(state),
+}))
 `;
 
 const RECEIPT_SCRIPT = `
@@ -219,5 +234,98 @@ describe('Octop evaluate_handshake / merge_receipt contract (N29)', () => {
     expect(stale.ok).toBe(true);
     expect(stale.result_type).toBe('SUCCESS');
     expect(stale.receipt_sequence).toBe(2);
+  });
+
+  it('feeds UNKNOWN and FAILED service results to buttons_for', async () => {
+    const python = requirePython();
+    requireFixture();
+    const userIdFlow = async (fault: 'unknownOnSubmit' | 'failBeforeWrite') => {
+      harness = await createAdapterHarness({
+        faultInjection: { [fault]: true },
+      });
+      const userId = await harness.createLocalUser(`${fault}@example.com`);
+      const issued = await harness.authorizeAgent(userId);
+      await harness.seedDefaults();
+      const ticket = await harness.services.issueTicket(
+        CONNECTION_ID,
+        userId,
+        {
+          formRef: 'generic.request.edit',
+          schemaVersion: '1',
+          subject: {
+            issuer: 'https://octop.test.local',
+            sub: `octop-${fault}`,
+          },
+          nonce: `n-${fault}`,
+        },
+        issued.grant,
+      );
+      const redeem = await harness.services.redeemTicket(
+        CONNECTION_ID,
+        { ticket: ticket.ticket as string, nonce: `n-${fault}` },
+        new Request('http://localhost/redeem', { method: 'POST' }),
+      );
+      const cookie = redeem.setCookies
+        .map((entry) => entry.split(';')[0])
+        .join('; ');
+      const session = await harness.auth.getSession(new Headers({ cookie }), {
+        disableRefresh: true,
+      });
+      const submitted = await harness.services.submitDocument(
+        CONNECTION_ID,
+        userId,
+        session!.session.id,
+        {
+          title: fault,
+          description: '',
+          quantity: 1,
+          record_version: 0,
+          idempotency_key: fault,
+        },
+      );
+      const caller = { kind: 'agent' as const, grant: issued.grant };
+      const interaction = await harness.services.getInteraction(
+        CONNECTION_ID,
+        userId,
+        submitted.interactionId as string,
+        caller,
+      );
+      const queried = await harness.services.queryOperation(
+        CONNECTION_ID,
+        userId,
+        submitted.operationId as string,
+        caller,
+      );
+      return { submitted, interaction, queried };
+    };
+
+    const unknown = await userIdFlow('unknownOnSubmit');
+    for (const body of [
+      unknown.submitted,
+      unknown.interaction,
+      unknown.queried,
+    ]) {
+      expect(body.receipt_sequence ?? body.receiptSequence).toEqual(
+        expect.any(Number),
+      );
+      expect(body.record_version ?? body.recordVersion).toEqual(
+        expect.any(Number),
+      );
+      const buttons = runConsumer(python, BUTTONS_SCRIPT, body);
+      expect(buttons.buttons).toContain('query_status');
+    }
+    await harness.close();
+
+    const failed = await userIdFlow('failBeforeWrite');
+    for (const body of [failed.submitted, failed.interaction, failed.queried]) {
+      expect(body.receipt_sequence ?? body.receiptSequence).toEqual(
+        expect.any(Number),
+      );
+      expect(body.record_version ?? body.recordVersion).toEqual(
+        expect.any(Number),
+      );
+      const buttons = runConsumer(python, BUTTONS_SCRIPT, body);
+      expect(buttons.buttons).toContain('retry');
+    }
   });
 });

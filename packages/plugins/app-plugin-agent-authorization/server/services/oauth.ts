@@ -202,6 +202,7 @@ export function createOAuthService(options: {
       if (!secretsEqual(challenge, String(row.codeChallenge))) {
         throw oauthError('INVALID_GRANT', 'PKCE verification failed');
       }
+      const { grant } = await options.grants.requireUsable(String(row.grantId));
       const consumedAt = now();
       const updated = await db()
         .updateTable('agentAuthCodes')
@@ -212,7 +213,6 @@ export function createOAuthService(options: {
       if (updated.updatedCount === 0) {
         throw oauthError('INVALID_GRANT', 'Authorization code already used');
       }
-      const grant = await options.grants.requireActive(String(row.grantId));
       return asTokenResponse(
         await issueTokenPair({
           grantId: grant.id,
@@ -247,7 +247,7 @@ export function createOAuthService(options: {
       if (new Date(row.expiresAt as Date) < now()) {
         throw oauthError('INVALID_GRANT', 'Refresh token expired');
       }
-      const grant = await options.grants.requireActive(
+      const { grant } = await options.grants.requireUsable(
         String(row.grantId),
         Number(row.grantRevision),
       );

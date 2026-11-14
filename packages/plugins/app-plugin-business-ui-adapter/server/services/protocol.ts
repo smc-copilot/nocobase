@@ -39,7 +39,9 @@ import {
   type BusinessAction,
 } from '../business-access.js';
 import {
+  effectiveScopes,
   grantContextFromCredentialData,
+  type CallerContext,
   type GrantContext,
 } from '../grants.js';
 import { parseGenericRequestFields } from '../handlers/generic-request.js';
@@ -143,16 +145,19 @@ export interface ProtocolServices {
     connectionId: string,
     userId: string,
     interactionId: string,
+    caller: CallerContext,
   ): Promise<Record<string, unknown>>;
   queryOperation(
     connectionId: string,
     userId: string,
     operationId: string,
+    caller: CallerContext,
   ): Promise<Record<string, unknown>>;
   retryOperation(
     connectionId: string,
     userId: string,
     operationId: string,
+    caller: CallerContext,
   ): Promise<Record<string, unknown>>;
   upsertConnection(input: {
     connectionId: string;
@@ -495,7 +500,7 @@ export function createProtocolServices(deps: {
   }
 
   function assertScope(grant: GrantContext, action: BusinessAction): void {
-    const scopes = grant.scopes ?? [];
+    const scopes = effectiveScopes(grant);
     const read = action === 'view' || action === 'query';
     const allowed = read
       ? scopes.includes('business-ui:view') ||
@@ -504,6 +509,50 @@ export function createProtocolServices(deps: {
     if (!allowed) {
       grantRequired('Agent grant scope does not cover this action');
     }
+  }
+
+  function canWrite(grant: GrantContext): boolean {
+    return effectiveScopes(grant).includes('business-ui:edit');
+  }
+
+  /**
+   * Null or a non-array means the column predates the embed scope snapshot.
+   * An array, including empty, is an explicit intersection.
+   */
+  function parseOptionalStringArray(
+    value: unknown,
+  ): readonly string[] | undefined {
+    if (value == null) return undefined;
+    let parsed: unknown = value;
+    if (typeof value === 'string') {
+      try {
+        parsed = JSON.parse(value) as unknown;
+      } catch {
+        return undefined;
+      }
+    }
+    if (!Array.isArray(parsed)) return undefined;
+    return parsed.filter((entry): entry is string => typeof entry === 'string');
+  }
+
+  function withRecordedScopes(
+    grant: GrantContext,
+    recorded: readonly string[] | undefined,
+  ): GrantContext {
+    if (!recorded) return { ...grant, tokenScopes: undefined };
+    return { ...grant, scopes: recorded, tokenScopes: undefined };
+  }
+
+  function actionsForTerminal(input: {
+    readonly status: string;
+    readonly safeRetry: boolean;
+    readonly writable: boolean;
+  }): readonly string[] {
+    if (input.status === 'UNKNOWN') return ['query_status', 'close'];
+    if (input.status === 'FAILED') {
+      return input.safeRetry && input.writable ? ['retry', 'close'] : ['close'];
+    }
+    return ['close'];
   }
 
   function assertClient(connection: ConnectionRow, grant: GrantContext): void {
@@ -516,6 +565,7 @@ export function createProtocolServices(deps: {
     grantId: string,
     expectedRevision: number,
     connection: ConnectionRow,
+    tokenScopes?: readonly string[],
   ): Promise<GrantContext> {
     if (!deps.requireGrant) {
       grantRequired('Agent authorization is required');
@@ -532,7 +582,8 @@ export function createProtocolServices(deps: {
     }
     assertClient(connection, grant);
     assertAudience(grant);
-    return grant;
+    if (tokenScopes === undefined) return grant;
+    return { ...grant, tokenScopes };
   }
 
   /**
@@ -591,7 +642,10 @@ export function createProtocolServices(deps: {
         'Embed context belongs to another user',
       );
     }
-    assertScope(grant, action);
+    assertScope(
+      withRecordedScopes(grant, parseOptionalStringArray(embed.scopes)),
+      action,
+    );
 
     const form = await requireForm(
       String(embed.formRef),
@@ -627,49 +681,119 @@ export function createProtocolServices(deps: {
     return `${form.formRef}@${form.schemaVersion}@${form.permissionRef ?? ''}@${form.enabled ? '1' : '0'}`;
   }
 
-  /** Ensure the interaction's grant is still active at the stored revision. */
-  async function assertInteractionGrantActive(
-    interactionId: string,
+  type InteractionCallerRow = {
+    readonly interactionId: string;
+    readonly localUserId: string;
+    readonly grantId: unknown;
+    readonly clientId: unknown;
+  };
+
+  /**
+   * Bind the caller to this interaction before any read projection or retry.
+   * Same user + same client + different grant is a refusal. Embed callers must
+   * hold an unexpired embed for this session and interaction.
+   */
+  async function authorizeCaller(
+    connection: ConnectionRow,
+    interaction: InteractionCallerRow,
+    caller: CallerContext,
+    userId: string,
     action: BusinessAction,
-  ): Promise<void> {
-    const interaction = await db()
-      .selectFrom('businessUiInteractions')
-      .select([
-        'grantId',
-        'grantRevision',
-        'connectionId',
-        'clientId',
-        'localUserId',
-      ])
-      .where('interactionId', '=', interactionId)
+  ): Promise<GrantContext> {
+    if (interaction.localUserId !== userId) {
+      throw new ProtocolError(
+        'OPERATION_NOT_FOUND',
+        404,
+        'Interaction not found',
+      );
+    }
+    const interactionGrantId =
+      typeof interaction.grantId === 'string' ? interaction.grantId : undefined;
+    if (!interactionGrantId) {
+      grantRequired('Agent authorization is required');
+    }
+    if (caller.kind === 'agent') {
+      const presented = caller.grant;
+      if (presented.localUserId !== userId) {
+        grantRequired('Agent grant does not match this user');
+      }
+      if (!connection.clientId || connection.clientId !== presented.clientId) {
+        grantRequired('Agent client does not match this connection');
+      }
+      if (interactionGrantId !== presented.grantId) {
+        grantRequired('Agent grant does not match this interaction');
+      }
+      if (
+        typeof interaction.clientId === 'string' &&
+        interaction.clientId !== presented.clientId
+      ) {
+        grantRequired('Agent client does not match this interaction');
+      }
+      const active = await loadActiveGrant(
+        presented.grantId,
+        presented.revision,
+        connection,
+        presented.tokenScopes,
+      );
+      if (active.localUserId !== userId) {
+        grantRequired('Agent grant does not match this user');
+      }
+      assertScope(active, action);
+      return active;
+    }
+    const embed = await db()
+      .selectFrom('businessUiEmbedContexts')
+      .selectAll()
+      .where('authSessionRef', '=', caller.sessionRef)
+      .where('connectionId', '=', connection.connectionId)
+      .where('interactionId', '=', interaction.interactionId)
       .executeTakeFirst();
-    const grantId =
-      typeof interaction?.grantId === 'string'
-        ? interaction.grantId
-        : undefined;
-    const revision = revisionNumber(interaction?.grantRevision);
-    if (!interaction || !grantId || revision == null) {
-      grantRequired('Agent authorization is required');
+    if (!embed) {
+      throw new ProtocolError(
+        'EMBED_CONTEXT_REQUIRED',
+        403,
+        'Embed context required',
+      );
     }
-    const connectionId =
-      typeof interaction.connectionId === 'string'
-        ? interaction.connectionId
-        : undefined;
-    if (!connectionId) {
-      grantRequired('Agent authorization is required');
+    if (embed.localUserId !== userId) {
+      throw new ProtocolError(
+        'SUBJECT_MISMATCH',
+        403,
+        'Embed context belongs to another user',
+      );
     }
-    const connection = await requireConnection(connectionId);
-    const grant = await loadActiveGrant(grantId, revision, connection);
-    if (grant.localUserId !== interaction.localUserId) {
-      grantRequired('Agent grant does not match this interaction');
+    if (new Date(embed.expiresAt as Date) < now()) {
+      throw new ProtocolError('AUTH_REQUIRED', 401, 'Embed context expired');
     }
-    if (
-      typeof interaction.clientId === 'string' &&
-      interaction.clientId !== grant.clientId
-    ) {
-      grantRequired('Agent client does not match this connection');
+    const embedGrantId =
+      typeof embed.grantId === 'string' ? embed.grantId : undefined;
+    if (!embedGrantId || embedGrantId !== interactionGrantId) {
+      grantRequired('Embed context does not match this interaction');
     }
-    assertScope(grant, action);
+    const revision = revisionNumber(embed.grantRevision);
+    if (revision == null) {
+      grantRequired('Embed context is missing grant constraints');
+    }
+    const active = await loadActiveGrant(embedGrantId, revision, connection);
+    if (active.localUserId !== userId) {
+      grantRequired('Agent grant does not match this user');
+    }
+    const scoped = withRecordedScopes(
+      active,
+      parseOptionalStringArray(embed.scopes),
+    );
+    assertScope(scoped, action);
+    return scoped;
+  }
+
+  async function latestReceiptSequence(interactionId: string): Promise<number> {
+    const row = await db()
+      .selectFrom('businessUiReceipts')
+      .select('sequence')
+      .where('interactionId', '=', interactionId)
+      .orderBy('sequence', 'desc')
+      .executeTakeFirst();
+    return Number(row?.sequence ?? 0);
   }
 
   function receiptFromPayload(payload: DualNamedReceipt): DualNamedReceipt {
@@ -849,6 +973,7 @@ export function createProtocolServices(deps: {
         grant.grantId,
         grant.revision,
         connection,
+        grant.tokenScopes,
       );
       if (active.localUserId !== userId) {
         grantRequired('Agent authorization is required');
@@ -882,6 +1007,7 @@ export function createProtocolServices(deps: {
       }
       const businessAction = form.mode === 'detail' ? 'view' : 'issue';
       assertScope(active, businessAction);
+      const issuedScopes = [...effectiveScopes(active)];
       await assertBusinessAccess(
         userId,
         form.permissionRef,
@@ -982,6 +1108,7 @@ export function createProtocolServices(deps: {
             },
             grantId: active.grantId,
             clientId: active.clientId,
+            scopes: issuedScopes,
           },
           expiresAt: addSeconds(createdAt, TICKET_TTL_SECONDS),
           consumedAt: null,
@@ -1073,6 +1200,31 @@ export function createProtocolServices(deps: {
       if (grant.localUserId !== ticketRow.localUserId) {
         grantRequired('Agent grant does not match this ticket');
       }
+      const context = (ticketRow.context ?? {}) as {
+        recordId?: string | null;
+        documentType?: string;
+        mode?: string;
+        permissionRef?: string | null;
+        formConfigVersion?: string;
+        scopes?: unknown;
+      };
+      const mode = context.mode === 'detail' ? 'detail' : 'edit';
+      const recordedTicketScopes = parseOptionalStringArray(context.scopes);
+      const ticketGrant = recordedTicketScopes
+        ? {
+            ...grant,
+            scopes: recordedTicketScopes,
+            tokenScopes: undefined,
+          }
+        : grant;
+      assertScope(ticketGrant, mode === 'detail' ? 'view' : 'issue');
+      await assertBusinessAccess(
+        ticketRow.localUserId,
+        context.permissionRef,
+        mode === 'detail' ? 'view' : 'issue',
+        context.recordId,
+      );
+      const embedScopes = [...effectiveScopes(ticketGrant)];
 
       const existing = await deps.auth().getSession(request.headers, {
         disableRefresh: true,
@@ -1124,21 +1276,6 @@ export function createProtocolServices(deps: {
         );
       }
       const authSessionRef = session.session.id;
-      const context = (ticketRow.context ?? {}) as {
-        recordId?: string | null;
-        documentType?: string;
-        mode?: string;
-        permissionRef?: string | null;
-        formConfigVersion?: string;
-      };
-      const mode = context.mode === 'detail' ? 'detail' : 'edit';
-      assertScope(grant, mode === 'detail' ? 'view' : 'issue');
-      await assertBusinessAccess(
-        ticketRow.localUserId,
-        context.permissionRef,
-        mode === 'detail' ? 'view' : 'issue',
-        context.recordId,
-      );
       const actionBounds =
         mode === 'detail'
           ? (['view_document', 'close'] as const)
@@ -1163,6 +1300,7 @@ export function createProtocolServices(deps: {
           mode,
           nonce,
           actionBounds: [...actionBounds],
+          scopes: embedScopes,
           expiresAt: addSeconds(createdAt, EMBED_TTL_SECONDS),
           createdAt,
         })
@@ -1491,7 +1629,8 @@ export function createProtocolServices(deps: {
             formRef: embed.formRef as string,
             schemaVersion: embed.schemaVersion as string,
             recordVersion: 0,
-            allowedActions: ['close'],
+            receiptSequence: 0,
+            allowedActions: ['query_status', 'close'],
             interactionId: embed.interactionId as string,
             operationId: existingOp.operationId as string,
             result: {
@@ -1556,7 +1695,8 @@ export function createProtocolServices(deps: {
           formRef: embed.formRef as string,
           schemaVersion: embed.schemaVersion as string,
           recordVersion: 0,
-          allowedActions: ['close'],
+          receiptSequence: 0,
+          allowedActions: ['query_status', 'close'],
           interactionId: embed.interactionId as string,
           operationId,
           result: {
@@ -1597,7 +1737,8 @@ export function createProtocolServices(deps: {
           formRef: embed.formRef as string,
           schemaVersion: embed.schemaVersion as string,
           recordVersion: expectedVersion ?? 0,
-          allowedActions: ['close'],
+          receiptSequence: 0,
+          allowedActions: ['retry', 'close'],
           interactionId: embed.interactionId as string,
           operationId,
           result: failedResult,
@@ -1835,7 +1976,8 @@ export function createProtocolServices(deps: {
           formRef: embed.formRef as string,
           schemaVersion: embed.schemaVersion as string,
           recordVersion: 0,
-          allowedActions: ['close'],
+          receiptSequence: 0,
+          allowedActions: ['query_status', 'close'],
           interactionId: embed.interactionId as string,
           operationId,
           result: {
@@ -1855,8 +1997,8 @@ export function createProtocolServices(deps: {
       return receiptFromPayload(receipt.payload as DualNamedReceipt);
     },
 
-    async getInteraction(connectionId, userId, interactionId) {
-      await requireConnection(connectionId);
+    async getInteraction(connectionId, userId, interactionId, caller) {
+      const connection = await requireConnection(connectionId);
       const interaction = await db()
         .selectFrom('businessUiInteractions')
         .selectAll()
@@ -1870,7 +2012,13 @@ export function createProtocolServices(deps: {
           'Interaction not found',
         );
       }
-      await assertInteractionGrantActive(interactionId, 'query');
+      const authorized = await authorizeCaller(
+        connection,
+        interaction as InteractionCallerRow,
+        caller,
+        userId,
+        'query',
+      );
       const scope = await permissionScopeForInteraction(interactionId);
       await assertBusinessAccess(
         userId,
@@ -1954,13 +2102,21 @@ export function createProtocolServices(deps: {
                   }
                 : null);
             const allowed =
-              status === 'FAILED' && operation.safeRetry
-                ? (['close'] as const)
-                : status === 'UNKNOWN'
-                  ? (['close'] as const)
-                  : status === 'SUCCEEDED'
-                    ? (['view_document', 'close'] as const)
-                    : (['close'] as const);
+              status === 'SUCCEEDED'
+                ? ['view_document', 'close']
+                : actionsForTerminal({
+                    status,
+                    safeRetry: Boolean(operation.safeRetry),
+                    writable: canWrite(authorized),
+                  });
+            const resultRequest = operation.result as {
+              request?: { record_version?: number };
+            } | null;
+            const recordVersion =
+              typeof resultRequest?.request?.record_version === 'number'
+                ? resultRequest.request.record_version
+                : 0;
+            const receiptSequence = await latestReceiptSequence(interactionId);
             return {
               success: status === 'SUCCEEDED',
               status: status.toLowerCase(),
@@ -1982,8 +2138,10 @@ export function createProtocolServices(deps: {
               formRef: scope.formRef,
               schema_version: scope.schemaVersion,
               schemaVersion: scope.schemaVersion,
-              record_version: 0,
-              recordVersion: 0,
+              record_version: recordVersion,
+              recordVersion,
+              receipt_sequence: receiptSequence,
+              receiptSequence,
               allowed_actions: [...allowed],
               allowedActions: [...allowed],
               result_type: operation.resultType,
@@ -2029,17 +2187,23 @@ export function createProtocolServices(deps: {
         schemaVersion: scope.schemaVersion,
         record_version: draftVersion,
         recordVersion: draftVersion,
+        receipt_sequence: 0,
+        receiptSequence: 0,
         allowed_actions: formalId
           ? ['view_document', 'close']
-          : ['save', 'submit', 'view_document', 'close'],
+          : canWrite(authorized)
+            ? ['save', 'submit', 'view_document', 'close']
+            : ['view_document', 'close'],
         allowedActions: formalId
           ? ['view_document', 'close']
-          : ['save', 'submit', 'view_document', 'close'],
+          : canWrite(authorized)
+            ? ['save', 'submit', 'view_document', 'close']
+            : ['view_document', 'close'],
       };
     },
 
-    async queryOperation(connectionId, userId, operationId) {
-      await requireConnection(connectionId);
+    async queryOperation(connectionId, userId, operationId, caller) {
+      const connection = await requireConnection(connectionId);
       const operation = await db()
         .selectFrom('businessUiOperations')
         .selectAll()
@@ -2053,8 +2217,23 @@ export function createProtocolServices(deps: {
           'Operation not found',
         );
       }
-      await assertInteractionGrantActive(
-        operation.interactionId as string,
+      const interaction = await db()
+        .selectFrom('businessUiInteractions')
+        .selectAll()
+        .where('interactionId', '=', operation.interactionId as string)
+        .executeTakeFirst();
+      if (!interaction) {
+        throw new ProtocolError(
+          'OPERATION_NOT_FOUND',
+          404,
+          'Operation not found',
+        );
+      }
+      const authorized = await authorizeCaller(
+        connection,
+        interaction as InteractionCallerRow,
+        caller,
+        userId,
         'query',
       );
       const scope = await permissionScopeForInteraction(
@@ -2087,6 +2266,25 @@ export function createProtocolServices(deps: {
           safeRetry: operation.safeRetry,
         };
       }
+      const status = String(operation.status);
+      const terminal =
+        status === 'UNKNOWN' || status === 'FAILED'
+          ? actionsForTerminal({
+              status,
+              safeRetry: Boolean(operation.safeRetry),
+              writable: canWrite(authorized),
+            })
+          : undefined;
+      const resultRequest = operation.result as {
+        request?: { record_version?: number };
+      } | null;
+      const recordVersion =
+        typeof resultRequest?.request?.record_version === 'number'
+          ? resultRequest.request.record_version
+          : 0;
+      const receiptSequence = await latestReceiptSequence(
+        operation.interactionId as string,
+      );
       return {
         success: false,
         query_only: true,
@@ -2099,8 +2297,12 @@ export function createProtocolServices(deps: {
         safeRetry: operation.safeRetry,
         record_id: null,
         recordId: null,
-        allowed_actions: operation.status === 'UNKNOWN' ? ['close'] : undefined,
-        allowedActions: operation.status === 'UNKNOWN' ? ['close'] : undefined,
+        record_version: recordVersion,
+        recordVersion,
+        receipt_sequence: receiptSequence,
+        receiptSequence,
+        allowed_actions: terminal ? [...terminal] : undefined,
+        allowedActions: terminal ? [...terminal] : undefined,
         result:
           operation.status === 'UNKNOWN' || operation.resultType === 'UNKNOWN'
             ? {
@@ -2117,8 +2319,8 @@ export function createProtocolServices(deps: {
       };
     },
 
-    async retryOperation(connectionId, userId, operationId) {
-      await requireConnection(connectionId);
+    async retryOperation(connectionId, userId, operationId, caller) {
+      const connection = await requireConnection(connectionId);
       const operation = await db()
         .selectFrom('businessUiOperations')
         .selectAll()
@@ -2132,8 +2334,23 @@ export function createProtocolServices(deps: {
           'Operation not found',
         );
       }
-      await assertInteractionGrantActive(
-        operation.interactionId as string,
+      const interaction = await db()
+        .selectFrom('businessUiInteractions')
+        .selectAll()
+        .where('interactionId', '=', operation.interactionId as string)
+        .executeTakeFirst();
+      if (!interaction) {
+        throw new ProtocolError(
+          'OPERATION_NOT_FOUND',
+          404,
+          'Operation not found',
+        );
+      }
+      await authorizeCaller(
+        connection,
+        interaction as InteractionCallerRow,
+        caller,
+        userId,
         'retry',
       );
       const scope = await permissionScopeForInteraction(
@@ -2188,6 +2405,40 @@ export function createProtocolServices(deps: {
         );
       }
 
+      // Browser callers are pinned to their own session. An agent retry stays on
+      // this grant's embed and must not use the latest embed for the user.
+      let embedQuery = db()
+        .selectFrom('businessUiEmbedContexts')
+        .selectAll()
+        .where('connectionId', '=', connectionId)
+        .where('interactionId', '=', operation.interactionId as string);
+      if (caller.kind === 'embed') {
+        embedQuery = embedQuery.where('authSessionRef', '=', caller.sessionRef);
+      } else {
+        embedQuery = embedQuery
+          .where('grantId', '=', caller.grant.grantId)
+          .where('clientId', '=', caller.grant.clientId)
+          .where('localUserId', '=', userId);
+      }
+      const candidates = await embedQuery.execute();
+      const embed = candidates
+        .filter(
+          (row) =>
+            new Date(row.expiresAt as Date) >= now() && row.mode !== 'detail',
+        )
+        .sort(
+          (left, right) =>
+            new Date(right.createdAt as Date).getTime() -
+            new Date(left.createdAt as Date).getTime(),
+        )[0];
+      if (!embed) {
+        throw new ProtocolError(
+          'EMBED_CONTEXT_REQUIRED',
+          403,
+          'Embed context required to retry',
+        );
+      }
+
       const attemptCount = Number(operation.attemptCount ?? 0) + 1;
       await db()
         .updateTable('businessUiOperations')
@@ -2199,22 +2450,6 @@ export function createProtocolServices(deps: {
         })
         .where('operationId', '=', operationId)
         .execute();
-
-      const embed = await db()
-        .selectFrom('businessUiEmbedContexts')
-        .selectAll()
-        .where('connectionId', '=', connectionId)
-        .where('localUserId', '=', userId)
-        .where('interactionId', '=', operation.interactionId)
-        .orderBy('createdAt', 'desc')
-        .executeTakeFirst();
-      if (!embed) {
-        throw new ProtocolError(
-          'EMBED_CONTEXT_REQUIRED',
-          403,
-          'Embed context required to retry',
-        );
-      }
 
       return this.submitDocument(
         connectionId,

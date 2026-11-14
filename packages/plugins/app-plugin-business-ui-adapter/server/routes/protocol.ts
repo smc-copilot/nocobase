@@ -10,6 +10,7 @@ import {
 import { Hono, type Context } from 'hono';
 
 import { ProtocolError, protocolErrorBody } from '../errors.js';
+import type { CallerContext, GrantContext } from '../grants.js';
 import { businessUiAdapterServiceToken } from '../tokens.js';
 
 type Env = { Variables: AuthEnv['Variables'] };
@@ -24,6 +25,31 @@ const userSecurity: Array<Record<string, string[]>> = [
 
 function bearer(context: Context): string | undefined {
   return context.req.header('authorization') ?? undefined;
+}
+
+function callerFromSession(
+  session: {
+    readonly user: { readonly id: string };
+    readonly session: { readonly id: string };
+    readonly credential?: { readonly data?: unknown };
+  },
+  grantFromCredential: (
+    userId: string,
+    credentialData: unknown,
+  ) => GrantContext,
+): CallerContext {
+  const data = session.credential?.data;
+  if (
+    data &&
+    typeof data === 'object' &&
+    typeof (data as { grantId?: unknown }).grantId === 'string'
+  ) {
+    return {
+      kind: 'agent',
+      grant: grantFromCredential(session.user.id, data),
+    };
+  }
+  return { kind: 'embed', sessionRef: session.session.id };
 }
 
 async function runProtocol(
@@ -217,10 +243,14 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
         runProtocol(context, async () => {
           const connectionId = context.req.param('connectionId')!;
           const interactionId = context.req.param('interactionId');
+          const session = context.get('auth')!;
           return services().getInteraction(
             connectionId,
-            context.get('auth')!.user.id,
+            session.user.id,
             interactionId,
+            callerFromSession(session, (userId, data) =>
+              services().grantFromCredential(userId, data),
+            ),
           );
         }),
     );
@@ -238,10 +268,14 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
         runProtocol(context, async () => {
           const connectionId = context.req.param('connectionId')!;
           const operationId = context.req.param('operationId');
+          const session = context.get('auth')!;
           return services().queryOperation(
             connectionId,
-            context.get('auth')!.user.id,
+            session.user.id,
             operationId,
+            callerFromSession(session, (userId, data) =>
+              services().grantFromCredential(userId, data),
+            ),
           );
         }),
     );
@@ -259,10 +293,14 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
         runProtocol(context, async () => {
           const connectionId = context.req.param('connectionId')!;
           const operationId = context.req.param('operationId');
+          const session = context.get('auth')!;
           return services().retryOperation(
             connectionId,
-            context.get('auth')!.user.id,
+            session.user.id,
             operationId,
+            callerFromSession(session, (userId, data) =>
+              services().grantFromCredential(userId, data),
+            ),
           );
         }),
     );

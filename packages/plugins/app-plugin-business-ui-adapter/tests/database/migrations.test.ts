@@ -209,3 +209,41 @@ describeMigration('business_ui_adapter_202611150001_grant_columns', {
     );
   },
 });
+
+describeMigration('business_ui_adapter_202611160001_embed_scopes', {
+  sources: migrations,
+  before: async ({ connection }) => {
+    // A22: a row written before this column exists must survive with scopes null.
+    await connection.repository('businessUiEmbedContexts').createOne({
+      values: {
+        id: 'legacy-embed',
+        authSessionRef: 'legacy-session',
+        connectionId: 'legacy-connection',
+        interactionId: 'legacy-interaction',
+        localUserId: 'legacy-user',
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        actionBounds: { actions: ['edit'] },
+        expiresAt: '2026-12-01T00:00:00.000Z',
+        createdAt: '2026-11-01T00:00:00.000Z',
+      },
+    });
+  },
+  up: async ({ connection, expectCollection }) => {
+    await expectCollection('businessUiEmbedContexts').toHaveField('scopes', {
+      type: 'json',
+      nullable: true,
+    });
+    const legacy = await connection
+      .repository('businessUiEmbedContexts')
+      .findOne({ filter: { id: 'legacy-embed' } });
+    expect(legacy).toMatchObject({
+      id: 'legacy-embed',
+      authSessionRef: 'legacy-session',
+      scopes: null,
+    });
+  },
+  down: async ({ expectCollection }) => {
+    await expectCollection('businessUiEmbedContexts').not.toHaveField('scopes');
+  },
+});

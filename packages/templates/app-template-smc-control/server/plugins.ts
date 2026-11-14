@@ -3,6 +3,7 @@ import foundation from '@nocobase/app-plugin-foundation/server';
 import defaultAccess from '@nocobase/app-plugin-authz-default-access/server';
 import sharingRules from '@nocobase/app-plugin-authz-sharing-rules/server';
 import restrictionRules from '@nocobase/app-plugin-authz-restriction-rules/server';
+import agentAuthorization from '@nocobase/app-plugin-agent-authorization/server';
 import apiKeys from '@nocobase/app-plugin-api-keys/server';
 import authentication from '@nocobase/app-plugin-authentication/server';
 import authorization from '@nocobase/app-plugin-authorization/server';
@@ -32,6 +33,9 @@ const serverPlugins: AppServerPlugins = defineServerPlugins([
   databaseExplorer,
   users,
   apiKeys,
+  // OAuth2 authorization server for external agent clients. Control operators
+  // manage clients, grants, and audit from System settings.
+  agentAuthorization,
   i18n,
   notification,
   notificationInApp,

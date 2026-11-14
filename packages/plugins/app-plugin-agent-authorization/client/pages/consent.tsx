@@ -1,8 +1,26 @@
 import { resolveAppUrl } from '@nocobase/app-client';
 import { useTranslation } from '@nocobase/i18n/client';
-import React, { useMemo, useState, type FormEvent } from 'react';
+import React, { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 const NS = '@nocobase/app-plugin-agent-authorization';
+
+interface ConsentContext {
+  readonly name: string;
+  readonly instanceLabel: string | null;
+  readonly audience: string;
+  readonly requestedScopes: readonly string[];
+  readonly allowedScopes: readonly string[];
+  readonly redirectUri: string | null;
+  readonly enabled: boolean;
+  readonly grant: {
+    readonly expiresAt: string | null;
+  } | null;
+}
+
+const SCOPE_LABELS: Readonly<Record<string, string>> = {
+  'business-ui:view': 'View business UI',
+  'business-ui:edit': 'Edit business UI',
+};
 
 /**
  * Minimal consent page for the authorization-code + PKCE flow.
@@ -19,6 +37,44 @@ export default function AgentConsentPage(): React.JSX.Element {
   const scope = params.get('scope') ?? '';
   const state = params.get('state') ?? '';
   const codeChallenge = params.get('code_challenge') ?? '';
+  const [meta, setMeta] = useState<ConsentContext | null>(null);
+  const [metaError, setMetaError] = useState(false);
+
+  useEffect(() => {
+    if (!clientId) return;
+    const controller = new AbortController();
+    const query = new URLSearchParams({ client_id: clientId });
+    if (scope) query.set('scope', scope);
+    if (redirectUri) query.set('redirect_uri', redirectUri);
+    void fetch(
+      resolveAppUrl(
+        `/api/agentAuthorization/oauth/consent-context?${query.toString()}`,
+      ),
+      {
+        credentials: 'include',
+        headers: { accept: 'application/json' },
+        signal: controller.signal,
+      },
+    )
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          data?: ConsentContext;
+        };
+        if (!response.ok || !payload.data) {
+          setMetaError(true);
+          return;
+        }
+        setMeta(payload.data);
+        setMetaError(false);
+      })
+      .catch((caught: unknown) => {
+        if (caught instanceof DOMException && caught.name === 'AbortError') {
+          return;
+        }
+        setMetaError(true);
+      });
+    return () => controller.abort();
+  }, [clientId, redirectUri, scope]);
 
   async function decide(decision: 'approve' | 'deny') {
     setBusy(true);
@@ -82,7 +138,17 @@ export default function AgentConsentPage(): React.JSX.Element {
     void decide('approve');
   }
 
-  const clientLabel = clientId || t('consent.unknownClient', 'Unknown client');
+  const appName =
+    meta?.name ??
+    (metaError
+      ? t('consent.unknownClient', 'Unknown client')
+      : t('consent.loading', 'Loading application…'));
+  const requested =
+    meta?.requestedScopes ?? scope.split(/\s+/u).filter(Boolean);
+  const shownRedirect = meta?.redirectUri ?? (meta ? null : redirectUri);
+  const expiry = meta?.grant
+    ? (meta.grant.expiresAt ?? t('consent.noExpiry', 'No expiry'))
+    : t('consent.newGrant', 'A new authorization will be created');
 
   return (
     <main
@@ -91,19 +157,52 @@ export default function AgentConsentPage(): React.JSX.Element {
       <h1>{t('consent.title', 'Authorize application')}</h1>
       <p>
         {t('consent.requesting', {
-          clientId: clientLabel,
+          clientId: appName,
           defaultValue: '{{clientId}} requests access.',
         })}
       </p>
+      {metaError ? (
+        <p>
+          {t('consent.metadataFailed', 'Could not load application details.')}
+        </p>
+      ) : null}
       <dl>
+        <dt>{t('consent.application', 'Application')}</dt>
+        <dd>{appName}</dd>
+        {meta?.instanceLabel ? (
+          <>
+            <dt>{t('consent.instance', 'Instance')}</dt>
+            <dd>{meta.instanceLabel}</dd>
+          </>
+        ) : null}
+        <dt>{t('consent.audience', 'Audience')}</dt>
+        <dd>
+          {meta?.audience ?? t('consent.loading', 'Loading application…')}
+        </dd>
         <dt>{t('consent.scopes', 'Scopes')}</dt>
-        <dd>{scope || t('consent.none', '(none)')}</dd>
+        <dd>
+          {requested.length === 0
+            ? t('consent.none', '(none)')
+            : requested
+                .map((item) =>
+                  t(`consent.scope.${item}`, SCOPE_LABELS[item] ?? item),
+                )
+                .join(', ')}
+        </dd>
         <dt>{t('consent.redirect', 'Redirect')}</dt>
-        <dd style={{ wordBreak: 'break-all' }}>{redirectUri}</dd>
+        <dd style={{ wordBreak: 'break-all' }}>
+          {shownRedirect ??
+            t('consent.redirectUnregistered', 'Redirect is not registered')}
+        </dd>
+        <dt>{t('consent.expires', 'Authorization expiry')}</dt>
+        <dd>{meta ? expiry : t('consent.loading', 'Loading application…')}</dd>
       </dl>
       {error ? <p style={{ color: 'crimson' }}>{error}</p> : null}
       <form onSubmit={onApprove} style={{ display: 'flex', gap: 12 }}>
-        <button type='submit' disabled={busy || !clientId}>
+        <button
+          type='submit'
+          disabled={busy || !clientId || meta?.enabled === false}
+        >
           {t('consent.approve', 'Approve')}
         </button>
         <button

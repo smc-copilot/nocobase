@@ -51,6 +51,7 @@ export const apiRoutes: AppApiRouteContribution<AppPluginApplication> =
       authenticate: authentication.required(),
       optionalAuthenticate: authentication.optional(),
       defaultAudience,
+      publicBasePath: () => application.publicBasePath,
     });
     const me = createMeRouter({
       services,

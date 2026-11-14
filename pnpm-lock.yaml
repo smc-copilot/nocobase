@@ -2750,7 +2750,7 @@ importers:
         version: 1.12.2
       officeparser:
         specifier: ^6.0.4
-        version: 6.1.1(encoding@0.1.13)(supports-color@8.1.1)
+        version: 6.1.1(encoding@0.1.13)
       pdf-parse:
         specifier: ^1.1.1
         version: 1.1.4
@@ -3255,7 +3255,7 @@ importers:
         version: 19.2.18
       eslint:
         specifier: 'catalog:'
-        version: 10.8.1(jiti@2.7.0)(supports-color@8.1.1)
+        version: 10.8.1(jiti@2.7.0)
       prettier:
         specifier: 'catalog:'
         version: 3.9.6
@@ -3578,7 +3578,7 @@ importers:
         version: 30.0.1(@noble/hashes@2.3.0)
       just-bash:
         specifier: 3.6.0
-        version: 3.6.0
+        version: 3.6.0(supports-color@8.1.1)
       knex:
         specifier: 'catalog:'
         version: 3.3.0(better-sqlite3@13.0.3)(pg-query-stream@4.17.0(pg@8.23.0))(pg@8.23.0)
@@ -5377,7 +5377,7 @@ importers:
         version: 0.487.0(react@19.2.8)
       officeparser:
         specifier: ^6.0.4
-        version: 6.1.1(encoding@0.1.13)(supports-color@8.1.1)
+        version: 6.1.1(encoding@0.1.13)
       react:
         specifier: ^19.0.0
         version: 19.2.8
@@ -6855,6 +6855,9 @@ importers:
       '@nocobase/app-host-docker':
         specifier: workspace:^
         version: link:../../app/app-host-docker
+      '@nocobase/app-plugin-agent-authorization':
+        specifier: workspace:^
+        version: link:../../plugins/app-plugin-agent-authorization
       '@nocobase/app-plugin-agents':
         specifier: workspace:^
         version: link:../../plugins/app-plugin-agents
@@ -7116,7 +7119,7 @@ importers:
         version: 0.10.2
       eslint:
         specifier: 'catalog:'
-        version: 10.8.1(jiti@2.7.0)
+        version: 10.8.1(jiti@2.7.0)(supports-color@8.1.1)
       eventsource-parser:
         specifier: 3.1.0
         version: 3.1.0
@@ -22206,7 +22209,7 @@ snapshots:
     dependencies:
       flat-cache: 4.0.1
 
-  file-type@21.3.4:
+  file-type@21.3.4(supports-color@8.1.1):
     dependencies:
       '@tokenizer/inflate': 0.4.1(supports-color@8.1.1)
       strtok3: 10.3.5
@@ -22215,7 +22218,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  file-type@22.0.2(supports-color@8.1.1):
+  file-type@22.0.2:
     dependencies:
       '@tokenizer/inflate': 0.4.1(supports-color@8.1.1)
       strtok3: 10.3.5
@@ -22993,11 +22996,11 @@ snapshots:
       readable-stream: 2.3.8
       setimmediate: 1.0.5
 
-  just-bash@3.6.0:
+  just-bash@3.6.0(supports-color@8.1.1):
     dependencies:
       diff: 8.0.4
       fast-xml-parser: 5.11.2
-      file-type: 21.3.4
+      file-type: 21.3.4(supports-color@8.1.1)
       guarded-fetch: 0.1.3
       ini: 6.0.0
       modern-tar: 0.7.7
@@ -24124,11 +24127,11 @@ snapshots:
       node-fetch-native: 1.6.7
       ufo: 1.6.4
 
-  officeparser@6.1.1(encoding@0.1.13)(supports-color@8.1.1):
+  officeparser@6.1.1(encoding@0.1.13):
     dependencies:
       '@xmldom/xmldom': 0.9.12
       fflate: 0.8.3
-      file-type: 22.0.2(supports-color@8.1.1)
+      file-type: 22.0.2
       pdfjs-dist: 5.6.205
       tesseract.js: 7.0.0(encoding@0.1.13)
     transitivePeerDependencies:
