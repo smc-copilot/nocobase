@@ -54,11 +54,16 @@ it('checks every internal package without selecting the root application and pro
       );
     }
     const run = () =>
-      spawnSync('pnpm', ['check:packages'], {
-        cwd: root,
-        encoding: 'utf8',
-        timeout: 30_000,
-      });
+      spawnSync(
+        process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+        ['check:packages'],
+        {
+          cwd: root,
+          encoding: 'utf8',
+          timeout: 30_000,
+          shell: process.platform === 'win32',
+        },
+      );
     expect(run().status).toBe(0);
     for (const name of ['first', 'second']) {
       expect(

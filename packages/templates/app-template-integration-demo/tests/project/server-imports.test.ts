@@ -8,9 +8,13 @@ import { promisify } from 'node:util';
 import { expect, it } from 'vitest';
 
 const exec = promisify(execFile);
+const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 async function compile(config: string): Promise<void> {
   try {
-    await exec('pnpm', ['exec', 'tsc', '-p', config], { cwd: appRoot });
+    await exec(pnpmCommand, ['exec', 'tsc', '-p', config], {
+      cwd: appRoot,
+      shell: process.platform === 'win32',
+    });
   } catch (error) {
     throw new Error((error as { stdout: string }).stdout, { cause: error });
   }

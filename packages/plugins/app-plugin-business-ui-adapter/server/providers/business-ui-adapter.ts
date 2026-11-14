@@ -1,9 +1,15 @@
 import { authenticationToken } from '@nocobase/app-plugin-authentication/server';
+import { authorizationToken } from '@nocobase/app-plugin-authorization';
+import { casdoorIdentityAdminToken } from '@nocobase/app-plugin-casdoor-identity/server/tokens';
 import type { AppPluginApplication } from '@nocobase/app-server/plugins';
 import { secretsServiceToken } from '@nocobase/app-server/secrets';
 import { databaseManagerToken } from '@nocobase/db';
 import { ServiceProvider } from '@nocobase/service-provider';
 
+import {
+  createNativeBusinessAccessChecker,
+  denyWithoutPermissionRef,
+} from '../business-access.js';
 import type { BusinessUiAdapterConfig } from '../config.js';
 import { createProtocolServices } from '../services/protocol.js';
 import { businessUiAdapterServiceToken } from '../tokens.js';
@@ -32,6 +38,17 @@ export class BusinessUiAdapterProvider extends ServiceProvider<AppPluginApplicat
           this.app.container.has(secretsServiceToken)
             ? resolver.resolve(secretsServiceToken)
             : undefined,
+        authorizeBusiness: this.app.container.has(authorizationToken)
+          ? createNativeBusinessAccessChecker(
+              resolver.resolve(authorizationToken),
+            )
+          : denyWithoutPermissionRef,
+        assertIdentityFresh: this.app.container.has(casdoorIdentityAdminToken)
+          ? (userId) =>
+              resolver
+                .resolve(casdoorIdentityAdminToken)
+                .provisioning.assertDirectorySnapshotFresh(userId)
+          : undefined,
       }),
     );
   }

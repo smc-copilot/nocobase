@@ -67,7 +67,39 @@ type BindingRow = {
   localUserId: string;
   externalIdentityId: string;
   status: string;
+  revision: number;
 };
+
+function asRevisionText(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return '';
+}
+
+function errorReason(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('reason' in error)) {
+    return undefined;
+  }
+  const reason = Reflect.get(error, 'reason');
+  return typeof reason === 'string' ? reason : undefined;
+}
+
+function toBindingRow(row: object): BindingRow {
+  const record = row as Record<string, unknown>;
+  return {
+    id: String(record.id),
+    connectionId: String(record.connectionId),
+    octopSubject: String(record.octopSubject),
+    localUserId: String(record.localUserId),
+    externalIdentityId: String(record.externalIdentityId),
+    status: String(record.status),
+    revision: Number(record.revision ?? 1),
+  };
+}
 
 export interface ProtocolServices {
   handshake(
@@ -182,13 +214,34 @@ export function createProtocolServices(deps: {
   /** Application secrets for sealing OAuth codes; required when consuming codes. */
   secrets?: () => SecretsService | undefined;
   /**
-   * Business document authorization. Defaults to deny-without-permissionRef so a
-   * local identity / active binding alone never grants document actions (FIX-08).
+   * Business document authorization. Defaults to deny-all so a local identity /
+   * active binding alone never grants document actions (FIX-08 / NEXT-01).
    */
   authorizeBusiness?: BusinessAccessChecker;
+  /**
+   * NEXT-05 / N22: fail closed when a directory-authoritative identity has a
+   * stale or missing attribute snapshot. Called on issue/save/submit/retry.
+   */
+  assertIdentityFresh?: (userId: string) => Promise<void>;
 }): ProtocolServices {
   const db = () => deps.database().connection().query;
   const authorizeBusiness = deps.authorizeBusiness ?? denyWithoutPermissionRef;
+
+  async function assertIdentityFresh(userId: string): Promise<void> {
+    if (!deps.assertIdentityFresh) return;
+    try {
+      await deps.assertIdentityFresh(userId);
+    } catch (error) {
+      if (errorReason(error) === 'DIRECTORY_SNAPSHOT_STALE') {
+        throw new ProtocolError(
+          'PERMISSION_DENIED',
+          403,
+          'Directory attribute snapshot is stale; sync identity before continuing',
+        );
+      }
+      throw error;
+    }
+  }
 
   async function assertBusinessAccess(
     userId: string,
@@ -209,6 +262,74 @@ export function createProtocolServices(deps: {
         'Business permission denied for this form action',
       );
     }
+  }
+
+  /**
+   * Recover form.permissionRef + interaction.recordId for query/retry/getInteraction.
+   * Interactions do not store formRef; tickets and embed contexts do.
+   */
+  async function permissionScopeForInteraction(interactionId: string): Promise<{
+    readonly permissionRef: string | null;
+    readonly recordId: string | null;
+    readonly formRef: string;
+    readonly schemaVersion: string;
+  }> {
+    const interaction = await db()
+      .selectFrom('businessUiInteractions')
+      .select(['recordId'])
+      .where('interactionId', '=', interactionId)
+      .executeTakeFirst();
+    if (!interaction) {
+      throw new ProtocolError(
+        'OPERATION_NOT_FOUND',
+        404,
+        'Interaction not found',
+      );
+    }
+    const embed = await db()
+      .selectFrom('businessUiEmbedContexts')
+      .select(['formRef', 'schemaVersion'])
+      .where('interactionId', '=', interactionId)
+      .orderBy('createdAt', 'desc')
+      .executeTakeFirst();
+    const ticket = embed
+      ? undefined
+      : await db()
+          .selectFrom('businessUiTickets')
+          .select(['formRef', 'schemaVersion', 'context'])
+          .where('interactionId', '=', interactionId)
+          .orderBy('createdAt', 'desc')
+          .executeTakeFirst();
+    const formRef = (embed?.formRef ?? ticket?.formRef) as string | undefined;
+    const schemaVersion = (embed?.schemaVersion ?? ticket?.schemaVersion) as
+      string | undefined;
+    if (!formRef || !schemaVersion) {
+      throw new ProtocolError(
+        'OPERATION_NOT_FOUND',
+        404,
+        'No form scope for interaction',
+      );
+    }
+    const form = await db()
+      .selectFrom('businessUiForms')
+      .select(['permissionRef'])
+      .where('formRef', '=', formRef)
+      .where('schemaVersion', '=', schemaVersion)
+      .executeTakeFirst();
+    const ticketPermission =
+      ticket &&
+      ((ticket.context as { permissionRef?: string | null } | null)
+        ?.permissionRef ??
+        null);
+    return {
+      permissionRef:
+        (form?.permissionRef as string | null | undefined) ??
+        ticketPermission ??
+        null,
+      recordId: (interaction.recordId as string | null) ?? null,
+      formRef,
+      schemaVersion,
+    };
   }
 
   async function ensureSubmitSlot(
@@ -423,14 +544,20 @@ export function createProtocolServices(deps: {
         'Subject does not match binding',
       );
     }
-    return row as BindingRow;
+    return toBindingRow(row);
   }
 
+  /**
+   * Load embed and re-verify connection enabled, binding revision, and current
+   * business permission on every protected action (NEXT-03).
+   */
   async function loadEmbed(
     connectionId: string,
     userId: string,
     sessionRef: string,
+    action: BusinessAction = 'save',
   ) {
+    await requireConnection(connectionId);
     const embed = await db()
       .selectFrom('businessUiEmbedContexts')
       .selectAll()
@@ -454,7 +581,120 @@ export function createProtocolServices(deps: {
     if (new Date(embed.expiresAt as Date) < now()) {
       throw new ProtocolError('AUTH_REQUIRED', 401, 'Embed context expired');
     }
+    if (!embed.nonce || embed.bindingRevision == null) {
+      throw new ProtocolError(
+        'EMBED_CONTEXT_REQUIRED',
+        403,
+        'Embed context is missing revision constraints; re-open the form',
+      );
+    }
+
+    const bindingId =
+      typeof embed.subjectBindingId === 'string'
+        ? embed.subjectBindingId
+        : null;
+    let binding: BindingRow | undefined;
+    if (bindingId) {
+      const row = await db()
+        .selectFrom('businessUiSubjectBindings')
+        .selectAll()
+        .where('id', '=', bindingId)
+        .executeTakeFirst();
+      binding = row ? toBindingRow(row) : undefined;
+    } else {
+      const interaction = await db()
+        .selectFrom('businessUiInteractions')
+        .select(['subjectBindingId'])
+        .where('interactionId', '=', String(embed.interactionId))
+        .executeTakeFirst();
+      if (typeof interaction?.subjectBindingId === 'string') {
+        const row = await db()
+          .selectFrom('businessUiSubjectBindings')
+          .selectAll()
+          .where('id', '=', interaction.subjectBindingId)
+          .executeTakeFirst();
+        binding = row ? toBindingRow(row) : undefined;
+      }
+    }
+    if (!binding || binding.status !== 'active') {
+      throw new ProtocolError(
+        'SUBJECT_BINDING_REQUIRED',
+        403,
+        'Subject binding was revoked; re-open the form',
+      );
+    }
+    if (
+      asRevisionText(binding.revision) !== asRevisionText(embed.bindingRevision)
+    ) {
+      throw new ProtocolError(
+        'SUBJECT_BINDING_REQUIRED',
+        403,
+        'Subject binding revision changed; re-open the form',
+      );
+    }
+
+    const form = await requireForm(
+      String(embed.formRef),
+      String(embed.schemaVersion),
+    );
+    const formConfigVersion = formConfigVersionOf(form);
+    if (
+      embed.formConfigVersion &&
+      embed.formConfigVersion !== formConfigVersion
+    ) {
+      throw new ProtocolError(
+        'FORM_NOT_REGISTERED',
+        403,
+        'Form configuration changed; re-open the form',
+      );
+    }
+    await assertBusinessAccess(
+      userId,
+      form.permissionRef,
+      action,
+      (
+        await db()
+          .selectFrom('businessUiInteractions')
+          .select('recordId')
+          .where('interactionId', '=', embed.interactionId as string)
+          .executeTakeFirst()
+      )?.recordId as string | null,
+    );
     return embed;
+  }
+
+  function formConfigVersionOf(form: FormRow): string {
+    return `${form.formRef}@${form.schemaVersion}@${form.permissionRef ?? ''}@${form.enabled ? '1' : '0'}`;
+  }
+
+  /** Ensure the interaction's subject binding is still active (query/retry paths). */
+  async function assertInteractionBindingActive(
+    interactionId: string,
+  ): Promise<void> {
+    const interaction = await db()
+      .selectFrom('businessUiInteractions')
+      .select(['subjectBindingId'])
+      .where('interactionId', '=', interactionId)
+      .executeTakeFirst();
+    if (!interaction?.subjectBindingId) {
+      throw new ProtocolError(
+        'SUBJECT_BINDING_REQUIRED',
+        403,
+        'Subject binding required',
+      );
+    }
+    const binding = await db()
+      .selectFrom('businessUiSubjectBindings')
+      .select(['status'])
+      .where('id', '=', interaction.subjectBindingId as string)
+      .executeTakeFirst();
+    if (!binding || binding.status !== 'active') {
+      throw new ProtocolError(
+        'SUBJECT_BINDING_REQUIRED',
+        403,
+        'Subject binding was revoked',
+      );
+    }
   }
 
   function receiptFromPayload(payload: DualNamedReceipt): DualNamedReceipt {
@@ -613,6 +853,7 @@ export function createProtocolServices(deps: {
     },
 
     async issueTicket(connectionId, userId, body) {
+      await assertIdentityFresh(userId);
       const connection = await requireConnection(connectionId);
       const formRef = body.formRef ?? body.form_ref;
       const schemaVersion = body.schemaVersion ?? body.schema_version ?? '1';
@@ -719,12 +960,14 @@ export function createProtocolServices(deps: {
           schemaVersion: form.schemaVersion,
           nonce,
           action,
-          bindingRevision: binding.id,
+          bindingRevision: String(binding.revision ?? 1),
           context: {
             recordId,
             documentType: form.documentType,
             mode: form.mode,
             permissionRef: form.permissionRef,
+            subjectBindingId: binding.id,
+            formConfigVersion: formConfigVersionOf(form),
           },
           expiresAt: addSeconds(createdAt, TICKET_TTL_SECONDS),
           consumedAt: null,
@@ -801,20 +1044,33 @@ export function createProtocolServices(deps: {
           'nonce does not match the issued ticket',
         );
       }
-      // Binding must still be the active revision recorded on the ticket.
-      if (ticketRow.bindingRevision) {
-        const binding = await db()
-          .selectFrom('businessUiSubjectBindings')
-          .select(['id', 'status'])
-          .where('id', '=', ticketRow.bindingRevision)
-          .executeTakeFirst();
-        if (!binding || binding.status !== 'active') {
-          throw new ProtocolError(
-            'SUBJECT_BINDING_REQUIRED',
-            403,
-            'Subject binding was revoked; re-issue the ticket',
-          );
-        }
+      // Binding must still be active at the revision captured on the ticket (NEXT-03).
+      // Legacy tickets that stored binding.id are rejected (non-numeric revision).
+      if (
+        !ticketRow.bindingRevision ||
+        !/^\d+$/.test(ticketRow.bindingRevision)
+      ) {
+        throw new ProtocolError(
+          'TICKET_REPLAYED',
+          403,
+          'Ticket lacks a valid binding revision; re-issue the ticket',
+        );
+      }
+      const binding = await db()
+        .selectFrom('businessUiSubjectBindings')
+        .selectAll()
+        .where('id', '=', ticketRow.subjectBindingId)
+        .executeTakeFirst();
+      if (
+        !binding ||
+        binding.status !== 'active' ||
+        asRevisionText(binding.revision ?? 1) !== ticketRow.bindingRevision
+      ) {
+        throw new ProtocolError(
+          'SUBJECT_BINDING_REQUIRED',
+          403,
+          'Subject binding was revoked or revised; re-issue the ticket',
+        );
       }
 
       const existing = await deps.auth().getSession(request.headers, {
@@ -872,6 +1128,8 @@ export function createProtocolServices(deps: {
         documentType?: string;
         mode?: string;
         permissionRef?: string | null;
+        subjectBindingId?: string;
+        formConfigVersion?: string;
       };
       const mode = context.mode === 'detail' ? 'detail' : 'edit';
       await assertBusinessAccess(
@@ -895,6 +1153,10 @@ export function createProtocolServices(deps: {
           localUserId: ticketRow.localUserId,
           formRef: ticketRow.formRef,
           schemaVersion: ticketRow.schemaVersion,
+          subjectBindingId:
+            context.subjectBindingId ?? ticketRow.subjectBindingId,
+          bindingRevision: ticketRow.bindingRevision,
+          formConfigVersion: context.formConfigVersion ?? null,
           mode,
           nonce,
           actionBounds: [...actionBounds],
@@ -947,7 +1209,8 @@ export function createProtocolServices(deps: {
     },
 
     async saveDocument(connectionId, userId, sessionRef, body) {
-      const embed = await loadEmbed(connectionId, userId, sessionRef);
+      await assertIdentityFresh(userId);
+      const embed = await loadEmbed(connectionId, userId, sessionRef, 'save');
       const bounds = (embed.actionBounds as string[] | null) ?? [];
       if (embed.mode === 'detail' || !bounds.includes('save')) {
         throw new ProtocolError(
@@ -956,12 +1219,8 @@ export function createProtocolServices(deps: {
           'Save is not allowed in this embed context',
         );
       }
-      const form = await requireForm(
-        String(embed.formRef),
-        String(embed.schemaVersion),
-      );
-      await assertBusinessAccess(userId, form.permissionRef, 'save', null);
-
+      // loadEmbed already re-checks connection, binding revision, form config,
+      // and business access with the interaction's current recordId (not '*').
       const fields = parseGenericRequestFields({
         title: body.title,
         description: body.description,
@@ -1117,7 +1376,8 @@ export function createProtocolServices(deps: {
     },
 
     async submitDocument(connectionId, userId, sessionRef, body) {
-      const embed = await loadEmbed(connectionId, userId, sessionRef);
+      await assertIdentityFresh(userId);
+      const embed = await loadEmbed(connectionId, userId, sessionRef, 'submit');
       const bounds = (embed.actionBounds as string[] | null) ?? [];
       if (embed.mode === 'detail' || !bounds.includes('submit')) {
         throw new ProtocolError(
@@ -1126,12 +1386,8 @@ export function createProtocolServices(deps: {
           'Submit is not allowed in this embed context',
         );
       }
-      const form = await requireForm(
-        String(embed.formRef),
-        String(embed.schemaVersion),
-      );
-      await assertBusinessAccess(userId, form.permissionRef, 'submit', null);
-
+      // loadEmbed already re-checks connection, binding revision, form config,
+      // and business access with the interaction's current recordId (not '*').
       const idempotencyKey =
         (typeof body.idempotency_key === 'string' &&
           body.idempotency_key.trim()) ||
@@ -1549,6 +1805,52 @@ export function createProtocolServices(deps: {
         .selectAll()
         .where('operationId', '=', operationId)
         .executeTakeFirstOrThrow();
+
+      // N18: COMMIT succeeded and receipt exists; drop the client response and
+      // detach the receipt from the interaction so reconcile must restore SUCCESS.
+      if (deps.config().faultInjection?.loseSubmitResponse) {
+        await db()
+          .updateTable('businessUiOperations')
+          .set({
+            status: 'UNKNOWN',
+            resultType: 'UNKNOWN',
+            sideEffectConfirmed: null,
+            updatedAt: now(),
+          })
+          .where('operationId', '=', operationId)
+          .execute();
+        await db()
+          .updateTable('businessUiInteractions')
+          .set({
+            latestReceiptId: null,
+            updatedAt: now(),
+          })
+          .where('interactionId', '=', embed.interactionId)
+          .execute();
+        return serializeReceipt({
+          status: 'unknown',
+          documentType: DOCUMENT_TYPE,
+          recordId: null,
+          formRef: embed.formRef as string,
+          schemaVersion: embed.schemaVersion as string,
+          recordVersion: 0,
+          allowedActions: ['close'],
+          interactionId: embed.interactionId as string,
+          operationId,
+          result: {
+            type: 'TECHNICAL_ERROR',
+            status: 'UNKNOWN',
+            code: 'RESPONSE_LOST',
+            message:
+              'Submit committed but the response was lost; query or reconcile',
+            disclosable: true,
+            safe_retry: false,
+            idempotent: true,
+            side_effect: null,
+          },
+        });
+      }
+
       return receiptFromPayload(receipt.payload as DualNamedReceipt);
     },
 
@@ -1567,17 +1869,13 @@ export function createProtocolServices(deps: {
           'Interaction not found',
         );
       }
+      await assertInteractionBindingActive(interactionId);
+      const scope = await permissionScopeForInteraction(interactionId);
       await assertBusinessAccess(
         userId,
-        (
-          await db()
-            .selectFrom('businessUiForms')
-            .select('permissionRef')
-            .where('formRef', '=', FORM_REFS.edit)
-            .executeTakeFirst()
-        )?.permissionRef as string | null | undefined,
+        scope.permissionRef,
         'query',
-        interaction.recordId as string | null,
+        scope.recordId,
       );
       const operationId =
         (interaction.submitSlotOperationId as string | null) ||
@@ -1603,25 +1901,139 @@ export function createProtocolServices(deps: {
           operationId: operationId ?? receiptPayload.operationId,
         };
       }
+
+      // NEXT-04: when no receipt is attached, project from the operation — never
+      // fall back to draft for FAILED / UNKNOWN / BUSINESS_REJECTED / SUCCESS.
+      if (operationId) {
+        const operation = await db()
+          .selectFrom('businessUiOperations')
+          .selectAll()
+          .where('operationId', '=', operationId)
+          .executeTakeFirst();
+        if (operation) {
+          const status = String(operation.status);
+          // A SUCCESS receipt detached after loseSubmitResponse must not surface
+          // as submitted until reconcile re-links it (N18). Prefer the operation
+          // status when it is still UNKNOWN.
+          if (status !== 'UNKNOWN') {
+            const byOpReceipt = await db()
+              .selectFrom('businessUiReceipts')
+              .selectAll()
+              .where('operationId', '=', operationId)
+              .executeTakeFirst();
+            if (byOpReceipt) {
+              return {
+                success: true,
+                ...(byOpReceipt.payload as DualNamedReceipt),
+                interaction_id: interactionId,
+                interactionId,
+                operation_id: operationId,
+                operationId,
+              };
+            }
+          }
+          if (
+            status === 'FAILED' ||
+            status === 'UNKNOWN' ||
+            status === 'BUSINESS_REJECTED' ||
+            status === 'SUCCEEDED'
+          ) {
+            const result =
+              (operation.result as Record<string, unknown> | null) ??
+              (status === 'UNKNOWN'
+                ? {
+                    type: 'TECHNICAL_ERROR',
+                    status: 'UNKNOWN',
+                    code: 'UNKNOWN',
+                    message: 'Operation result is not yet known',
+                    disclosable: true,
+                    safe_retry: false,
+                    idempotent: true,
+                    side_effect: null,
+                  }
+                : null);
+            const allowed =
+              status === 'FAILED' && operation.safeRetry
+                ? (['close'] as const)
+                : status === 'UNKNOWN'
+                  ? (['close'] as const)
+                  : status === 'SUCCEEDED'
+                    ? (['view_document', 'close'] as const)
+                    : (['close'] as const);
+            return {
+              success: status === 'SUCCEEDED',
+              status: status.toLowerCase(),
+              interaction_id: interactionId,
+              interactionId,
+              record_id:
+                typeof interaction.recordId === 'string'
+                  ? interaction.recordId
+                  : null,
+              recordId:
+                typeof interaction.recordId === 'string'
+                  ? interaction.recordId
+                  : null,
+              operation_id: operationId,
+              operationId,
+              document_type: DOCUMENT_TYPE,
+              documentType: DOCUMENT_TYPE,
+              form_ref: scope.formRef,
+              formRef: scope.formRef,
+              schema_version: scope.schemaVersion,
+              schemaVersion: scope.schemaVersion,
+              record_version: 0,
+              recordVersion: 0,
+              allowed_actions: [...allowed],
+              allowedActions: [...allowed],
+              result_type: operation.resultType,
+              resultType: operation.resultType,
+              safe_retry: operation.safeRetry,
+              safeRetry: operation.safeRetry,
+              result,
+            };
+          }
+        }
+      }
+
+      // True draft: no terminal operation. Use the draft document version when present.
+      const draft = await db()
+        .selectFrom('integrationTestDocuments')
+        .select(['version', 'formalRecordId', 'status'])
+        .where('interactionId', '=', interactionId)
+        .executeTakeFirst();
+      const draftVersion =
+        draft && draft.status !== 'submitted'
+          ? Number(draft.version)
+          : draft
+            ? Number(draft.version)
+            : 0;
+      const formalId =
+        draft?.status === 'submitted'
+          ? ((draft.formalRecordId as string | null) ?? null)
+          : null;
       return {
         success: true,
         status: 'draft',
         interaction_id: interactionId,
         interactionId,
-        record_id: null,
-        recordId: null,
+        record_id: formalId,
+        recordId: formalId,
         operation_id: operationId,
         operationId,
         document_type: DOCUMENT_TYPE,
         documentType: DOCUMENT_TYPE,
-        form_ref: FORM_REFS.edit,
-        formRef: FORM_REFS.edit,
-        schema_version: '1',
-        schemaVersion: '1',
-        record_version: 0,
-        recordVersion: 0,
-        allowed_actions: ['save', 'submit', 'view_document', 'close'],
-        allowedActions: ['save', 'submit', 'view_document', 'close'],
+        form_ref: scope.formRef,
+        formRef: scope.formRef,
+        schema_version: scope.schemaVersion,
+        schemaVersion: scope.schemaVersion,
+        record_version: draftVersion,
+        recordVersion: draftVersion,
+        allowed_actions: formalId
+          ? ['view_document', 'close']
+          : ['save', 'submit', 'view_document', 'close'],
+        allowedActions: formalId
+          ? ['view_document', 'close']
+          : ['save', 'submit', 'view_document', 'close'],
       };
     },
 
@@ -1640,7 +2052,16 @@ export function createProtocolServices(deps: {
           'Operation not found',
         );
       }
-      await assertBusinessAccess(userId, 'generic.request:edit', 'query', null);
+      await assertInteractionBindingActive(operation.interactionId as string);
+      const scope = await permissionScopeForInteraction(
+        operation.interactionId as string,
+      );
+      await assertBusinessAccess(
+        userId,
+        scope.permissionRef,
+        'query',
+        scope.recordId,
+      );
       const receipt = await db()
         .selectFrom('businessUiReceipts')
         .selectAll()
@@ -1649,7 +2070,9 @@ export function createProtocolServices(deps: {
       const receiptPayload = receipt
         ? (receipt.payload as DualNamedReceipt)
         : undefined;
-      if (receiptPayload) {
+      // N16/N18: while the operation is UNKNOWN, do not surface a detached SUCCESS
+      // receipt as the authoritative query result — keep UNKNOWN until reconcile.
+      if (receiptPayload && operation.status !== 'UNKNOWN') {
         return {
           success: true,
           query_only: true,
@@ -1672,6 +2095,8 @@ export function createProtocolServices(deps: {
         safeRetry: operation.safeRetry,
         record_id: null,
         recordId: null,
+        allowed_actions: operation.status === 'UNKNOWN' ? ['close'] : undefined,
+        allowedActions: operation.status === 'UNKNOWN' ? ['close'] : undefined,
         result:
           operation.status === 'UNKNOWN' || operation.resultType === 'UNKNOWN'
             ? {
@@ -1703,7 +2128,17 @@ export function createProtocolServices(deps: {
           'Operation not found',
         );
       }
-      await assertBusinessAccess(userId, 'generic.request:edit', 'retry', null);
+      await assertIdentityFresh(userId);
+      await assertInteractionBindingActive(operation.interactionId as string);
+      const scope = await permissionScopeForInteraction(
+        operation.interactionId as string,
+      );
+      await assertBusinessAccess(
+        userId,
+        scope.permissionRef,
+        'retry',
+        scope.recordId,
+      );
       if (
         operation.status === 'UNKNOWN' ||
         operation.resultType === 'UNKNOWN'
@@ -1899,6 +2334,8 @@ export function createProtocolServices(deps: {
         const result = payload.result as
           { status?: string; type?: string } | undefined;
         const resultStatus = result?.status ?? result?.type;
+        // N19: only SUCCESS receipt result types prove success; BUSINESS_REJECTED
+        // / FAILED never become SUCCESS; unknown shapes leave UNKNOWN.
         if (resultStatus === 'SUCCESS') {
           await db()
             .updateTable('businessUiOperations')
@@ -1912,16 +2349,38 @@ export function createProtocolServices(deps: {
             .where('operationId', '=', operation.operationId)
             .where('status', '=', 'UNKNOWN')
             .execute();
+          await db()
+            .updateTable('businessUiInteractions')
+            .set({
+              latestReceiptId: receipt.id,
+              latestSubmitOperationId: operation.operationId,
+              submitSlotOperationId: operation.operationId,
+              updatedAt: now(),
+            })
+            .where('interactionId', '=', operation.interactionId)
+            .execute();
           fixed += 1;
-        } else if (
-          resultStatus === 'FAILED' ||
-          resultStatus === 'BUSINESS_REJECTED'
-        ) {
+        } else if (resultStatus === 'FAILED') {
+          // Mark FAILED only when non-execution is proven (receipt says FAILED).
           await db()
             .updateTable('businessUiOperations')
             .set({
-              status: resultStatus,
-              resultType: resultStatus,
+              status: 'FAILED',
+              resultType: 'FAILED',
+              result: payload.result ?? null,
+              sideEffectConfirmed: false,
+              updatedAt: now(),
+            })
+            .where('operationId', '=', operation.operationId)
+            .where('status', '=', 'UNKNOWN')
+            .execute();
+          fixed += 1;
+        } else if (resultStatus === 'BUSINESS_REJECTED') {
+          await db()
+            .updateTable('businessUiOperations')
+            .set({
+              status: 'BUSINESS_REJECTED',
+              resultType: 'BUSINESS_REJECTED',
               result: payload.result ?? null,
               sideEffectConfirmed: false,
               updatedAt: now(),
@@ -1931,7 +2390,7 @@ export function createProtocolServices(deps: {
             .execute();
           fixed += 1;
         }
-        // Other receipt shapes do not prove SUCCESS — leave UNKNOWN.
+        // Other receipt shapes do not prove SUCCESS or non-execution — leave UNKNOWN.
       }
       return fixed;
     },

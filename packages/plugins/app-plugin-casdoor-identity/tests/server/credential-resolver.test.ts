@@ -272,6 +272,90 @@ describe('Casdoor credential resolver', () => {
     expect(response.status).toBe(401);
   });
 
+  it('N26: rejects an expired token', async () => {
+    await clearBindings();
+    await bindSubject();
+    const response = await router.request('/casdoorIdentity/me', {
+      headers: {
+        [CASDOOR_ACCESS_TOKEN_HEADER]: await signClaims({
+          exp: Math.floor(Date.now() / 1000) - 60,
+        }),
+      },
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('N26: rejects a token from an untrusted issuer', async () => {
+    await clearBindings();
+    await bindSubject();
+    const { privateKey: otherKey } = await generateKeyPair('RS256');
+    const forged = await new SignJWT({})
+      .setProtectedHeader({ alg: 'RS256', kid: 'test-casdoor' })
+      .setIssuer('https://evil.example')
+      .setAudience(AUDIENCE)
+      .setSubject(SUBJECT)
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(otherKey);
+    const response = await router.request('/casdoorIdentity/me', {
+      headers: { [CASDOOR_ACCESS_TOKEN_HEADER]: forged },
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('N26: rejects a login-style ID token used as a resource credential (wrong audience)', async () => {
+    await clearBindings();
+    await bindSubject();
+    // Casdoor login ID tokens are issued for the OAuth client_id, not the resource API audience.
+    const idToken = await signClaims({
+      audience: 'casdoor-login-client',
+    });
+    const response = await router.request('/casdoorIdentity/me', {
+      headers: { [CASDOOR_ACCESS_TOKEN_HEADER]: idToken },
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it('N26: refuses when audience is not configured', async () => {
+    await clearBindings();
+    await bindSubject();
+    const unconfigured = new Auth({
+      connection: database.connection(),
+      baseURL: BASE_URL,
+      secret: 'development-secret-at-least-32-characters',
+      appName: 'NocoBase3',
+      emailAndPassword: { enabled: true, autoSignIn: true },
+      session: { storeSessionInDatabase: true },
+    });
+    unconfigured.addCredentialResolver(
+      createCasdoorCredentialResolver({
+        connection: () => database.connection(),
+        config: () => ({
+          issuer: ISSUER,
+          jwks: { keys: [jwk as Record<string, unknown>] },
+        }),
+      }),
+    );
+    const probe = new Hono<AuthEnv>();
+    probe.onError((error, context) => apiErrorHandler(error, context));
+    probe.get(
+      '/casdoorIdentity/me',
+      describeRoute({
+        security: [{ [CASDOOR_ACCESS_TOKEN_SCHEME]: [] }],
+      }),
+      unconfigured.required({ scopedKeys: true }),
+      (context) => context.json({ data: { ok: true } }),
+    );
+    const response = await probe.request('/casdoorIdentity/me', {
+      headers: { [CASDOOR_ACCESS_TOKEN_HEADER]: await signToken() },
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: { reason: 'CASDOOR_AUDIENCE_NOT_CONFIGURED' },
+    });
+    await unconfigured.close();
+  });
+
   it('DENY disabled: bound user disabled via UserAdministrationService is rejected', async () => {
     await clearBindings();
     await bindSubject();

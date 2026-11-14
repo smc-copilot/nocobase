@@ -1,13 +1,16 @@
 /**
- * Maps `form.permissionRef` onto a native-style resource/action check.
+ * Maps `form.permissionRef` onto a native Authorization resource/action check.
  *
  * Supported shapes:
  * - `generic.request:edit` → resource type `generic.request`, action `edit`
  * - `generic.request/edit` → same
  *
- * The adapter never invents grants: the installing application supplies
- * {@link BusinessAccessChecker} (typically Authorization `can` for the user).
+ * Unknown or unparseable refs deny. The adapter never invents grants: the installing
+ * application supplies {@link BusinessAccessChecker}, typically via
+ * {@link createNativeBusinessAccessChecker}.
  */
+
+import type { AppAuthorization } from '@nocobase/app-plugin-authorization';
 
 export type BusinessAction =
   'issue' | 'save' | 'submit' | 'view' | 'query' | 'retry';
@@ -45,12 +48,39 @@ export function parsePermissionRef(
 }
 
 /**
- * Default checker used when the application did not wire Authorization:
- * a missing permissionRef denies every business action (identity alone is not enough).
+ * Default when the application did not wire Authorization: deny every business
+ * action. A local identity or active binding alone never grants document access.
  */
-export const denyWithoutPermissionRef: BusinessAccessChecker = async (
-  request,
-) => Boolean(request.permissionRef);
+export const denyWithoutPermissionRef: BusinessAccessChecker = async () =>
+  false;
+
+/**
+ * Native Authorization checker: maps `permissionRef` to
+ * `authz.for({ principal: user }).can({ resource, action })`.
+ * Unparseable or empty refs deny. Absent Authorization is a caller concern —
+ * pass this only when `authorizationToken` is registered.
+ */
+export function createNativeBusinessAccessChecker(
+  authz: AppAuthorization,
+): BusinessAccessChecker {
+  return async (request) => {
+    if (!request.permissionRef) return false;
+    const parsed = parsePermissionRef(request.permissionRef);
+    if (!parsed) return false;
+    const principal = { type: 'user' as const, id: request.userId };
+    const subjects = [
+      { type: 'authenticated' as const, id: '*' },
+      ...(await authz.subjects.resolveFor(principal)),
+    ];
+    return authz.for({ principal, subjects }).can({
+      resource: {
+        type: parsed.resourceType,
+        id: request.recordId ?? '*',
+      },
+      action: parsed.action,
+    });
+  };
+}
 
 /**
  * Test/harness checker: allows when `permissionRef` is set and the user id is listed

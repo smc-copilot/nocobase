@@ -106,6 +106,8 @@ export class IdentityProvisioningService {
     const existing = await this.findBinding(identity.issuer, identity.subject);
     if (existing) {
       this.assertAdmitted(provider, identity);
+      await this.assertLocalUserActive(existing.localUserId);
+      await this.assertDirectorySnapshotFresh(existing.localUserId);
       await this.reuse(existing, identity, provider);
       return {
         bindingId: existing.id,
@@ -183,10 +185,81 @@ export class IdentityProvisioningService {
     );
   }
 
+  /** N10: a disabled local account must not mint a new browser or JWT login. */
+  private async assertLocalUserActive(localUserId: string): Promise<void> {
+    const user = await this.runtime
+      .database()
+      .connection()
+      .query.selectFrom('user')
+      .select(['disabledAt'])
+      .where('id', '=', localUserId)
+      .executeTakeFirst();
+    if (!user || toDateOrNull(user.disabledAt) != null) {
+      throw identityError(
+        'PERMISSION_DENIED',
+        'ACCOUNT_DISABLED',
+        'The bound local user is disabled.',
+      );
+    }
+  }
+
+  /**
+   * N22: directory-authoritative identities (directoryObservedAt set) fail closed when the
+   * snapshot is missing or older than snapshotMaxAgeSeconds. Call on login and before
+   * issue/save/submit/retry so stale snapshots cannot mint new integration access.
+   */
+  public async assertDirectorySnapshotFresh(
+    localUserId: string,
+  ): Promise<void> {
+    const rows = await this.runtime
+      .database()
+      .connection()
+      .query.selectFrom('externalIdentities')
+      .select(['id', 'directoryObservedAt', 'directoryAttributes'])
+      .where('localUserId', '=', localUserId)
+      .execute();
+    const maxAgeSeconds =
+      this.runtime.config().sync?.snapshotMaxAgeSeconds ?? 600;
+    const now = nowOf(this.runtime);
+    for (const row of rows) {
+      const observedAt = toDateOrNull(row.directoryObservedAt);
+      if (observedAt == null) continue; // Never directory-synced: JIT still allowed.
+      const ageMs = now.getTime() - observedAt.getTime();
+      const attributesOk =
+        row.directoryAttributes != null &&
+        typeof row.directoryAttributes === 'object';
+      if (ageMs > maxAgeSeconds * 1000 || !attributesOk) {
+        await this.audit.record({
+          action: 'identity.snapshot_stale',
+          actorId: null,
+          targetType: 'externalIdentity',
+          targetId: str(row.id),
+          details: {
+            localUserId,
+            observedAt: observedAt.toISOString(),
+            maxAgeSeconds,
+            ageSeconds: Math.floor(ageMs / 1000),
+          },
+        });
+        throw identityError(
+          'FAILED_PRECONDITION',
+          'DIRECTORY_SNAPSHOT_STALE',
+          'The directory attribute snapshot is missing or expired; run identity sync before continuing.',
+          {
+            localUserId,
+            maxAgeSeconds,
+            observedAt: observedAt.toISOString(),
+          },
+        );
+      }
+    }
+  }
+
   /**
    * JWT proves identity; after the first directory sync (`directoryObservedAt` set), only the
    * directory snapshot may drive Permission Set mapping. Returns `undefined` when a required
-   * snapshot is stale so login still succeeds without JWT-driven grant upgrades.
+   * snapshot is stale (caller must already have failed closed via
+   * {@link assertDirectorySnapshotFresh}).
    */
   private resolveMappingIdentity(
     tokenIdentity: ExternalIdentityClaims,
@@ -211,7 +284,6 @@ export class IdentityProvisioningService {
       row?.directoryAttributes == null ||
       typeof row.directoryAttributes !== 'object'
     ) {
-      // Snapshot missing/stale: do not upgrade grants from the JWT; leave existing grants.
       return undefined;
     }
     return extractIdentity(

@@ -1,8 +1,10 @@
 import { authenticationToken } from '@nocobase/app-plugin-authentication/server';
 import type { AuthEnv } from '@nocobase/app-plugin-authentication/server';
+import { CASDOOR_ACCESS_TOKEN_SCHEME } from '@nocobase/app-plugin-casdoor-identity/server';
 import type { AppPluginApplication } from '@nocobase/app-server/plugins';
 import {
   defineRootRoutes,
+  describeRoute,
   type AppRootRouteContribution,
 } from '@nocobase/app-server/router';
 import { Hono, type Context } from 'hono';
@@ -11,6 +13,14 @@ import { ProtocolError, protocolErrorBody } from '../errors.js';
 import { businessUiAdapterServiceToken } from '../tokens.js';
 
 type Env = { Variables: AuthEnv['Variables'] };
+
+const tags = ['BusinessUiProtocol'];
+
+/** Session cookie or Casdoor resource access token (scoped credential). */
+const userSecurity: Array<Record<string, string[]>> = [
+  { cookieAuth: [] },
+  { [CASDOOR_ACCESS_TOKEN_SCHEME]: [] },
+];
 
 function bearer(context: Context): string | undefined {
   return context.req.header('authorization') ?? undefined;
@@ -93,16 +103,25 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
       }),
     );
 
-    routes.post('/tickets', auth.required({ scopedKeys: true }), (context) =>
-      runProtocol(context, async () => {
-        const connectionId = context.req.param('connectionId')!;
-        const userId = context.get('auth')!.user.id;
-        const body = (await context.req.json().catch(() => ({}))) as Record<
-          string,
-          unknown
-        >;
-        return services().issueTicket(connectionId, userId, body);
+    routes.post(
+      '/tickets',
+      describeRoute({
+        tags,
+        summary: 'Issue a one-time business-ui embed ticket',
+        operationId: 'businessUiIssueTicket',
+        security: [...userSecurity],
       }),
+      auth.required({ scopedKeys: true }),
+      (context) =>
+        runProtocol(context, async () => {
+          const connectionId = context.req.param('connectionId')!;
+          const userId = context.get('auth')!.user.id;
+          const body = (await context.req.json().catch(() => ({}))) as Record<
+            string,
+            unknown
+          >;
+          return services().issueTicket(connectionId, userId, body);
+        }),
     );
 
     // Browser embed entry: returns HTML and Set-Cookie; not OpenAPI-documented management API.
@@ -145,6 +164,7 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
       }),
     );
 
+    // Session-only: embed cookie from redeem; Casdoor resource tokens must not substitute.
     routes.post('/documents/save', auth.required(), (context) =>
       runProtocol(context, async () => {
         const connectionId = context.req.param('connectionId')!;
@@ -181,6 +201,12 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
 
     routes.post(
       '/interactions/:interactionId',
+      describeRoute({
+        tags,
+        summary: 'Query the latest interaction receipt projection',
+        operationId: 'businessUiGetInteraction',
+        security: [...userSecurity],
+      }),
       auth.required({ scopedKeys: true }),
       (context) =>
         runProtocol(context, async () => {
@@ -196,6 +222,12 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
 
     routes.post(
       '/operations/:operationId',
+      describeRoute({
+        tags,
+        summary: 'Query an operation and its receipt',
+        operationId: 'businessUiQueryOperation',
+        security: [...userSecurity],
+      }),
       auth.required({ scopedKeys: true }),
       (context) =>
         runProtocol(context, async () => {
@@ -211,6 +243,12 @@ export const protocolRoutes: AppRootRouteContribution<AppPluginApplication> =
 
     routes.post(
       '/operations/:operationId/retry',
+      describeRoute({
+        tags,
+        summary: 'Retry a failed safe-retry operation',
+        operationId: 'businessUiRetryOperation',
+        security: [...userSecurity],
+      }),
       auth.required({ scopedKeys: true }),
       (context) =>
         runProtocol(context, async () => {

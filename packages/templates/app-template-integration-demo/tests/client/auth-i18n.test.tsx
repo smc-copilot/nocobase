@@ -27,7 +27,24 @@ vi.mock('@nocobase/app-plugin-authentication/client', () => ({
     isError: resetState.failed,
     refetch: resetState.retry,
   }),
+  useAuthentication: () => ({
+    client: { signIn: { social: vi.fn() } },
+  }),
 }));
+
+vi.mock('@nocobase/app-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@nocobase/app-client')>();
+  return {
+    ...actual,
+    useClientApplication: () => ({
+      config: {
+        public: {
+          get: () => false,
+        },
+      },
+    }),
+  };
+});
 
 vi.mock('@nocobase/app-plugin-authentication/client/actions', () => ({
   usePasswordLogin: () => ({ isPending: false, submit: vi.fn() }),

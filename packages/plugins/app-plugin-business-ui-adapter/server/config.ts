@@ -33,6 +33,12 @@ export interface BusinessUiAdapterConfig {
     unknownOnSubmit?: boolean;
     /** Fail before writing the document and mark the operation FAILED with safe_retry. */
     failBeforeWrite?: boolean;
+    /**
+     * NEXT-04 / N18: complete the commit and write a SUCCESS receipt, then drop the
+     * client response and detach the receipt from the interaction so reconcile must
+     * recover SUCCESS from the receipt by operation id.
+     */
+    loseSubmitResponse?: boolean;
   };
 }
 

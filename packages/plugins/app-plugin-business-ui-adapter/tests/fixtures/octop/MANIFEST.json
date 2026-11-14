@@ -1,0 +1,12 @@
+{
+  "octop_commit": "64689a5b9863d974783f0605ed7673a7d5f73b22",
+  "octop_commit_short": "64689a5b",
+  "files": {
+    "business_ui/outbound.py": "598f08244aad8526cf790ec15a43908b709ec26c01a1de587c29b6346080b2c8",
+    "business_ui/security.py": "ed09fb54c1059d6b17f80fb9bade5beabed65315c48126db5e004fb1f77bc2ac",
+    "business_ui/receipt.py": "340f48bf097cef5db527fd050e3638bca64bc223c6531902053732c27af1452d",
+    "business_ui/service.py": "82f76070746aaa85237d480ed961f0d5d00c76b9464ef0c13fac7fc53084f708",
+    "business_ui/__init__.py": "f4f89b1e4a12de4ee5c5c556c234c8b0cf0c6b8e29d36b3be9d11a96f4d5d19d",
+    "ui/src/FormFrame.tsx": "6549b8b5ae4a8cf0320f3ad26218b36461ccfcc51fc7341de530a8d7a3fcbd91"
+  }
+}

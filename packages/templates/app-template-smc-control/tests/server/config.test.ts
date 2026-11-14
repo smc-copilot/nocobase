@@ -38,7 +38,7 @@ describe('application config', () => {
       new URL('../../config.example.yml', import.meta.url),
       'utf8',
     );
-    const example = source.match(/^# jobs:\n(?:#(?: {2,}.*)?\n)*/m)?.[0];
+    const example = source.match(/^# jobs:\r?\n(?:#(?: {2,}.*)?\r?\n)*/m)?.[0];
     expect(example).toBeDefined();
     const examplePath = path.join(configRoot, 'redis-example.yml');
     await writeFile(

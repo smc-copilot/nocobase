@@ -8,6 +8,7 @@ import type { AppPluginApplication } from '@nocobase/app-server/plugins';
 import { databaseManagerToken } from '@nocobase/db';
 import { ServiceProvider } from '@nocobase/service-provider';
 
+import { setCasdoorBrowserOAuthRuntime } from '../browser-oauth.js';
 import type { CasdoorIdentityConfig } from '../config.js';
 import { createCasdoorCredentialResolver } from '../credential-resolver.js';
 import {
@@ -107,6 +108,16 @@ export class CasdoorIdentityProvider extends ServiceProvider<AppPluginApplicatio
         }),
       ),
     );
+    // NEXT-02: wire browser genericOAuth getUserInfo → provisioning before session.
+    const issuer = this.config().issuer;
+    if (issuer && container.has(casdoorIdentityAdminToken)) {
+      setCasdoorBrowserOAuthRuntime({
+        auth,
+        provisioning: container.resolve(casdoorIdentityAdminToken).provisioning,
+        issuer,
+      });
+      this.releases.push(() => setCasdoorBrowserOAuthRuntime(undefined));
+    }
     this.registerPeriodicSync();
   }
 

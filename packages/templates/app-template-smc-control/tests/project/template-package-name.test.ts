@@ -61,10 +61,12 @@ describe('template package name', () => {
       statSync(path.join(appRoot, directory), { throwIfNoEntry: false }),
     )
       .flatMap((directory) => sourceFilesIn(directory))
-      .filter(
-        (relative) =>
-          isGeneratedApplication || !REWRITTEN_SOURCES.includes(relative),
-      )
+      .filter((relative) => {
+        const normalized = relative.split(path.sep).join('/');
+        return (
+          isGeneratedApplication || !REWRITTEN_SOURCES.includes(normalized)
+        );
+      })
       .filter((relative) =>
         readFileSync(path.join(appRoot, relative), 'utf8').includes(
           originalTemplateName,

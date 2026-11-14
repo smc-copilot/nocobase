@@ -47,6 +47,10 @@ export function registerIdentitySettings(authz: AppAuthorization): void {
       actions: [
         { name: 'read', title: 'View subject bindings' },
         { name: 'import', title: 'Preview and commit subject binding imports' },
+        {
+          name: 'revoke',
+          title: 'Revoke or re-enable subject bindings',
+        },
       ],
     },
   ] as const;

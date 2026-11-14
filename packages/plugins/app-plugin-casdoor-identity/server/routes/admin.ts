@@ -216,6 +216,7 @@ const SubjectBindingSchema = z
     localUserId: z.string(),
     externalIdentityId: z.string(),
     status: z.string(),
+    revision: z.number().int(),
     createdBy: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -707,6 +708,56 @@ export function createAdminRouter(options: AdminRouterOptions): Hono<AdminEnv> {
           actorOf(context),
         ),
       }),
+  );
+
+  router.post(
+    '/subjectBindings/:bindingId/revoke',
+    permit(SETTINGS_SUBJECT_BINDINGS, 'revoke'),
+    describeRoute({
+      tags,
+      summary: 'Revoke a subject binding and bump its revision',
+      operationId: 'casdoorIdentityRevokeSubjectBinding',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_SUBJECT_BINDINGS}\` revoke. Outstanding tickets and embeds that captured the previous revision become unusable.`,
+      responses: {
+        200: dataResponse(SubjectBindingSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    async (context) => {
+      const bindingId = context.req.param('bindingId');
+      if (!bindingId) {
+        throw new Error('bindingId is required');
+      }
+      return context.json({
+        data: await services().bindings.revoke(bindingId, actorOf(context)),
+      });
+    },
+  );
+
+  router.post(
+    '/subjectBindings/:bindingId/reEnable',
+    permit(SETTINGS_SUBJECT_BINDINGS, 'revoke'),
+    describeRoute({
+      tags,
+      summary: 'Re-enable a revoked subject binding with a new revision',
+      operationId: 'casdoorIdentityReEnableSubjectBinding',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_SUBJECT_BINDINGS}\` revoke. Old tickets and embeds remain invalid after re-enable.`,
+      responses: {
+        200: dataResponse(SubjectBindingSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    async (context) => {
+      const bindingId = context.req.param('bindingId');
+      if (!bindingId) {
+        throw new Error('bindingId is required');
+      }
+      return context.json({
+        data: await services().bindings.reEnable(bindingId, actorOf(context)),
+      });
+    },
   );
 
   return router;

@@ -1,6 +1,6 @@
 # P3 — Business UI Adapter protocol (Gate A)
 
-Branch: `fix/v3-smc-integration-readiness`  
+Branch: `fix/v3-smc-integration-v1.1`  
 Package: `@nocobase/app-plugin-business-ui-adapter`
 
 ## Commands
@@ -12,7 +12,7 @@ pnpm --filter @nocobase/app-plugin-business-ui-adapter test
 pnpm --filter @nocobase/app-plugin-business-ui-adapter build
 ```
 
-Result on remediation branch: adapter protocol, Octop handshake fixture, migrations and DTO suites pass (14+ tests in-package; see Gate A report).
+Result on remediation branch: adapter protocol, pinned Octop fixture under `tests/fixtures/octop/` (SHA `64689a5b`, fail-not-skip), migrations and DTO suites pass (25 tests in-package; see `prd/acceptance/gate-a-report.md`).
 
 ## Coverage vs Remediation FIX-04…12
 

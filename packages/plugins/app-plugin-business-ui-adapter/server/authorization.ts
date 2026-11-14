@@ -15,10 +15,27 @@ import {
 export const BUSINESS_UI_SETTINGS_SECTION = 'business-ui-adapter';
 
 /**
- * Registers adapter administration surfaces as `authz.settings` items.
- * Ordinary authenticated users without these actions cannot configure connections or forms.
+ * Resource type mapped from `form.permissionRef` (`generic.request:edit` →
+ * type `generic.request`, action `edit`). Must be registered before native
+ * Authorization `can()` will permit matching grants (NEXT-01).
+ */
+export const GENERIC_REQUEST_RESOURCE_TYPE = 'generic.request';
+
+/**
+ * Registers the business document resource type and adapter administration
+ * surfaces. Ordinary authenticated users without settings actions cannot
+ * configure connections or forms.
  */
 export function registerBusinessUiSettings(authz: AppAuthorization): void {
+  authz.resourceTypes.add({
+    type: GENERIC_REQUEST_RESOURCE_TYPE,
+    actions: [
+      { name: 'edit', title: 'Edit business documents' },
+      { name: 'view', title: 'View business documents' },
+    ],
+    recordAccess: true,
+  });
+
   authz.ui.sections.add({
     name: BUSINESS_UI_SETTINGS_SECTION,
     title: 'Business UI Adapter',

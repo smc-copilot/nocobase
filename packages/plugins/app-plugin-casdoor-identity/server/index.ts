@@ -4,6 +4,24 @@ export type {
   CasdoorIdentityConfig,
   CasdoorIdentitySyncConfig,
 } from './config.js';
+export {
+  CASDOOR_ACCESS_TOKEN_HEADER,
+  CASDOOR_ACCESS_TOKEN_SCHEME,
+  CASDOOR_CREDENTIAL_TYPE,
+} from './config.js';
+export {
+  CASDOOR_OAUTH_PROVIDER_ID,
+  claimsFromOAuthTokens,
+  createCasdoorBrowserOAuthConfig,
+  ensureCasdoorBrowserIdentity,
+  getCasdoorBrowserOAuthRuntime,
+  setCasdoorBrowserOAuthRuntime,
+} from './browser-oauth.js';
+export type {
+  BrowserLoginProfile,
+  CasdoorBrowserOAuthClientOptions,
+  CasdoorBrowserOAuthRuntime,
+} from './browser-oauth.js';
 export type {
   DirectoryPage,
   DirectoryUser,

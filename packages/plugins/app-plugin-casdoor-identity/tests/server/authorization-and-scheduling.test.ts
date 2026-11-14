@@ -44,7 +44,7 @@ describe('authz.settings registration', () => {
     for (const [id, actions] of [
       [SETTINGS_SYNC, ['read', 'run']],
       [SETTINGS_MAPPING, ['read', 'configure']],
-      [SETTINGS_SUBJECT_BINDINGS, ['read', 'import']],
+      [SETTINGS_SUBJECT_BINDINGS, ['read', 'import', 'revoke']],
     ] as const) {
       expect(
         authz.resourceTypes

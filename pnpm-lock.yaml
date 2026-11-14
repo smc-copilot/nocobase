@@ -392,7 +392,7 @@ importers:
         version: 24.13.3
       eslint:
         specifier: 'catalog:'
-        version: 10.8.1(jiti@2.7.0)(supports-color@8.1.1)
+        version: 10.8.1(jiti@2.7.0)
       hono:
         specifier: 'catalog:'
         version: 4.13.2
@@ -6703,13 +6703,16 @@ importers:
         version: 0.10.2
       eslint:
         specifier: 'catalog:'
-        version: 10.8.1(jiti@2.7.0)
+        version: 10.8.1(jiti@2.7.0)(supports-color@8.1.1)
       eventsource-parser:
         specifier: 3.1.0
         version: 3.1.0
       ignore:
         specifier: 'catalog:'
         version: 7.0.6
+      jose:
+        specifier: ^6.2.9
+        version: 6.2.9
       jsdom:
         specifier: 'catalog:'
         version: 30.0.1(@noble/hashes@2.3.0)

@@ -126,3 +126,35 @@ describeMigration(
     },
   },
 );
+
+describeMigration(
+  'business_ui_adapter_202611140002_binding_revision_and_stale_invalidation',
+  {
+    sources: migrations,
+    up: async ({ expectCollection }) => {
+      await expectCollection('businessUiEmbedContexts').toHaveField(
+        'bindingRevision',
+        { type: 'string', nullable: true, length: 64 },
+      );
+      await expectCollection('businessUiEmbedContexts').toHaveField(
+        'formConfigVersion',
+        { type: 'string', nullable: true, length: 128 },
+      );
+      await expectCollection('businessUiEmbedContexts').toHaveField(
+        'subjectBindingId',
+        { type: 'string', nullable: true, length: 64 },
+      );
+    },
+    down: async ({ expectCollection }) => {
+      await expectCollection('businessUiEmbedContexts').not.toHaveField(
+        'bindingRevision',
+      );
+      await expectCollection('businessUiEmbedContexts').not.toHaveField(
+        'formConfigVersion',
+      );
+      await expectCollection('businessUiEmbedContexts').not.toHaveField(
+        'subjectBindingId',
+      );
+    },
+  },
+);

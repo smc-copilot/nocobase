@@ -362,6 +362,70 @@ describe('business-ui.v1 protocol flow', () => {
     expect(interaction.operation_id ?? interaction.operationId).toBe(
       operationId,
     );
+    expect(interaction.status).toBe('unknown');
+    expect(interaction.result).toMatchObject({ status: 'UNKNOWN' });
+  });
+
+  it('N18 recover SUCCESS after loseSubmitResponse via reconcile', async () => {
+    harness = await createAdapterHarness({
+      faultInjection: { loseSubmitResponse: true },
+    });
+    const userId = await harness.createLocalUser('lost@example.com');
+    await harness.bindSubject('octop-lost', userId);
+    await harness.seedDefaults();
+
+    const ticket = await harness.services.issueTicket(CONNECTION_ID, userId, {
+      formRef: 'generic.request.edit',
+      schemaVersion: '1',
+      subject: { issuer: 'https://octop.test.local', sub: 'octop-lost' },
+      nonce: 'n-lost',
+    });
+    const redeem = await harness.services.redeemTicket(
+      CONNECTION_ID,
+      { ticket: ticket.ticket as string, nonce: 'n-lost' },
+      new Request('http://localhost/x', { method: 'POST' }),
+    );
+    const cookie = redeem.setCookies.map((c) => c.split(';')[0]).join('; ');
+    const session = await harness.auth.getSession(new Headers({ cookie }), {
+      disableRefresh: true,
+    });
+    const sessionRef = session!.session.id;
+
+    const lost = await harness.services.submitDocument(
+      CONNECTION_ID,
+      userId,
+      sessionRef,
+      {
+        title: 'Lost response',
+        description: '',
+        quantity: 2,
+        record_version: 0,
+        idempotency_key: 'lost-1',
+      },
+    );
+    expect(lost.result).toMatchObject({
+      status: 'UNKNOWN',
+      code: 'RESPONSE_LOST',
+      side_effect: null,
+    });
+    const operationId = lost.operationId as string;
+    const before = await harness.services.getInteraction(
+      CONNECTION_ID,
+      userId,
+      lost.interactionId as string,
+    );
+    expect(before.status).toBe('unknown');
+
+    const fixed = await harness.services.reconcileUnknownOperations();
+    expect(fixed).toBeGreaterThanOrEqual(1);
+    const after = await harness.services.getInteraction(
+      CONNECTION_ID,
+      userId,
+      lost.interactionId as string,
+    );
+    expect(after.status).toBe('submitted');
+    expect(after.operation_id ?? after.operationId).toBe(operationId);
+    expect(after.result).toMatchObject({ status: 'SUCCESS' });
   });
 
   it('safe-retries a FAILED operation that never wrote (failBeforeWrite)', async () => {
@@ -407,6 +471,19 @@ describe('business-ui.v1 protocol flow', () => {
       side_effect: false,
     });
     const operationId = failed.operationId as string;
+    const failedInteraction = await harness.services.getInteraction(
+      CONNECTION_ID,
+      userId,
+      failed.interactionId as string,
+    );
+    expect(failedInteraction.status).toBe('failed');
+    expect(failedInteraction.result).toMatchObject({ status: 'FAILED' });
+    const failedQuery = await harness.services.queryOperation(
+      CONNECTION_ID,
+      userId,
+      operationId,
+    );
+    expect(failedQuery.status).toBe('FAILED');
 
     // Clear the one-shot fault so the retry can complete.
     harness.config.current = {};

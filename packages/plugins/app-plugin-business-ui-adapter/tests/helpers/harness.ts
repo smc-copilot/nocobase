@@ -179,6 +179,8 @@ export async function createAdapterHarness(
           localUserId: userId,
           externalIdentityId: externalId,
           status: 'active',
+          revision: 1,
+          activeLocalUserId: userId,
           createdBy: null,
           createdAt: now,
           updatedAt: now,

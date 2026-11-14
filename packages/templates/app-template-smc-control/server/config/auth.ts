@@ -4,6 +4,7 @@ import {
   defineAuthConfig,
   type AuthConfig,
 } from '@nocobase/app-plugin-authentication/server';
+import { createCasdoorBrowserOAuthConfig } from '@nocobase/app-plugin-casdoor-identity/server';
 import {
   bearer,
   deviceAuthorization,
@@ -62,17 +63,13 @@ const auth: AppConfigFactory<AuthConfig> = defineAuthConfig({
         ...(casdoor
           ? [
               genericOAuth({
+                // NEXT-02: getUserInfo runs provisioning+admission+account link before session.
                 config: [
-                  {
-                    providerId: 'casdoor',
+                  createCasdoorBrowserOAuthConfig({
+                    issuer: casdoor.issuer,
                     clientId: casdoor.clientId,
                     clientSecret: casdoor.clientSecret,
-                    discoveryUrl: `${casdoor.issuer}/.well-known/openid-configuration`,
-                    scopes: ['openid', 'profile', 'email'],
-                    pkce: true,
-                    // Admission owns who gets a local account; the browser flow must not invent one.
-                    disableImplicitSignUp: true,
-                  },
+                  }),
                 ],
               }),
             ]

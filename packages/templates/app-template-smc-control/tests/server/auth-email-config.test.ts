@@ -56,7 +56,7 @@ it('ships a valid shared mailer example with private mapped credentials', async 
     new URL('../../config.example.yml', import.meta.url),
     'utf8',
   );
-  const block = example.match(/^# mailers:\n(?:#.*\n)+/m)?.[0];
+  const block = example.match(/^# mailers:\r?\n(?:#.*\r?\n)+/m)?.[0];
   expect(block).toBeTruthy();
   const directory = await mkdtemp(path.join(os.tmpdir(), 'mailers-example-'));
   try {

@@ -89,12 +89,10 @@ await client.signIn.social({
 
 Use `resolveAppUrl` from `@nocobase/app-client` for the callback so it follows the runtime mount path. Re-check the installed Better Auth version if a later release reintroduces a dedicated client helper.
 
-## 3. What this wiring does not do yet
+## 3. First-login convergence (NEXT-02)
 
-The browser flow and the identity plugin are not joined until the `smc-control` merge, so state these gaps rather than assuming them:
+Use `createCasdoorBrowserOAuthConfig()` from `@nocobase/app-plugin-casdoor-identity/server` instead of a bare provider object. Its `getUserInfo` hook (Better Auth 1.7.5 has no post-callback) runs `IdentityProvisioningService.onLogin` for admission + `externalIdentities`, then links a native Better Auth `account` via `internalAdapter.linkAccount` before the session is issued. Keep `disableImplicitSignUp: true` — accounts are created only after admission succeeds. JWT-first and browser-first therefore share one local user. Same-email/different-subject still rejects with `IDENTITY_EMAIL_CONFLICT`.
 
-- `genericOAuth` writes a Better Auth `account` row (`providerId = casdoor`, `accountId` = the Casdoor subject). It does not write `externalIdentities`, and it does not evaluate the provider's admission policy. With `disableImplicitSignUp` set, a Casdoor user without an existing local account cannot complete the browser flow.
-- Until a post-login hook links the Better Auth `account` to an `externalIdentities` row, create the local user and binding through the JWT path (first login with a Casdoor access token) or through the subject binding import, and use the browser flow only for users who already have both.
-- Disable and sync go through `UserAdministrationService`, which revokes Better Auth sessions, so a user disabled by the sync loses the browser session as well. Re-enabling does not bring the old session back; the user signs in again.
+`CasdoorIdentityProvider.boot()` registers the browser OAuth runtime (`setCasdoorBrowserOAuthRuntime`) so `getUserInfo` can reach Auth and provisioning after the container is ready.
 
-Verify any change to `server/config/auth.ts` against a live Casdoor before documenting it as working: first sign-in, repeat sign-in, a failed callback, sign-out, and a disabled user.
+Disable and sync still go through `UserAdministrationService`, which revokes Better Auth sessions. Re-enabling does not restore old sessions. Verify against a live Casdoor for Gate B: first sign-in, repeat sign-in, a failed callback, sign-out, and a disabled user.

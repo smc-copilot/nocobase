@@ -47,7 +47,24 @@ vi.mock('@nocobase/app-plugin-authentication/client/actions', () => ({
 vi.mock('@nocobase/app-plugin-authentication/client', () => ({
   useSignUpAvailable: () => signUpAvailable.value,
   usePasswordResetCapability: () => resetCapability,
+  useAuthentication: () => ({
+    client: { signIn: { social: vi.fn() } },
+  }),
 }));
+
+vi.mock('@nocobase/app-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@nocobase/app-client')>();
+  return {
+    ...actual,
+    useClientApplication: () => ({
+      config: {
+        public: {
+          get: () => false,
+        },
+      },
+    }),
+  };
+});
 
 const runtime = await createTestI18nRuntime({
   application: { namespace: 'app', resources: enUS },

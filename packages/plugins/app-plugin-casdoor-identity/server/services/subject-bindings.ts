@@ -58,6 +58,8 @@ export interface SubjectBindingRecord {
   readonly localUserId: string;
   readonly externalIdentityId: string;
   readonly status: string;
+  /** Monotonic authorization version; tickets/embeds capture this, not the binding id. */
+  readonly revision: number;
   readonly createdBy: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -71,6 +73,7 @@ function toBinding(row: Record<string, unknown>): SubjectBindingRecord {
     localUserId: str(row.localUserId),
     externalIdentityId: str(row.externalIdentityId),
     status: str(row.status),
+    revision: Number(row.revision ?? 1),
     createdBy: strOrNull(row.createdBy),
     createdAt: toDate(row.createdAt),
     updatedAt: toDate(row.updatedAt),
@@ -175,6 +178,7 @@ export class SubjectBindingService {
             .select('octopSubject')
             .where('connectionId', '=', input.connectionId)
             .where('localUserId', '=', localUserId)
+            .where('status', '=', 'active')
             .executeTakeFirst();
           if (
             (otherInBatch && otherInBatch !== input.octopSubject) ||
@@ -233,6 +237,8 @@ export class SubjectBindingService {
               localUserId: row.localUserId!,
               externalIdentityId: row.externalIdentityId!,
               status: 'active',
+              revision: 1,
+              activeLocalUserId: row.localUserId!,
               createdBy: actorId,
               createdAt: now,
               updatedAt: now,
@@ -274,6 +280,97 @@ export class SubjectBindingService {
       );
     }
     return preview;
+  }
+
+  /**
+   * Revokes an active binding and bumps its revision so outstanding tickets and
+   * embeds that captured the previous revision cannot be reused (NEXT-03).
+   */
+  public async revoke(
+    bindingId: string,
+    actorId: string | null,
+  ): Promise<SubjectBindingRecord> {
+    return this.setStatus(
+      bindingId,
+      'revoked',
+      actorId,
+      'subjectBinding.revoke',
+    );
+  }
+
+  /**
+   * Re-enables a revoked binding with a new revision. Old tickets/embeds stay invalid.
+   */
+  public async reEnable(
+    bindingId: string,
+    actorId: string | null,
+  ): Promise<SubjectBindingRecord> {
+    return this.setStatus(
+      bindingId,
+      'active',
+      actorId,
+      'subjectBinding.reEnable',
+    );
+  }
+
+  private async setStatus(
+    bindingId: string,
+    status: 'active' | 'revoked',
+    actorId: string | null,
+    action: string,
+  ): Promise<SubjectBindingRecord> {
+    const database = this.runtime.database();
+    const now = nowOf(this.runtime);
+    return database.transaction(async (connection) => {
+      const row = await connection.query
+        .selectFrom('businessUiSubjectBindings')
+        .selectAll()
+        .where('id', '=', bindingId)
+        .executeTakeFirst();
+      if (!row) {
+        throw identityError(
+          'NOT_FOUND',
+          'SUBJECT_BINDING_NOT_FOUND',
+          'Subject binding not found.',
+        );
+      }
+      const current = toBinding(row);
+      const nextRevision = current.revision + 1;
+      await connection.query
+        .updateTable('businessUiSubjectBindings')
+        .set({
+          status,
+          revision: nextRevision,
+          // Occupancy column: set while active so the unique index enforces N25;
+          // clear on revoke so a later rebind of another subject can succeed.
+          activeLocalUserId: status === 'active' ? current.localUserId : null,
+          updatedAt: now,
+        })
+        .where('id', '=', bindingId)
+        .execute();
+      await this.audit.record(
+        {
+          action,
+          actorId,
+          targetType: 'subjectBinding',
+          targetId: bindingId,
+          details: {
+            previousStatus: current.status,
+            status,
+            previousRevision: current.revision,
+            revision: nextRevision,
+            connectionId: current.connectionId,
+          },
+        },
+        connection,
+      );
+      return {
+        ...current,
+        status,
+        revision: nextRevision,
+        updatedAt: now,
+      };
+    });
   }
 
   /**

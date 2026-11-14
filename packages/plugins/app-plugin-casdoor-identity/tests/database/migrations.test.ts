@@ -87,6 +87,36 @@ describeMigration(
   },
 );
 
+describeMigration('casdoor_identity_202611140003_binding_revision', {
+  sources: migrations,
+  up: async ({ expectCollection }) => {
+    await expectCollection('businessUiSubjectBindings').toHaveField(
+      'revision',
+      { type: 'integer', nullable: false },
+    );
+  },
+  down: async ({ expectCollection }) => {
+    await expectCollection('businessUiSubjectBindings').not.toHaveField(
+      'revision',
+    );
+  },
+});
+
+describeMigration('casdoor_identity_202611140004_binding_user_uniqueness', {
+  sources: migrations,
+  up: async ({ expectCollection }) => {
+    await expectCollection('businessUiSubjectBindings').toHaveField(
+      'activeLocalUserId',
+      { type: 'string', nullable: true, length: 64 },
+    );
+  },
+  down: async ({ expectCollection }) => {
+    await expectCollection('businessUiSubjectBindings').not.toHaveField(
+      'activeLocalUserId',
+    );
+  },
+});
+
 describeMigration('casdoor_identity_202611130001_create_external_identities', {
   sources: migrations,
   up: async ({ expectCollection }) => {

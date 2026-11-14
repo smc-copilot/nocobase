@@ -20,7 +20,8 @@ describe('config.example.yml', () => {
   });
 
   it('carries a live secrets section whose first key is a placeholder', async () => {
-    expect(await read()).toContain(
+    const normalized = (await read()).replace(/\r\n/g, '\n');
+    expect(normalized).toContain(
       [
         'secrets:',
         '  keys:',
@@ -35,9 +36,9 @@ describe('config.example.yml', () => {
     );
     await active.loadAll();
     expect(active.get('knowledge')).toBeUndefined();
-    const example = (await read()).match(
-      /^# knowledge:\n(?:#(?: {2,}.*)?\n)*/m,
-    )?.[0];
+    const example = (await read())
+      .replace(/\r\n/g, '\n')
+      .match(/^# knowledge:\n(?:#(?: {2,}.*)?\n)*/m)?.[0];
     expect(example).toBeDefined();
     const directory = await mkdtemp(
       path.join(os.tmpdir(), 'knowledge-config-example-'),
