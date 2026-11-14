@@ -516,8 +516,9 @@ export function createProtocolServices(deps: {
   }
 
   /**
-   * Null or a non-array means the column predates the embed scope snapshot.
-   * An array, including empty, is an explicit intersection.
+   * A string array, including empty, is an explicit scope snapshot.
+   * Null, a non-array, and a mixed array are unusable and must not fall back
+   * to the current grant.
    */
   function parseOptionalStringArray(
     value: unknown,
@@ -532,15 +533,41 @@ export function createProtocolServices(deps: {
       }
     }
     if (!Array.isArray(parsed)) return undefined;
-    return parsed.filter((entry): entry is string => typeof entry === 'string');
+    const entries: string[] = [];
+    for (const entry of parsed as readonly unknown[]) {
+      if (typeof entry !== 'string') return undefined;
+      entries.push(entry);
+    }
+    return entries;
   }
 
   function withRecordedScopes(
     grant: GrantContext,
     recorded: readonly string[] | undefined,
   ): GrantContext {
-    if (!recorded) return { ...grant, tokenScopes: undefined };
+    if (recorded === undefined) {
+      grantRequired('Embed scope snapshot is missing; re-open the form');
+    }
     return { ...grant, scopes: recorded, tokenScopes: undefined };
+  }
+
+  function assertEpochMatch(
+    grant: GrantContext,
+    clientEpoch: unknown,
+    credentialEpoch: unknown,
+  ): void {
+    const client = revisionNumber(clientEpoch);
+    const credential = revisionNumber(credentialEpoch);
+    if (
+      client == null ||
+      credential == null ||
+      grant.clientEpoch == null ||
+      grant.credentialEpoch == null ||
+      client !== grant.clientEpoch ||
+      credential !== grant.credentialEpoch
+    ) {
+      grantRequired('Authorization epoch changed; re-open the form');
+    }
   }
 
   function actionsForTerminal(input: {
@@ -642,6 +669,7 @@ export function createProtocolServices(deps: {
         'Embed context belongs to another user',
       );
     }
+    assertEpochMatch(grant, embed.clientEpoch, embed.credentialEpoch);
     assertScope(
       withRecordedScopes(grant, parseOptionalStringArray(embed.scopes)),
       action,
@@ -778,6 +806,7 @@ export function createProtocolServices(deps: {
     if (active.localUserId !== userId) {
       grantRequired('Agent grant does not match this user');
     }
+    assertEpochMatch(active, embed.clientEpoch, embed.credentialEpoch);
     const scoped = withRecordedScopes(
       active,
       parseOptionalStringArray(embed.scopes),
@@ -1109,6 +1138,8 @@ export function createProtocolServices(deps: {
             grantId: active.grantId,
             clientId: active.clientId,
             scopes: issuedScopes,
+            clientEpoch: active.clientEpoch,
+            credentialEpoch: active.credentialEpoch,
           },
           expiresAt: addSeconds(createdAt, TICKET_TTL_SECONDS),
           consumedAt: null,
@@ -1207,16 +1238,20 @@ export function createProtocolServices(deps: {
         permissionRef?: string | null;
         formConfigVersion?: string;
         scopes?: unknown;
+        clientEpoch?: unknown;
+        credentialEpoch?: unknown;
       };
       const mode = context.mode === 'detail' ? 'detail' : 'edit';
       const recordedTicketScopes = parseOptionalStringArray(context.scopes);
-      const ticketGrant = recordedTicketScopes
-        ? {
-            ...grant,
-            scopes: recordedTicketScopes,
-            tokenScopes: undefined,
-          }
-        : grant;
+      if (recordedTicketScopes === undefined) {
+        grantRequired('Ticket scope snapshot is missing; re-issue the ticket');
+      }
+      assertEpochMatch(grant, context.clientEpoch, context.credentialEpoch);
+      const ticketGrant = {
+        ...grant,
+        scopes: recordedTicketScopes,
+        tokenScopes: undefined,
+      };
       assertScope(ticketGrant, mode === 'detail' ? 'view' : 'issue');
       await assertBusinessAccess(
         ticketRow.localUserId,
@@ -1301,6 +1336,8 @@ export function createProtocolServices(deps: {
           nonce,
           actionBounds: [...actionBounds],
           scopes: embedScopes,
+          clientEpoch: grant.clientEpoch ?? null,
+          credentialEpoch: grant.credentialEpoch ?? null,
           expiresAt: addSeconds(createdAt, EMBED_TTL_SECONDS),
           createdAt,
         })

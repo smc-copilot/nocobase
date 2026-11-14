@@ -74,6 +74,7 @@ export async function createAgentAuthHarness(): Promise<AgentAuthHarness> {
     config: () => ({ audience: AUDIENCE }),
     defaultAudience: () => AUDIENCE,
   });
+  users.addOnUserDisabled((userId) => services.lifecycle.revokeUser(userId));
 
   return {
     testDatabase,

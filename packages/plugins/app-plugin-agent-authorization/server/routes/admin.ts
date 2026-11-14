@@ -35,6 +35,7 @@ const ClientViewSchema = z.object({
   allowedOrigins: z.array(z.string()),
   enabled: z.boolean(),
   secretVersion: z.number(),
+  epoch: z.number(),
   hasSecret: z.literal(true),
   createdAt: z.string(),
   updatedAt: z.string(),

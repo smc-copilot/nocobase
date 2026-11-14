@@ -17,6 +17,8 @@ export interface AgentClientRow {
   readonly allowedOrigins: readonly string[];
   readonly enabled: boolean;
   readonly secretVersion: number;
+  /** Bumped when the client is disabled; stamped on tokens and embeds. */
+  readonly epoch: number;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -32,6 +34,7 @@ export interface AgentClientView {
   readonly allowedOrigins: readonly string[];
   readonly enabled: boolean;
   readonly secretVersion: number;
+  readonly epoch: number;
   readonly hasSecret: true;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -48,6 +51,8 @@ export interface AgentGrantRow {
   readonly audience: string;
   readonly scopes: readonly string[];
   readonly revision: number;
+  /** Bumped when the local user is disabled; stamped on tokens and embeds. */
+  readonly credentialEpoch: number;
   readonly status: 'active' | 'revoked';
   readonly expiresAt: Date | null;
   readonly lastUsedAt: Date | null;
@@ -142,7 +147,8 @@ export interface AgentAuthorizationServices {
     ): Promise<AgentGrantRow>;
     /**
      * Active grant whose client is enabled and whose local user is not disabled.
-     * Does not revive tokens; callers still honor `revokedAt` on each token.
+     * The returned client epoch and grant credential epoch are the current values
+     * a token, code, ticket, or embed must equal. Re-enable does not move them back.
      */
     requireUsable(
       grantId: string,
@@ -157,6 +163,14 @@ export interface AgentAuthorizationServices {
       readonly localUserId?: string;
     }): Promise<readonly AgentGrantView[]>;
     revoke(grantId: string, actorUserId?: string): Promise<AgentGrantView>;
+  };
+  readonly lifecycle: {
+    /**
+     * Bumps credentialEpoch for the user's grants and revokes their tokens and
+     * unconsumed authorization codes. Used when the local account is disabled.
+     * Re-enabling the user does not move the epoch back.
+     */
+    revokeUser(localUserId: string): Promise<void>;
   };
   readonly oauth: {
     createAuthorizationCode(input: {

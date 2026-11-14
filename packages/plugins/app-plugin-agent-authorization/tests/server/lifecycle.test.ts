@@ -85,6 +85,16 @@ describe('client disable and disabled-user issuance', () => {
       grantId: grantB.id,
       scope: 'business-ui:view',
     });
+    const pending = pkce();
+    const redirectUri = 'http://localhost:8090/cb';
+    const staleCode = await harness.services.oauth.createAuthorizationCode({
+      clientId: clientA.clientId,
+      localUserId: userId,
+      grantId: grantA.id,
+      redirectUri,
+      codeChallenge: pending.challenge,
+      scope: 'business-ui:edit',
+    });
 
     await harness.services.clients.update(clientA.clientId, { enabled: false });
     expect(
@@ -110,6 +120,20 @@ describe('client disable and disabled-user issuance', () => {
     expect(
       await harness.services.oauth.resolveAccessToken(tokensA.access_token),
     ).toBeUndefined();
+    await expect(
+      harness.services.oauth.refresh({
+        clientId: clientA.clientId,
+        refreshToken: tokensA.refresh_token,
+      }),
+    ).rejects.toMatchObject({ reason: 'INVALID_GRANT' });
+    await expect(
+      harness.services.oauth.exchangeAuthorizationCode({
+        clientId: clientA.clientId,
+        code: staleCode,
+        redirectUri,
+        codeVerifier: pending.verifier,
+      }),
+    ).rejects.toMatchObject({ reason: 'INVALID_GRANT' });
     const renewed = await tokensFor(harness, {
       userId,
       clientId: clientA.clientId,
@@ -124,7 +148,7 @@ describe('client disable and disabled-user issuance', () => {
     ).toMatchObject({ clientId: clientB.clientId });
   });
 
-  it('refuses code exchange and refresh for a disabled user until the user is enabled', async () => {
+  it('revokes credentials on disable and does not revive them after enable', async () => {
     harness = await createAgentAuthHarness();
     const userId = await harness.createLocalUser('frozen@example.com');
     const client = await harness.services.clients.create({
@@ -145,6 +169,17 @@ describe('client disable and disabled-user issuance', () => {
       scope: 'business-ui:edit',
     });
 
+    const pending = pkce();
+    const redirectUri = 'http://localhost:8090/cb';
+    const staleCode = await harness.services.oauth.createAuthorizationCode({
+      clientId: client.clientId,
+      localUserId: userId,
+      grantId: grant.id,
+      redirectUri,
+      codeChallenge: pending.challenge,
+      scope: 'business-ui:edit',
+    });
+
     await harness.users.disable(userId);
     await expect(
       harness.services.oauth.refresh({
@@ -152,37 +187,63 @@ describe('client disable and disabled-user issuance', () => {
         refreshToken: tokens.refresh_token,
       }),
     ).rejects.toMatchObject({ reason: 'INVALID_GRANT' });
+    await expect(
+      harness.services.oauth.createAuthorizationCode({
+        clientId: client.clientId,
+        localUserId: userId,
+        grantId: grant.id,
+        redirectUri,
+        codeChallenge: pending.challenge,
+        scope: 'business-ui:edit',
+      }),
+    ).rejects.toMatchObject({ reason: 'INVALID_GRANT' });
+    await expect(
+      harness.services.oauth.exchangeAuthorizationCode({
+        clientId: client.clientId,
+        code: staleCode,
+        redirectUri,
+        codeVerifier: pending.verifier,
+      }),
+    ).rejects.toMatchObject({ reason: 'INVALID_GRANT' });
 
-    const { verifier, challenge } = pkce();
-    const redirectUri = 'http://localhost:8090/cb';
+    await harness.users.enable(userId);
+    expect(
+      await harness.services.oauth.resolveAccessToken(tokens.access_token),
+    ).toBeUndefined();
+    await expect(
+      harness.services.oauth.refresh({
+        clientId: client.clientId,
+        refreshToken: tokens.refresh_token,
+      }),
+    ).rejects.toMatchObject({ reason: 'INVALID_GRANT' });
+    await expect(
+      harness.services.oauth.exchangeAuthorizationCode({
+        clientId: client.clientId,
+        code: staleCode,
+        redirectUri,
+        codeVerifier: pending.verifier,
+      }),
+    ).rejects.toMatchObject({ reason: 'INVALID_GRANT' });
+
+    const fresh = pkce();
     const code = await harness.services.oauth.createAuthorizationCode({
       clientId: client.clientId,
       localUserId: userId,
       grantId: grant.id,
       redirectUri,
-      codeChallenge: challenge,
+      codeChallenge: fresh.challenge,
       scope: 'business-ui:edit',
     });
-    await expect(
-      harness.services.oauth.exchangeAuthorizationCode({
-        clientId: client.clientId,
-        code,
-        redirectUri,
-        codeVerifier: verifier,
-      }),
-    ).rejects.toMatchObject({ reason: 'INVALID_GRANT' });
-
-    await harness.users.enable(userId);
     const exchanged = await harness.services.oauth.exchangeAuthorizationCode({
       clientId: client.clientId,
       code,
       redirectUri,
-      codeVerifier: verifier,
+      codeVerifier: fresh.verifier,
     });
     expect(exchanged.access_token.startsWith('agt_a_')).toBe(true);
     const refreshed = await harness.services.oauth.refresh({
       clientId: client.clientId,
-      refreshToken: tokens.refresh_token,
+      refreshToken: exchanged.refresh_token,
     });
     expect(refreshed.scope).toBe('business-ui:edit');
   });

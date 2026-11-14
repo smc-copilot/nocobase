@@ -150,6 +150,9 @@ export async function createAdapterHarness(
     config: () => ({ audience: AUDIENCE }),
     defaultAudience: () => AUDIENCE,
   });
+  users.addOnUserDisabled(async (userId) => {
+    await agent.lifecycle.revokeUser(userId);
+  });
   const grantsByUser = new Map<string, GrantContext>();
   let clientReady: Promise<string> | undefined;
   const ensureClient = (): Promise<string> => {
@@ -183,6 +186,8 @@ export async function createAdapterHarness(
           audience: grant.audience,
           scopes: grant.scopes,
           clientScopes: client.allowedScopes,
+          clientEpoch: client.epoch,
+          credentialEpoch: grant.credentialEpoch,
           revision: grant.revision,
         };
       } catch (error) {
@@ -253,6 +258,7 @@ export async function createAdapterHarness(
         redirectUri: REDIRECT_URI,
         codeVerifier: verifier,
       });
+      const clientRow = await agent.clients.get(clientId);
       const grant: GrantContext = {
         grantId: row.id,
         clientId: row.clientId,
@@ -261,6 +267,8 @@ export async function createAdapterHarness(
         scopes: row.scopes,
         tokenScopes,
         clientScopes: [...AGENT_SCOPES],
+        clientEpoch: clientRow?.epoch ?? 1,
+        credentialEpoch: row.credentialEpoch,
         revision: row.revision,
       };
       grantsByUser.set(userId, grant);

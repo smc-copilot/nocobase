@@ -1,4 +1,7 @@
-import { authenticationToken } from '@nocobase/app-plugin-authentication/server';
+import {
+  authenticationToken,
+  userAdministrationServiceToken,
+} from '@nocobase/app-plugin-authentication/server';
 import type { AppPluginApplication } from '@nocobase/app-server/plugins';
 import { databaseManagerToken } from '@nocobase/db';
 import { ServiceProvider } from '@nocobase/service-provider';
@@ -44,6 +47,16 @@ export class AgentAuthorizationProvider extends ServiceProvider<AppPluginApplica
         }),
       ),
     );
+    if (container.has(userAdministrationServiceToken)) {
+      const users = container.resolve(userAdministrationServiceToken);
+      this.releases.push(
+        users.addOnUserDisabled(async (userId) => {
+          await container
+            .resolve(agentAuthorizationServiceToken)
+            .lifecycle.revokeUser(userId);
+        }),
+      );
+    }
   }
 
   public override shutdown(): Promise<void> {

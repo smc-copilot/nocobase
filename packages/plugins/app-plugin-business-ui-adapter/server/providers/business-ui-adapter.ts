@@ -28,8 +28,12 @@ function toGrantContext(usable: {
     readonly audience: string;
     readonly scopes: readonly string[];
     readonly revision: number;
+    readonly credentialEpoch: number;
   };
-  readonly client: { readonly allowedScopes: readonly string[] };
+  readonly client: {
+    readonly allowedScopes: readonly string[];
+    readonly epoch: number;
+  };
 }): GrantContext {
   return {
     grantId: usable.grant.id,
@@ -38,6 +42,8 @@ function toGrantContext(usable: {
     audience: usable.grant.audience,
     scopes: usable.grant.scopes,
     clientScopes: usable.client.allowedScopes,
+    clientEpoch: usable.client.epoch,
+    credentialEpoch: usable.grant.credentialEpoch,
     revision: usable.grant.revision,
   };
 }

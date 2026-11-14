@@ -49,3 +49,39 @@ describeMigration('agent_authorization_202611150001_create_collections', {
     await expectCollection('agentTokens').not.toExist();
   },
 });
+
+describeMigration('agent_authorization_202611170001_epochs', {
+  sources: migrations,
+  up: async ({ expectCollection }) => {
+    await expectCollection('agentClients').toHaveField('epoch', {
+      type: 'integer',
+      nullable: false,
+    });
+    await expectCollection('agentGrants').toHaveField('credentialEpoch', {
+      type: 'integer',
+      nullable: false,
+    });
+    await expectCollection('agentTokens').toHaveField('clientEpoch', {
+      type: 'integer',
+      nullable: false,
+    });
+    await expectCollection('agentTokens').toHaveField('credentialEpoch', {
+      type: 'integer',
+      nullable: false,
+    });
+    await expectCollection('agentAuthCodes').toHaveField('clientEpoch', {
+      type: 'integer',
+      nullable: false,
+    });
+    await expectCollection('agentAuthCodes').toHaveField('credentialEpoch', {
+      type: 'integer',
+      nullable: false,
+    });
+  },
+  down: async ({ expectCollection }) => {
+    await expectCollection('agentClients').not.toHaveField('epoch');
+    await expectCollection('agentGrants').not.toHaveField('credentialEpoch');
+    await expectCollection('agentTokens').not.toHaveField('clientEpoch');
+    await expectCollection('agentAuthCodes').not.toHaveField('credentialEpoch');
+  },
+});

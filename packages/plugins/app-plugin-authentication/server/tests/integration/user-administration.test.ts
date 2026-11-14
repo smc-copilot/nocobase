@@ -137,6 +137,39 @@ describe('user administration', () => {
     expect(response.status).toBe(200);
   });
 
+  it('runs shared disable hooks and continues after one hook throws', async () => {
+    const { users, signUp, connection } = await setup();
+    await signUp();
+    const user = await connection.query
+      .selectFrom('user')
+      .select('id')
+      .where('email', '=', 'alice@example.com')
+      .executeTakeFirstOrThrow();
+    const id = String(user.id);
+    const seen: string[] = [];
+    const remove = users.addOnUserDisabled((userId) => {
+      seen.push(`root:${userId}`);
+    });
+    const scoped = users.withConnection(connection);
+    scoped.addOnUserDisabled((userId) => {
+      seen.push(`scoped:${userId}`);
+      throw new Error('hook failed');
+    });
+    scoped.addOnUserDisabled((userId) => {
+      seen.push(`after:${userId}`);
+    });
+    await expect(scoped.disable(id)).resolves.toMatchObject({
+      id,
+      disabledAt: expect.any(Date),
+    });
+    expect(seen).toEqual([`root:${id}`, `scoped:${id}`, `after:${id}`]);
+    remove();
+    seen.length = 0;
+    await users.enable(id);
+    await users.disable(id);
+    expect(seen).toEqual([`scoped:${id}`, `after:${id}`]);
+  });
+
   it('validates a new password and revokes existing sessions after reset', async () => {
     const { users, signUp, connection, router } = await setup();
     const { cookie } = await signUp();
