@@ -247,3 +247,149 @@ describeMigration('business_ui_adapter_202611160001_embed_scopes', {
     await expectCollection('businessUiEmbedContexts').not.toHaveField('scopes');
   },
 });
+
+describeMigration(
+  'business_ui_adapter_202611170001_invalidate_unscoped_and_epochs',
+  {
+    sources: migrations,
+    before: async ({ connection }) => {
+      await connection.repository('businessUiEmbedContexts').createOne({
+        values: {
+          id: 'unscoped-embed',
+          authSessionRef: 'unscoped-session',
+          connectionId: 'legacy-connection',
+          interactionId: 'legacy-interaction',
+          localUserId: 'legacy-user',
+          formRef: 'generic.request.edit',
+          schemaVersion: '1',
+          actionBounds: { actions: ['edit'] },
+          scopes: null,
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          createdAt: '2026-11-01T00:00:00.000Z',
+        },
+      });
+      await connection.repository('businessUiEmbedContexts').createOne({
+        values: {
+          id: 'scoped-embed',
+          authSessionRef: 'scoped-session',
+          connectionId: 'legacy-connection',
+          interactionId: 'legacy-interaction',
+          localUserId: 'legacy-user',
+          formRef: 'generic.request.edit',
+          schemaVersion: '1',
+          actionBounds: { actions: ['edit'] },
+          scopes: ['business-ui:view'],
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          createdAt: '2026-11-01T00:00:00.000Z',
+        },
+      });
+      await connection.repository('businessUiTickets').createOne({
+        values: {
+          id: 'unscoped-ticket',
+          ticketDigest: 'digest-unscoped',
+          connectionId: 'legacy-connection',
+          localUserId: 'legacy-user',
+          interactionId: 'legacy-interaction',
+          formRef: 'generic.request.edit',
+          schemaVersion: '1',
+          nonce: 'n-unscoped',
+          action: 'edit',
+          bindingRevision: '1',
+          context: { mode: 'edit' },
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          createdAt: '2026-11-01T00:00:00.000Z',
+        },
+      });
+      await connection.repository('integrationTestDocuments').createOne({
+        values: {
+          id: 'kept-document',
+          draftId: 'kept-draft',
+          ownerId: 'legacy-user',
+          connectionId: 'legacy-connection',
+          interactionId: 'legacy-interaction',
+          title: 'Kept',
+          quantity: 1,
+          status: 'draft',
+          version: 1,
+          createdAt: '2026-11-01T00:00:00.000Z',
+          updatedAt: '2026-11-01T00:00:00.000Z',
+        },
+      });
+      await connection.repository('businessUiInteractions').createOne({
+        values: {
+          id: 'kept-interaction',
+          interactionId: 'kept-interaction',
+          connectionId: 'legacy-connection',
+          localUserId: 'legacy-user',
+          createdAt: '2026-11-01T00:00:00.000Z',
+          updatedAt: '2026-11-01T00:00:00.000Z',
+        },
+      });
+      await connection.repository('businessUiTickets').createOne({
+        values: {
+          id: 'scoped-ticket',
+          ticketDigest: 'digest-scoped',
+          connectionId: 'legacy-connection',
+          localUserId: 'legacy-user',
+          interactionId: 'legacy-interaction',
+          formRef: 'generic.request.edit',
+          schemaVersion: '1',
+          nonce: 'n-scoped',
+          action: 'edit',
+          bindingRevision: '1',
+          context: { mode: 'edit', scopes: ['business-ui:edit'] },
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          createdAt: '2026-11-01T00:00:00.000Z',
+        },
+      });
+    },
+    up: async ({ connection, expectCollection }) => {
+      await expectCollection('businessUiEmbedContexts').toHaveField(
+        'clientEpoch',
+        { type: 'integer', nullable: true },
+      );
+      await expectCollection('businessUiEmbedContexts').toHaveField(
+        'credentialEpoch',
+        { type: 'integer', nullable: true },
+      );
+      expect(
+        await connection
+          .repository('businessUiEmbedContexts')
+          .findOne({ filter: { id: 'unscoped-embed' } }),
+      ).toBeUndefined();
+      expect(
+        await connection
+          .repository('businessUiEmbedContexts')
+          .findOne({ filter: { id: 'scoped-embed' } }),
+      ).toMatchObject({ id: 'scoped-embed' });
+      expect(
+        await connection
+          .repository('businessUiTickets')
+          .findOne({ filter: { id: 'unscoped-ticket' } }),
+      ).toBeUndefined();
+      expect(
+        await connection
+          .repository('businessUiTickets')
+          .findOne({ filter: { id: 'scoped-ticket' } }),
+      ).toMatchObject({ id: 'scoped-ticket' });
+      expect(
+        await connection
+          .repository('integrationTestDocuments')
+          .findOne({ filter: { id: 'kept-document' } }),
+      ).toMatchObject({ id: 'kept-document', title: 'Kept' });
+      expect(
+        await connection
+          .repository('businessUiInteractions')
+          .findOne({ filter: { id: 'kept-interaction' } }),
+      ).toMatchObject({ id: 'kept-interaction' });
+    },
+    down: async ({ expectCollection }) => {
+      await expectCollection('businessUiEmbedContexts').not.toHaveField(
+        'clientEpoch',
+      );
+      await expectCollection('businessUiEmbedContexts').not.toHaveField(
+        'credentialEpoch',
+      );
+    },
+  },
+);

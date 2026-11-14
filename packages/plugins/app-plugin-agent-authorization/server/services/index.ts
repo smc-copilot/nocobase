@@ -1,6 +1,7 @@
 import { createAuditService } from './audit.js';
 import { createClientService } from './clients.js';
 import { createGrantService } from './grants.js';
+import { createLifecycleService } from './lifecycle.js';
 import { createOAuthService } from './oauth.js';
 import type {
   AgentAuthorizationServices,
@@ -30,12 +31,14 @@ export function createAgentAuthorizationServices(
     grants,
   });
   const audit = createAuditService(options.database);
+  const lifecycle = createLifecycleService(options.database);
 
   return {
     clients,
     grants,
     oauth,
     audit,
+    lifecycle,
     config: options.config,
   };
 }

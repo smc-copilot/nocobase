@@ -70,6 +70,9 @@ export interface UpdateAdministratedUserInput {
   readonly email?: string;
 }
 
+/** Called after a local user is disabled. Optional plugins register here. */
+export type OnUserDisabledHandler = (userId: string) => void | Promise<void>;
+
 export interface UserAdministrationService {
   withConnection(connection: DatabaseConnection): UserAdministrationService;
   /** People by default; `kind` lists service accounts instead, or both. */
@@ -97,6 +100,12 @@ export interface UserAdministrationService {
   resetPassword(userId: string, password: string): Promise<void>;
   revokeSessions(userId: string): Promise<void>;
   remove(userId: string, actorId: string): Promise<void>;
+  /**
+   * Registers a handler that runs after the user is marked disabled and sessions
+   * are revoked. Returns an unsubscribe function. Handlers are shared across
+   * `withConnection` views of the same service.
+   */
+  addOnUserDisabled(handler: OnUserDisabledHandler): () => void;
 }
 
 export class UserAdministrationError extends Error {
@@ -120,17 +129,24 @@ export interface CreateUserAdministrationServiceOptions {
   readonly auth: Auth;
   readonly connection: DatabaseConnection;
   readonly realtime?: RealtimeService;
+  /** Shared mutable list so withConnection keeps the same disable hooks. */
+  readonly onUserDisabledHandlers?: OnUserDisabledHandler[];
 }
 
 export function createUserAdministrationService(
   options: CreateUserAdministrationServiceOptions,
 ): UserAdministrationService {
-  return new DefaultUserAdministrationService(options);
+  return new DefaultUserAdministrationService({
+    ...options,
+    onUserDisabledHandlers: options.onUserDisabledHandlers ?? [],
+  });
 }
 
 class DefaultUserAdministrationService implements UserAdministrationService {
   constructor(
-    private readonly options: CreateUserAdministrationServiceOptions,
+    private readonly options: CreateUserAdministrationServiceOptions & {
+      readonly onUserDisabledHandlers: OnUserDisabledHandler[];
+    },
   ) {}
 
   withConnection(connection: DatabaseConnection): UserAdministrationService {
@@ -139,6 +155,14 @@ class DefaultUserAdministrationService implements UserAdministrationService {
       connection,
       auth: this.options.auth.forConnection(connection),
     });
+  }
+
+  addOnUserDisabled(handler: OnUserDisabledHandler): () => void {
+    this.options.onUserDisabledHandlers.push(handler);
+    return () => {
+      const index = this.options.onUserDisabledHandlers.indexOf(handler);
+      if (index >= 0) this.options.onUserDisabledHandlers.splice(index, 1);
+    };
   }
 
   async list(
@@ -335,6 +359,13 @@ class DefaultUserAdministrationService implements UserAdministrationService {
       disabledAt: new Date(),
     });
     await this.revokeSessions(userId);
+    for (const handler of [...this.options.onUserDisabledHandlers]) {
+      try {
+        await handler(userId);
+      } catch {
+        // One plugin hook must not skip the remaining hooks or undo the disable.
+      }
+    }
     return (await this.get(userId))!;
   }
 

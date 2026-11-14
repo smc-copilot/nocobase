@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { hashTicket } from '../../server/crypto.js';
 import type { GrantContext } from '../../server/grants.js';
 import {
   AUDIENCE,
@@ -290,7 +291,7 @@ describe('caller credential and scope intersection', () => {
     ).rejects.toMatchObject({ code: 'GRANT_REQUIRED' });
   });
 
-  it('falls back to grant ∩ client for a null embed scope and honors a client shrink', async () => {
+  it('refuses embeds and tickets that lack a scope snapshot', async () => {
     harness = await createAdapterHarness();
     const userId = await harness.createLocalUser('legacy@example.com');
     const issued = await harness.authorizeAgent(userId);
@@ -318,6 +319,18 @@ describe('caller credential and scope intersection', () => {
       disableRefresh: true,
     });
     const sessionRef = session!.session.id;
+    const saved = await harness.services.saveDocument(
+      CONNECTION_ID,
+      userId,
+      sessionRef,
+      {
+        title: 'Kept draft',
+        description: '',
+        quantity: 2,
+        record_version: 0,
+      },
+    );
+    expect(saved.record_version).toBe(1);
     await harness.database
       .connection()
       .query.updateTable('businessUiEmbedContexts')
@@ -325,22 +338,6 @@ describe('caller credential and scope intersection', () => {
       .where('authSessionRef', '=', sessionRef)
       .execute();
 
-    const saved = await harness.services.saveDocument(
-      CONNECTION_ID,
-      userId,
-      sessionRef,
-      {
-        title: 'Legacy draft',
-        description: '',
-        quantity: 2,
-        record_version: 0,
-      },
-    );
-    expect(saved.record_version).toBe(1);
-
-    await harness.agent.clients.update(issued.grant.clientId, {
-      allowedScopes: ['business-ui:view'],
-    });
     await expect(
       harness.services.saveDocument(CONNECTION_ID, userId, sessionRef, {
         title: 'Should not land',
@@ -349,24 +346,167 @@ describe('caller credential and scope intersection', () => {
         record_version: 1,
       }),
     ).rejects.toMatchObject({ code: 'GRANT_REQUIRED' });
+
+    await harness.database
+      .connection()
+      .query.updateTable('businessUiEmbedContexts')
+      .set({ scopes: { not: 'an-array' } })
+      .where('authSessionRef', '=', sessionRef)
+      .execute();
     await expect(
-      harness.services.issueTicket(
-        CONNECTION_ID,
-        userId,
-        {
-          formRef: 'generic.request.edit',
-          schemaVersion: '1',
-          subject: { issuer: 'https://octop.test.local', sub: 'octop-legacy' },
-          nonce: 'n-shrunk',
+      harness.services.saveDocument(CONNECTION_ID, userId, sessionRef, {
+        title: 'Still blocked',
+        description: '',
+        quantity: 3,
+        record_version: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'GRANT_REQUIRED' });
+
+    const freshTicket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      userId,
+      {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-legacy-2' },
+        nonce: 'n-legacy-2',
+      },
+      issued.grant,
+    );
+    await harness.database
+      .connection()
+      .query.updateTable('businessUiTickets')
+      .set({
+        context: {
+          recordId: null,
+          documentType: 'generic.request',
+          mode: 'edit',
+          permissionRef: 'generic.request:edit',
+          formConfigVersion: '1',
         },
-        issued.grant,
+      })
+      .where('ticketDigest', '=', hashTicket(freshTicket.ticket as string))
+      .execute();
+    await expect(
+      harness.services.redeemTicket(
+        CONNECTION_ID,
+        { ticket: freshTicket.ticket as string, nonce: 'n-legacy-2' },
+        new Request('http://localhost/redeem', { method: 'POST' }),
       ),
     ).rejects.toMatchObject({ code: 'GRANT_REQUIRED' });
 
-    const rows = await documents(harness, ticket.interaction_id as string);
-    expect(rows).toEqual([
+    const interactionId = ticket.interaction_id as string;
+    expect(await documents(harness, interactionId)).toEqual([
       expect.objectContaining({
-        title: 'Legacy draft',
+        title: 'Kept draft',
+        version: 1,
+        status: 'draft',
+      }),
+    ]);
+
+    const recoveredTicket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      userId,
+      {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        interactionId,
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-legacy' },
+        nonce: 'n-legacy-recovered',
+      },
+      issued.grant,
+    );
+    const recovered = await harness.services.redeemTicket(
+      CONNECTION_ID,
+      { ticket: recoveredTicket.ticket as string, nonce: 'n-legacy-recovered' },
+      new Request('http://localhost/redeem-again', { method: 'POST' }),
+    );
+    const recoveredCookie = recovered.setCookies
+      .map((entry) => entry.split(';')[0])
+      .join('; ');
+    const recoveredSession = await harness.auth.getSession(
+      new Headers({ cookie: recoveredCookie }),
+      { disableRefresh: true },
+    );
+    const next = await harness.services.saveDocument(
+      CONNECTION_ID,
+      userId,
+      recoveredSession!.session.id,
+      {
+        title: 'Kept draft',
+        description: 'resumed',
+        quantity: 2,
+        record_version: 1,
+      },
+    );
+    expect(next.record_version).toBe(2);
+    expect(await documents(harness, interactionId)).toEqual([
+      expect.objectContaining({
+        title: 'Kept draft',
+        version: 2,
+        status: 'draft',
+      }),
+    ]);
+  });
+
+  it('rejects a later save when the client allowed scopes shrink', async () => {
+    harness = await createAdapterHarness();
+    const userId = await harness.createLocalUser('shrink@example.com');
+    const issued = await harness.authorizeAgent(userId);
+    await harness.seedDefaults();
+    const ticket = await harness.services.issueTicket(
+      CONNECTION_ID,
+      userId,
+      {
+        formRef: 'generic.request.edit',
+        schemaVersion: '1',
+        subject: { issuer: 'https://octop.test.local', sub: 'octop-shrink' },
+        nonce: 'n-shrink',
+      },
+      issued.grant,
+    );
+    const redeem = await harness.services.redeemTicket(
+      CONNECTION_ID,
+      { ticket: ticket.ticket as string, nonce: 'n-shrink' },
+      new Request('http://localhost/redeem-shrink', { method: 'POST' }),
+    );
+    const cookie = redeem.setCookies
+      .map((entry) => entry.split(';')[0])
+      .join('; ');
+    const session = await harness.auth.getSession(new Headers({ cookie }), {
+      disableRefresh: true,
+    });
+    const saved = await harness.services.saveDocument(
+      CONNECTION_ID,
+      userId,
+      session!.session.id,
+      {
+        title: 'Before shrink',
+        description: '',
+        quantity: 1,
+        record_version: 0,
+      },
+    );
+    expect(saved.record_version).toBe(1);
+    await harness.agent.clients.update(issued.grant.clientId, {
+      allowedScopes: ['business-ui:view'],
+    });
+    await expect(
+      harness.services.saveDocument(
+        CONNECTION_ID,
+        userId,
+        session!.session.id,
+        {
+          title: 'After shrink',
+          description: '',
+          quantity: 4,
+          record_version: 1,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'GRANT_REQUIRED' });
+    expect(await documents(harness, ticket.interaction_id as string)).toEqual([
+      expect.objectContaining({
+        title: 'Before shrink',
         version: 1,
         status: 'draft',
       }),

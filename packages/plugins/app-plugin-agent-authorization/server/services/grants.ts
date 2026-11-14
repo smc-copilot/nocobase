@@ -1,6 +1,7 @@
 import type { DatabaseManager } from '@nocobase/db';
 
 import { randomId } from '../crypto.js';
+import { readEpoch } from './epochs.js';
 import { oauthError } from './errors.js';
 import type {
   AgentClientRow,
@@ -34,6 +35,7 @@ function toRow(record: Record<string, unknown>): AgentGrantRow {
     audience: String(record.audience),
     scopes: asStringArray(record.scopes),
     revision: Number(record.revision ?? 1),
+    credentialEpoch: Number(record.credentialEpoch ?? 1),
     status: String(record.status) === 'revoked' ? 'revoked' : 'active',
     expiresAt: record.expiresAt ? new Date(record.expiresAt as Date) : null,
     lastUsedAt: record.lastUsedAt ? new Date(record.lastUsedAt as Date) : null,
@@ -68,6 +70,7 @@ function toClientRow(record: Record<string, unknown>): AgentClientRow {
     enabled:
       record.enabled === true || record.enabled === 1 || record.enabled === '1',
     secretVersion: Number(record.secretVersion ?? 1),
+    epoch: readEpoch(record.epoch) ?? 1,
     createdAt: new Date(record.createdAt as Date),
     updatedAt: new Date(record.updatedAt as Date),
   };
@@ -202,6 +205,7 @@ export function createGrantService(database: () => DatabaseManager) {
           audience: input.audience,
           scopes: [...input.scopes],
           revision: 1,
+          credentialEpoch: 1,
           status: 'active',
           expiresAt: null,
           lastUsedAt: createdAt,

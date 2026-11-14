@@ -2,12 +2,22 @@ import { ApiClientError, useApiClient } from '@nocobase/app-client';
 import { useTranslation } from '@nocobase/i18n/client';
 import { useEffect, useState } from 'react';
 
+export const AGENT_AUTH_METHODS = [
+  'client_secret_post',
+  'client_secret_basic',
+] as const;
+
+export type AgentAuthMethod = (typeof AGENT_AUTH_METHODS)[number];
+
 export interface AgentClientRow {
   readonly clientId: string;
   readonly name: string;
+  readonly description: string | null;
   readonly instanceLabel: string | null;
+  readonly authMethod: AgentAuthMethod;
   readonly redirectUris: readonly string[];
   readonly allowedScopes: readonly string[];
+  readonly allowedOrigins: readonly string[];
   readonly enabled: boolean;
   readonly secretVersion: number;
 }

@@ -7,6 +7,7 @@ import {
   randomSecret,
   secretsEqual,
 } from '../crypto.js';
+import { readEpoch } from './epochs.js';
 import { oauthError } from './errors.js';
 import type {
   AgentClientCreated,
@@ -51,6 +52,7 @@ function toRow(record: Record<string, unknown>): AgentClientRow {
     enabled:
       record.enabled === true || record.enabled === 1 || record.enabled === '1',
     secretVersion: Number(record.secretVersion ?? 1),
+    epoch: readEpoch(record.epoch) ?? 1,
     createdAt: new Date(record.createdAt as Date),
     updatedAt: new Date(record.updatedAt as Date),
   };
@@ -68,6 +70,7 @@ function toView(row: AgentClientRow): AgentClientView {
     allowedOrigins: row.allowedOrigins,
     enabled: row.enabled,
     secretVersion: row.secretVersion,
+    epoch: row.epoch,
     hasSecret: true,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -123,6 +126,7 @@ export function createClientService(database: () => DatabaseManager) {
           allowedOrigins: [...(input.allowedOrigins ?? [])],
           enabled: input.enabled ?? true,
           secretVersion: 1,
+          epoch: 1,
           createdAt,
           updatedAt: createdAt,
         })
@@ -172,6 +176,7 @@ export function createClientService(database: () => DatabaseManager) {
             ? { allowedOrigins: [...input.allowedOrigins] }
             : {}),
           ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+          ...(disabling ? { epoch: existing.epoch + 1 } : {}),
           updatedAt,
         })
         .where('clientId', '=', clientId)
@@ -182,6 +187,12 @@ export function createClientService(database: () => DatabaseManager) {
           .set({ revokedAt: updatedAt })
           .where('clientId', '=', clientId)
           .where('revokedAt', 'is', null)
+          .execute();
+        await db()
+          .updateTable('agentAuthCodes')
+          .set({ consumedAt: updatedAt })
+          .where('clientId', '=', clientId)
+          .where('consumedAt', 'is', null)
           .execute();
       }
       return toView((await load(clientId))!);

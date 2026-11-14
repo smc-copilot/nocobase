@@ -19,6 +19,10 @@ export interface GrantContext {
    * the require-grant path loads them so a later client shrink takes effect.
    */
   readonly clientScopes?: readonly string[];
+  /** Current client epoch; embeds must match or be refused. */
+  readonly clientEpoch?: number;
+  /** Current grant credential epoch; embeds must match or be refused. */
+  readonly credentialEpoch?: number;
   readonly revision: number;
 }
 

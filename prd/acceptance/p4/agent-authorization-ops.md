@@ -22,13 +22,17 @@ Audience: operators of Integration Demo and SMC Control with NocoBase-owned OAut
 
 SMC Control lists three administration pages under System settings → Agent authorization.
 
-- Clients (`/settings/agent-authorization/clients`): create a client, rotate its secret, and enable or disable it. The list shows whether a secret exists and never displays the secret again.
+- Clients (`/settings/agent-authorization/clients`): create a client with name, description, instance label, one or more redirect URIs, allowed origins, scopes, and auth method (`client_secret_post` or `client_secret_basic`); edit those registration fields later (auth method stays API-only after create); rotate the secret; enable or disable. The list shows auth method and origins. The plaintext secret is shown once and never listed again.
 - Grants (`/settings/agent-authorization/grants`): list grants and revoke one. Revocation does not expand another user’s consent.
 - Audit (`/settings/agent-authorization/audit`): read client, grant, and consent audit events, including the actor recorded for create, update, secret rotation, and revoke.
 
 ## Client disable and re-enable
 
-Disabling a client sets `enabled` to false and revokes every access token and refresh token issued to that client. API calls and existing embeds that depended on those tokens fail closed. Enabling the client again does not restore the revoked tokens. The person must start a new authorization-code exchange. A second client’s tokens and the person’s local NocoBase login stay usable.
+Disabling a client sets `enabled` to false, increments the client’s persistent `epoch`, revokes every access and refresh token for that client, and consumes unused authorization codes. Tokens, codes, tickets, and embeds stamped with the previous epoch fail closed even after the client is enabled again. Enabling the client does not move the epoch back. The person must start a new authorization-code exchange (and re-open any Business UI embed). A second client’s credentials and the person’s local NocoBase login stay usable.
+
+## User disable and re-enable
+
+Disabling a local user through native user administration runs the agent-authorization hook: every grant for that user bumps `credentialEpoch`, and the user’s agent tokens and unused codes are revoked. Existing embeds that stored the previous credential epoch fail closed. Enabling the user does not restore those credentials; a fresh consent and code exchange is required. Local password login after enable is separate from agent OAuth credentials.
 
 ## Login redirect and consent
 

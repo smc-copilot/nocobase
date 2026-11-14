@@ -18,6 +18,7 @@ import {
   randomSecret,
   secretsEqual,
 } from '../crypto.js';
+import { readEpoch } from './epochs.js';
 import { oauthError } from './errors.js';
 import type {
   AgentAuthorizationServices,
@@ -57,6 +58,8 @@ export function createOAuthService(options: {
     readonly scope: string;
     readonly audience: string;
     readonly grantRevision: number;
+    readonly clientEpoch: number;
+    readonly credentialEpoch: number;
   }): Promise<TokenResponse & { readonly refreshId: string }> {
     const createdAt = now();
     const { access, refresh } = ttls();
@@ -80,6 +83,8 @@ export function createOAuthService(options: {
           revokedAt: null,
           rotatedToId: null,
           grantRevision: input.grantRevision,
+          clientEpoch: input.clientEpoch,
+          credentialEpoch: input.credentialEpoch,
           createdAt,
         },
         {
@@ -95,6 +100,8 @@ export function createOAuthService(options: {
           revokedAt: null,
           rotatedToId: null,
           grantRevision: input.grantRevision,
+          clientEpoch: input.clientEpoch,
+          credentialEpoch: input.credentialEpoch,
           createdAt,
         },
       ])
@@ -149,6 +156,9 @@ export function createOAuthService(options: {
       readonly codeChallenge: string;
       readonly scope: string;
     }): Promise<string> {
+      const { grant, client } = await options.grants.requireUsable(
+        input.grantId,
+      );
       const createdAt = now();
       const plaintext = `${AUTH_CODE_PREFIX}${randomSecret()}`;
       await db()
@@ -164,6 +174,8 @@ export function createOAuthService(options: {
           scope: input.scope,
           expiresAt: addSeconds(createdAt, ttls().code),
           consumedAt: null,
+          clientEpoch: client.epoch,
+          credentialEpoch: grant.credentialEpoch,
           createdAt,
         })
         .execute();
@@ -202,7 +214,15 @@ export function createOAuthService(options: {
       if (!secretsEqual(challenge, String(row.codeChallenge))) {
         throw oauthError('INVALID_GRANT', 'PKCE verification failed');
       }
-      const { grant } = await options.grants.requireUsable(String(row.grantId));
+      const { grant, client } = await options.grants.requireUsable(
+        String(row.grantId),
+      );
+      if (
+        readEpoch(row.clientEpoch) !== client.epoch ||
+        readEpoch(row.credentialEpoch) !== grant.credentialEpoch
+      ) {
+        throw oauthError('INVALID_GRANT', 'Authorization code epoch mismatch');
+      }
       const consumedAt = now();
       const updated = await db()
         .updateTable('agentAuthCodes')
@@ -221,6 +241,8 @@ export function createOAuthService(options: {
           scope: String(row.scope),
           audience: grant.audience,
           grantRevision: grant.revision,
+          clientEpoch: client.epoch,
+          credentialEpoch: grant.credentialEpoch,
         }),
       );
     },
@@ -247,10 +269,16 @@ export function createOAuthService(options: {
       if (new Date(row.expiresAt as Date) < now()) {
         throw oauthError('INVALID_GRANT', 'Refresh token expired');
       }
-      const { grant } = await options.grants.requireUsable(
+      const { grant, client } = await options.grants.requireUsable(
         String(row.grantId),
         Number(row.grantRevision),
       );
+      if (
+        readEpoch(row.clientEpoch) !== client.epoch ||
+        readEpoch(row.credentialEpoch) !== grant.credentialEpoch
+      ) {
+        throw oauthError('INVALID_GRANT', 'Refresh token epoch mismatch');
+      }
       const scope = narrowedScope(String(row.scope), input.scope);
       const issued = await issueTokenPair({
         grantId: grant.id,
@@ -259,6 +287,8 @@ export function createOAuthService(options: {
         scope,
         audience: grant.audience,
         grantRevision: grant.revision,
+        clientEpoch: client.epoch,
+        credentialEpoch: grant.credentialEpoch,
       });
       const revoked = await db()
         .updateTable('agentTokens')
@@ -309,19 +339,17 @@ export function createOAuthService(options: {
       if (expectedAudience && String(row.audience) !== expectedAudience) {
         return undefined;
       }
-      const client = await options.clients.get(String(row.clientId));
-      if (!client?.enabled) return undefined;
-      const user = await db()
-        .selectFrom('user')
-        .select(['disabledAt'])
-        .where('id', '=', String(row.localUserId))
-        .executeTakeFirst();
-      if (!user || user.disabledAt) return undefined;
       try {
-        await options.grants.requireActive(
+        const { grant, client } = await options.grants.requireUsable(
           String(row.grantId),
           Number(row.grantRevision),
         );
+        if (
+          readEpoch(row.clientEpoch) !== client.epoch ||
+          readEpoch(row.credentialEpoch) !== grant.credentialEpoch
+        ) {
+          return undefined;
+        }
       } catch {
         return undefined;
       }
