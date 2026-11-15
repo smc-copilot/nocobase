@@ -5,7 +5,7 @@ import {
   useToaster,
 } from '@nocobase/app-client';
 import { useTranslation } from '@nocobase/i18n/client';
-import { type ReactElement, useMemo, useState } from 'react';
+import { type ReactElement, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { BackButton } from '#components/back-button';
 import { PageContainer } from '#components/page-container';
@@ -88,6 +88,8 @@ export default function MeetingOaPage(): ReactElement {
   >([]);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
   const [tasks, setTasks] = useState<DraftTask[] | null>(null);
+  const persistLockRef = useRef(false);
+  const persistGenerationRef = useRef(0);
 
   const shownTitle = title ?? draft?.title ?? '';
   const shownSummary = summary ?? draft?.summary ?? '';
@@ -99,6 +101,8 @@ export default function MeetingOaPage(): ReactElement {
     nextTasks: DraftTask[] = shownTasks,
   ): Promise<Draft | undefined> => {
     if (!draft || currentVersion == null) return undefined;
+    const generation = persistGenerationRef.current + 1;
+    persistGenerationRef.current = generation;
     const result = await api.request<{ data: Draft }>({
       path: `meetings/${meetingId}/oa-draft`,
       method: 'PUT',
@@ -109,6 +113,14 @@ export default function MeetingOaPage(): ReactElement {
         tasks: nextTasks,
       },
     });
+    if (generation !== persistGenerationRef.current) {
+      setSavedVersion((previous) =>
+        previous == null || result.data.version > previous
+          ? result.data.version
+          : previous,
+      );
+      return result.data;
+    }
     setSavedVersion(result.data.version);
     setTasks([...(result.data.tasks ?? nextTasks)]);
     void draftRequest.reload();
@@ -116,7 +128,8 @@ export default function MeetingOaPage(): ReactElement {
   };
 
   const save = async (nextTasks: DraftTask[] = shownTasks) => {
-    if (!draft) return;
+    if (!draft || persistLockRef.current) return;
+    persistLockRef.current = true;
     setBusy(true);
     try {
       await persistDraft(nextTasks);
@@ -130,15 +143,17 @@ export default function MeetingOaPage(): ReactElement {
             : t('meetingOa.draftFailed'),
       });
     } finally {
+      persistLockRef.current = false;
       setBusy(false);
     }
   };
 
   const sync = async () => {
-    if (!draft) return;
+    if (!draft || persistLockRef.current) return;
+    persistLockRef.current = true;
     setBusy(true);
     try {
-      const saved = await persistDraft();
+      const saved = await persistDraft(shownTasks);
       if (!saved) return;
       const result = await api.request<{ data: { id: string } }>({
         path: 'meetingOa/operations',
@@ -159,6 +174,7 @@ export default function MeetingOaPage(): ReactElement {
             : t('meetingOa.syncFailed'),
       });
     } finally {
+      persistLockRef.current = false;
       setBusy(false);
     }
   };
@@ -308,8 +324,10 @@ export default function MeetingOaPage(): ReactElement {
               <Button
                 type='button'
                 variant='outline'
+                disabled={busy}
                 onClick={() => {
-                  if (!taskTitle.trim()) return;
+                  if (busy || persistLockRef.current || !taskTitle.trim())
+                    return;
                   const nextTasks = [
                     ...shownTasks,
                     {

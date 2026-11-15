@@ -392,6 +392,117 @@ describe('OA workspace page', () => {
     });
   });
 
+  it('disables add task while a draft save is in flight', async () => {
+    let releasePut: (() => void) | undefined;
+    const putGate = new Promise<void>((resolve) => {
+      releasePut = resolve;
+    });
+    await renderWithApp(
+      <Routes>
+        <Route path='/meetings/:meetingId/oa' element={<MeetingOaPage />} />
+      </Routes>,
+      {
+        namespace: packageMetadata.name,
+        namespaces: { [packageMetadata.name]: enUS },
+        route: '/meetings/meet-1/oa',
+        fetch: answerApi(async ({ path, method, json }) => {
+          if (path === 'authorization/permissions') return grantPages();
+          if (path === 'meetingOa/identity') {
+            return {
+              data: {
+                userId: 'u1',
+                employeeNo: 'E1001',
+                canSync: true,
+                denyReason: null,
+              },
+            };
+          }
+          if (path === 'meetings/meet-1/oa-draft' && method !== 'PUT') {
+            return {
+              data: {
+                meetingId: 'meet-1',
+                version: 1,
+                title: 'Draft meeting',
+                startAt: null,
+                endAt: null,
+                location: null,
+                summary: 'Minutes',
+                tasks: [],
+                filledFromContentVersion: 0,
+                writesOa: false,
+                isolationAdapter: true,
+              },
+            };
+          }
+          if (path === 'meetings/meet-1/oa-draft' && method === 'PUT') {
+            await putGate;
+            const body = json as {
+              expectedVersion: number;
+              tasks: { title: string }[];
+            };
+            return {
+              data: {
+                meetingId: 'meet-1',
+                version: body.expectedVersion + 1,
+                title: 'Draft meeting',
+                summary: 'Minutes',
+                tasks: body.tasks,
+                writesOa: false,
+                isolationAdapter: true,
+              },
+            };
+          }
+          if (path === 'meetings/meet-1/content') {
+            return {
+              data: {
+                minutes: { text: 'Minutes', source: 'local' },
+                sourceTodos: [],
+                localMinutesEdited: false,
+                importStatus: 'empty',
+                lastImportError: null,
+                liveGatewayImport: 'unavailable',
+              },
+            };
+          }
+          return new Response(null, { status: 404 });
+        }),
+        services: (app) => {
+          app.container.singleton(
+            authorizationClientToken,
+            (resolver) =>
+              new AuthorizationClient(resolver.resolve(apiClientToken)),
+          );
+        },
+      },
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: enUS.meetingOa.workspaceTitle,
+      }),
+    ).toBeInTheDocument();
+    await userEvent.type(
+      screen.getByRole('textbox', { name: enUS.meetingOa.fields.taskTitle }),
+      'First task',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: enUS.meetingOa.addTask }),
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: enUS.meetingOa.addTask }),
+      ).toBeDisabled();
+    });
+    expect(
+      screen.getByRole('button', { name: enUS.meetingOa.submitSync }),
+    ).toBeDisabled();
+    releasePut?.();
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: enUS.meetingOa.addTask }),
+      ).toBeEnabled();
+    });
+  });
+
   it('reads an operation without posting a write and records reconcile evidence only', async () => {
     const posted: { path: string; method?: string }[] = [];
     const { unmount } = await renderWithApp(
