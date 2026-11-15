@@ -2,6 +2,7 @@ import { MeetingGatewayError } from './errors.js';
 import type {
   GatewayAuthorizationStart,
   GatewayConnection,
+  GatewayContentArtifact,
   GatewayMeetingRecord,
   GatewayParticipantRecord,
   GatewayRecordingRecord,
@@ -19,6 +20,7 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
   meetings: GatewayMeetingRecord[] = [];
   participants = new Map<string, GatewayParticipantRecord[]>();
   recordings = new Map<string, GatewayRecordingRecord[]>();
+  artifacts = new Map<string, GatewayContentArtifact[]>();
   queryError: MeetingGatewayError | undefined;
   participantError: MeetingGatewayError | undefined;
   recordingError: MeetingGatewayError | undefined;
@@ -31,6 +33,7 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     this.meetings = [];
     this.participants = new Map();
     this.recordings = new Map();
+    this.artifacts = new Map();
     this.queryError = undefined;
     this.participantError = undefined;
     this.recordingError = undefined;
@@ -123,5 +126,25 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     this.requireToken(input.accessToken);
     if (this.recordingError) throw this.recordingError;
     return this.recordings.get(input.meetingId) ?? [];
+  }
+
+  async importRecordingContent(input: {
+    accessToken: string;
+    connectionRef: string;
+    recordFileId: string;
+  }): Promise<readonly GatewayContentArtifact[]> {
+    this.requireToken(input.accessToken);
+    return (
+      this.artifacts.get(input.recordFileId) ?? [
+        {
+          group: 'ai_meeting_transcripts',
+          text: 'Isolation transcript for local content tests.',
+        },
+        {
+          group: 'ai_ds_minutes',
+          text: '## 待办事项\n- Isolation source todo',
+        },
+      ]
+    );
   }
 }

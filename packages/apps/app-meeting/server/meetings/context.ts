@@ -6,8 +6,16 @@ import { databaseManagerToken } from '@nocobase/db';
 import type { AuthEnv } from '@nocobase/app-plugin-authentication';
 import type { AuthorizationEnv } from '@nocobase/app-plugin-authorization/server';
 import type { MeetingGatewayConfig } from '../config/meeting-gateway.js';
+import type { MeetingOaConfig } from '../config/meeting-oa.js';
+import { MeetingContentService } from './content-service.js';
 import { MeetingGatewayService } from './gateway-service.js';
 import { meetingGatewayAdapterToken } from './gateway/token.js';
+import { MeetingOaDraftService } from './oa/draft-service.js';
+import { MeetingOaExecutor } from './oa/executor.js';
+import { MeetingOaIdentityService } from './oa/identity-service.js';
+import { MeetingOaOperationService } from './oa/operation-service.js';
+import { MeetingOaSettingsService } from './oa/settings-service.js';
+import { meetingOaAdapterToken } from './oa/token.js';
 import { MeetingQueryRunService } from './query-run-service.js';
 import { MeetingQueryService } from './service.js';
 
@@ -58,6 +66,32 @@ export function createMeetingServices(
     currentUserId(context),
     meetingReturnTo(app),
   );
+  const oaConfig =
+    app.config.get<MeetingOaConfig>('meetingOa') ??
+    ({ timeoutMs: 15_000, testAdapter: false } satisfies MeetingOaConfig);
+  const oaAdapter = app.container.resolve(meetingOaAdapterToken);
+  const userId = currentUserId(context);
+  const contents = new MeetingContentService(
+    connection,
+    authz,
+    gateway,
+    adapter,
+    userId,
+  );
+  const identity = new MeetingOaIdentityService(
+    connection,
+    authz,
+    userId,
+    oaAdapter,
+  );
+  const drafts = new MeetingOaDraftService(
+    connection,
+    authz,
+    contents,
+    userId,
+    oaConfig.testAdapter === true,
+  );
+  const executor = new MeetingOaExecutor(connection, oaAdapter);
   return {
     meetings: new MeetingQueryService(connection, authz),
     gateway,
@@ -67,8 +101,29 @@ export function createMeetingServices(
       gateway,
       adapter,
       config,
-      currentUserId(context),
+      userId,
       config.testAdapter ? async () => undefined : undefined,
     ),
+    contents,
+    identity,
+    drafts,
+    operations: new MeetingOaOperationService(
+      connection,
+      authz,
+      drafts,
+      identity,
+      executor,
+      userId,
+      oaConfig.testAdapter === true,
+    ),
+    oaSettings: new MeetingOaSettingsService(
+      connection,
+      authz,
+      secrets,
+      oaAdapter,
+      oaConfig,
+      userId,
+    ),
+    oaAdapter,
   };
 }

@@ -27,6 +27,7 @@ import snowflake from './snowflake.js';
 import users from './users.js';
 import foundation from './foundation.js';
 import meetingGateway from './meeting-gateway.js';
+import meetingOa from './meeting-oa.js';
 
 const defaultConfigs: AppConfigFactory<{
   mailers: ReturnType<typeof mailers>;
@@ -54,6 +55,7 @@ const defaultConfigs: AppConfigFactory<{
   users: ReturnType<typeof users>;
   foundation: ReturnType<typeof foundation>;
   meetingGateway: ReturnType<typeof meetingGateway>;
+  meetingOa: ReturnType<typeof meetingOa>;
 }> = defaultAppConfigs({
   mailers,
   auth,
@@ -80,6 +82,7 @@ const defaultConfigs: AppConfigFactory<{
   users,
   foundation,
   meetingGateway,
+  meetingOa,
 });
 
 export default defaultConfigs;

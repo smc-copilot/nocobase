@@ -75,7 +75,10 @@ describe('default Foundation integration', () => {
       ],
       [
         'settingsBusiness',
-        [['meetingConnections', '/settings/meeting-connections']],
+        [
+          ['meetingConnections', '/settings/meeting-connections'],
+          ['meetingIntegrations', '/settings/meeting-integrations'],
+        ],
       ],
       [
         'settingsSystem',

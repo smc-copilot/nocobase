@@ -200,6 +200,9 @@ describe('app client routes', () => {
       { name: 'meetingDetail', authorizedAs: 'meetings' },
       { name: 'meetingParticipants', authorizedAs: 'meetings' },
       { name: 'meetingRecordings', authorizedAs: 'meetings' },
+      { name: 'meetingOa', authorizedAs: 'meetings' },
+      { name: 'meetingOperation', authorizedAs: 'meeting-operations' },
+      { name: 'meetingReconciliation', authorizedAs: 'meeting-reconciliation' },
       { name: 'inbox', authorizedAs: null },
       { name: 'settingsHome', authorizedAs: null },
       { name: 'settingsUsers', authorizedAs: 'user:*' },
@@ -234,6 +237,10 @@ describe('app client routes', () => {
         name: 'meetingGatewayCallback',
         authorizedAs: 'meeting-connections',
       },
+      {
+        name: 'meetingIntegrations',
+        authorizedAs: 'meeting-integrations',
+      },
       { name: 'databaseExplorer', authorizedAs: 'database-explorer' },
     ]);
   });
@@ -257,6 +264,7 @@ describe('app client routes', () => {
       '/settings/default-access/:key/edit',
       '/settings/meeting-connections',
       '/settings/meeting-connections/callback',
+      '/settings/meeting-integrations',
       '/settings/database-explorer',
     ]);
     const built = resolveRoutes();
@@ -270,6 +278,11 @@ describe('app client routes', () => {
     // The inbox is reached from the header's inbox button, so it deliberately declares no menu entry.
     expect(
       applicationRoutes[0].routes.find((route) => route.name === 'inbox'),
+    ).not.toHaveProperty('navigation');
+    expect(
+      applicationRoutes[0].routes.find(
+        (route) => route.name === 'meetingReconciliation',
+      ),
     ).not.toHaveProperty('navigation');
   });
 });

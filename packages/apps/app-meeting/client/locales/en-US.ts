@@ -20,7 +20,7 @@ const enUS = {
     platform: 'Meeting',
     title: 'Meetings in this application',
     description:
-      'Bind the meeting gateway, query authorized meetings, and open stored details. OA import and sync are not in this version.',
+      'Bind the meeting gateway, query authorized meetings, edit local content, and prepare OA drafts. Live OA writes stay blocked until the published write contract is confirmed.',
   },
   meetings: {
     title: 'Meetings',
@@ -47,6 +47,7 @@ const enUS = {
       overview: 'Overview',
       participants: 'People',
       recordings: 'Recordings',
+      oa: 'OA workspace',
     },
     fetchStatus: {
       not_fetched: 'Not fetched yet',
@@ -94,6 +95,84 @@ const enUS = {
       disconnected: 'Disconnected from this app',
       identity_unavailable: 'Gateway identity token is unavailable',
       not_configured: 'Gateway is not configured',
+    },
+  },
+  meetingOa: {
+    workspaceTitle: 'OA workspace',
+    workspaceDescription:
+      'Edit the local OA draft. Saving does not call OA. Formal sync is a separate command.',
+    isolationBanner: 'Local test data, real OA was not called.',
+    mappingMissing:
+      'No trusted employee mapping. You can still save a valid draft; formal sync will write nothing to OA.',
+    mappedAs: 'Signed-in identity maps to employee {{employeeNo}}.',
+    importContractMissing:
+      'Gateway recording download is not in the published client. Local content can still be edited.',
+    localMinutesKept:
+      'Local minutes edits are kept separately from imported source text.',
+    sourceTodos: 'Tencent source to-dos (not assigned OA tasks)',
+    sourceTodosNotAssigned:
+      'Source to-dos are not treated as assigned tasks until you add a draft task with an employee number.',
+    peopleSearch: 'Search OA people',
+    search: 'Search',
+    peopleFailed: 'OA people search could not be completed.',
+    addTask: 'Add assigned task',
+    saveDraft: 'Save draft',
+    submitSync: 'Submit OA sync',
+    saveWritesZeroOa: 'Saving a draft writes zero OA side effects.',
+    draftSaved: 'Draft saved locally.',
+    draftFailed: 'The draft could not be saved.',
+    syncFailed: 'OA sync was not submitted.',
+    operationTitle: 'OA execution',
+    operationDescription:
+      'GET is a pure read. UNKNOWN steps are not resent. Resume only continues confirmed-unsent work.',
+    liveWriteBlocked:
+      'Live OA write HTTP is not published. This page shows the local execution ledger.',
+    resume: 'Resume unsent steps',
+    resumeFailed: 'This operation cannot be resumed.',
+    reconciliationTitle: 'OA reconcile',
+    reconciliationDescription:
+      'Record evidence only. Reconcile never writes OA. Recovery keeps the frozen creator and payload.',
+    reconcileEmpty: 'No UNKNOWN or PARTIAL operations.',
+    evidencePlaceholder: 'Evidence that the write was or was not sent',
+    markNotSent: 'Mark not sent',
+    markUnknown: 'Mark sent or unknown',
+    recover: 'Recover frozen intent',
+    reconcileSaved: 'Evidence recorded. OA was not written.',
+    reconcileFailed: 'Evidence could not be recorded.',
+    recoverFailed: 'Recovery could not continue.',
+    integrationsTitle: 'Meeting OA',
+    integrationsDescription:
+      'Seal OA credentials with native secrets. Root is never a default employee. Secrets are never echoed.',
+    writeContract: 'Write contract: {{value}}',
+    hasSecret: 'Client secret: {{value}}',
+    secretSealed: 'sealed',
+    secretMissing: 'not stored',
+    saveSettings: 'Save settings',
+    settingsSaved: 'Settings saved. The secret is not returned.',
+    settingsFailed: 'Settings could not be saved.',
+    mappingTitle: 'Trusted employee mapping',
+    mappingHint:
+      'Map a signed-in user to an OA employee number. Do not treat platform root as a default delegate.',
+    saveMap: 'Save mapping',
+    mapSaved: 'Mapping saved.',
+    mapFailed: 'Mapping could not be saved.',
+    fields: {
+      title: 'Meeting title',
+      summary: 'Minutes to upload',
+      taskTitle: 'Assigned task title',
+      assignee: 'Assignee employee number',
+      status: 'Status',
+      requestId: 'Request id',
+      creator: 'Frozen creator',
+      steps: 'Steps',
+      tasks: 'Task results',
+      tokenUrl:
+        'Token URL (not fetched until the request encoding is confirmed)',
+      peopleUrl: 'People search URL',
+      clientId: 'Client id',
+      clientSecret: 'Client secret (write-only)',
+      userId: 'Local user id',
+      employeeNo: 'OA employee number',
     },
   },
 };

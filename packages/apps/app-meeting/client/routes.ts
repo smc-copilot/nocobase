@@ -62,9 +62,43 @@ const appRoutes: AppClientRouteContribution = defineAppRoutes([
             presentation: { kind: 'child-page' },
             componentLoader: () => import('./pages/meetings/detail.js'),
           },
+          {
+            name: 'meetingOa',
+            path: 'oa',
+            auth: 'required',
+            authz: {
+              resource: { type: 'page', id: 'meetings' },
+              action: 'access',
+            },
+            breadcrumb: { title: 'meetings.tabs.oa' },
+            presentation: { kind: 'child-page' },
+            componentLoader: () => import('./pages/meetings/oa.js'),
+          },
         ],
       },
     ],
+  },
+  {
+    authz: {
+      resource: { type: 'page', id: 'meeting-operations' },
+      action: 'access',
+    },
+    auth: 'required',
+    componentLoader: () => import('./pages/meetings/operation.js'),
+    name: 'meetingOperation',
+    path: '/meeting-operations/:operationId',
+    breadcrumb: { title: 'meetingOa.operationTitle' },
+  },
+  {
+    authz: {
+      resource: { type: 'page', id: 'meeting-reconciliation' },
+      action: 'access',
+    },
+    auth: 'required',
+    componentLoader: () => import('./pages/meetings/reconciliation.js'),
+    name: 'meetingReconciliation',
+    path: '/meeting-reconciliation',
+    breadcrumb: { title: 'meetingOa.reconciliationTitle' },
   },
   {
     // Declares no navigation, so the application decides where its entry goes (for example a sidebar item with an

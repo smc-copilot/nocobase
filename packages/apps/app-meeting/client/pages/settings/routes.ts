@@ -1,4 +1,11 @@
-import { Users, ShieldCheck, KeyRound, ListFilter, Cable } from 'lucide-react';
+import {
+  Users,
+  ShieldCheck,
+  KeyRound,
+  ListFilter,
+  Cable,
+  Landmark,
+} from 'lucide-react';
 import {
   defineAppRoutes,
   type AppClientRouteContribution,
@@ -42,6 +49,23 @@ const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
           })),
       },
     ],
+  },
+  {
+    parent: 'settingsBusiness',
+    name: 'meetingIntegrations',
+    path: '/meeting-integrations',
+    auth: 'required',
+    authz: {
+      resource: { type: 'page', id: 'meeting-integrations' },
+      action: 'access',
+    },
+    navigation: {
+      title: 'meetingOa.integrationsTitle',
+      description: 'meetingOa.integrationsDescription',
+      icon: Landmark,
+    },
+    breadcrumb: { title: 'meetingOa.integrationsTitle' },
+    componentLoader: () => import('./meeting-integrations.js'),
   },
   {
     parent: 'settingsAccount',

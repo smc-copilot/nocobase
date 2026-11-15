@@ -121,7 +121,10 @@ describe('System settings navigation', () => {
       ],
       [
         'settingsBusiness',
-        [['meetingConnections', '/settings/meeting-connections']],
+        [
+          ['meetingConnections', '/settings/meeting-connections'],
+          ['meetingIntegrations', '/settings/meeting-integrations'],
+        ],
       ],
     ]);
     const roles = find(routes, 'settingsRoles');
@@ -135,7 +138,10 @@ describe('System settings navigation', () => {
       ],
       [
         'settingsBusiness',
-        [['meetingConnections', '/settings/meeting-connections']],
+        [
+          ['meetingConnections', '/settings/meeting-connections'],
+          ['meetingIntegrations', '/settings/meeting-integrations'],
+        ],
       ],
     ]);
     const denied = new Set(
@@ -144,6 +150,7 @@ describe('System settings navigation', () => {
         'settingsRoles',
         'settingsDefaultAccess',
         'meetingConnections',
+        'meetingIntegrations',
       ].map((name) => routeKey(find(routes, name))),
     );
     expect(catalog(routes, denied)).toEqual([]);
@@ -238,7 +245,10 @@ describe('System settings navigation', () => {
       ],
       [
         'settingsBusiness',
-        [['meetingConnections', '/settings/meeting-connections']],
+        [
+          ['meetingConnections', '/settings/meeting-connections'],
+          ['meetingIntegrations', '/settings/meeting-integrations'],
+        ],
       ],
       [
         'settingsSystem',
@@ -279,7 +289,10 @@ it('places database browsing in System and hides its card when access is denied'
     ],
     [
       'settingsBusiness',
-      [['meetingConnections', '/settings/meeting-connections']],
+      [
+        ['meetingConnections', '/settings/meeting-connections'],
+        ['meetingIntegrations', '/settings/meeting-integrations'],
+      ],
     ],
     ['settingsSystem', [['databaseExplorer', '/settings/database-explorer']]],
   ]);
@@ -293,7 +306,10 @@ it('places database browsing in System and hides its card when access is denied'
     ],
     [
       'settingsBusiness',
-      [['meetingConnections', '/settings/meeting-connections']],
+      [
+        ['meetingConnections', '/settings/meeting-connections'],
+        ['meetingIntegrations', '/settings/meeting-integrations'],
+      ],
     ],
   ]);
 });

@@ -49,10 +49,17 @@ test('initialization does not silently grant business roles to every signed-in u
   const meetingSets = await connection.query
     .selectFrom('authorizationPermissionSets')
     .select(['key', 'grants'])
-    .where('key', 'in', ['meeting-operator', 'accounts-manager'])
+    .where('key', 'in', [
+      'meeting-operator',
+      'accounts-manager',
+      'meeting-oa-operator',
+      'meeting-oa-reconciler',
+    ])
     .execute();
   expect(meetingSets.map((row) => row.key).sort()).toEqual([
     'accounts-manager',
+    'meeting-oa-operator',
+    'meeting-oa-reconciler',
     'meeting-operator',
   ]);
   const parseGrants = (value: unknown): unknown[] => {
@@ -85,6 +92,8 @@ test('initialization does not silently grant business roles to every signed-in u
     assignments.filter(
       (assignment) =>
         assignment.permissionSetKey === 'meeting-operator' ||
+        assignment.permissionSetKey === 'meeting-oa-operator' ||
+        assignment.permissionSetKey === 'meeting-oa-reconciler' ||
         assignment.permissionSetKey === 'accounts-manager',
     ),
   ).toEqual([]);

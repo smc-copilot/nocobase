@@ -88,4 +88,20 @@ export interface MeetingGatewayAdapter {
     connectionRef: string;
     meetingId: string;
   }): Promise<readonly GatewayRecordingRecord[]>;
+  importRecordingContent?(input: {
+    accessToken: string;
+    connectionRef: string;
+    recordFileId: string;
+  }): Promise<readonly GatewayContentArtifact[]>;
+}
+
+export interface GatewayContentArtifact {
+  readonly group:
+    | 'meeting_summary'
+    | 'ai_meeting_transcripts'
+    | 'ai_minutes'
+    | 'ai_topic_minutes'
+    | 'ai_speaker_minutes'
+    | 'ai_ds_minutes';
+  readonly text: string;
 }

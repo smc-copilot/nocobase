@@ -39,6 +39,23 @@ export default class MeetingsAuthorizationProvider extends ServiceProvider<Appli
       name: MEETING_QUERY_RUNS,
       title: 'Meeting query runs',
     });
+    for (const [name, title] of [
+      ['meetingContents', 'Meeting contents'],
+      ['meetingImportRuns', 'Meeting import runs'],
+      ['meetingOaSettings', 'Meeting OA settings'],
+      ['meetingOaEmployeeMaps', 'Meeting OA employee maps'],
+      ['meetingOaDelegations', 'Meeting OA delegations'],
+      ['meetingOaDrafts', 'Meeting OA drafts'],
+      ['meetingOaDraftTasks', 'Meeting OA draft tasks'],
+      ['meetingOaOperations', 'Meeting OA operations'],
+      ['meetingOaSteps', 'Meeting OA steps'],
+      ['meetingOaTaskResults', 'Meeting OA task results'],
+      ['meetingOaOutbox', 'Meeting OA outbox'],
+      ['meetingOaReconcileRecords', 'Meeting OA reconcile records'],
+      ['meetingAuditEvents', 'Meeting audit events'],
+    ] as const) {
+      authz.database.collections.add({ name, title });
+    }
     authz.recordAccess.define(
       meetingGrantedAccess.resolver(async ({ collection, principal }) => {
         if (

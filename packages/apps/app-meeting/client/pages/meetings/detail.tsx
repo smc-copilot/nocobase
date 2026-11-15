@@ -45,7 +45,9 @@ export default function MeetingDetailPage(): ReactElement {
     ? 'recordings'
     : location.pathname.endsWith('/participants')
       ? 'participants'
-      : 'overview';
+      : location.pathname.endsWith('/oa')
+        ? 'oa'
+        : 'overview';
   const formatTime = (value: string | null | undefined) =>
     value
       ? new Intl.DateTimeFormat(i18n.language, {
@@ -81,6 +83,8 @@ export default function MeetingDetailPage(): ReactElement {
                   void navigate(`/meetings/${meetingId}/participants`);
                 else if (next === 'recordings')
                   void navigate(`/meetings/${meetingId}/recordings`);
+                else if (next === 'oa')
+                  void navigate(`/meetings/${meetingId}/oa`);
                 else void navigate(`/meetings/${meetingId}`);
               }}
             >
@@ -94,6 +98,7 @@ export default function MeetingDetailPage(): ReactElement {
                 <TabsTrigger value='recordings'>
                   {t('meetings.tabs.recordings')}
                 </TabsTrigger>
+                <TabsTrigger value='oa'>{t('meetings.tabs.oa')}</TabsTrigger>
               </TabsList>
             </Tabs>
             {tab === 'overview' ? (
