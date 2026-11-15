@@ -261,6 +261,9 @@ export const OaPersonSchema = z.object({
 
 export const OaSettingsSchema = z
   .object({
+    tokenUrl: z.string().nullable(),
+    peopleUrl: z.string().nullable(),
+    clientId: z.string().nullable(),
     tokenUrlConfigured: z.boolean(),
     peopleUrlConfigured: z.boolean(),
     clientIdConfigured: z.boolean(),

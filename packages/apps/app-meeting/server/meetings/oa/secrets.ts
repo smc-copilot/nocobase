@@ -5,6 +5,18 @@ import {
 import type { DatabaseConnection } from '@nocobase/db';
 import { OA_SECRET_PURPOSE } from '../resources.js';
 
+export function oaSettingsAad(row: {
+  id?: unknown;
+  credentialVersion?: unknown;
+}): string[] {
+  return [
+    typeof row.id === 'string' ? row.id : 'default',
+    typeof row.credentialVersion === 'number'
+      ? String(row.credentialVersion)
+      : '0',
+  ];
+}
+
 export function createMeetingOaSecretsStores(
   connection: () => DatabaseConnection,
 ): SecretsStore[] {
@@ -16,12 +28,7 @@ export function createMeetingOaSecretsStores(
         {
           column: 'sealedClientSecret',
           purpose: OA_SECRET_PURPOSE,
-          aad: (row) => [
-            typeof row.id === 'string' ? row.id : 'default',
-            typeof row.credentialVersion === 'number'
-              ? String(row.credentialVersion)
-              : '0',
-          ],
+          aad: oaSettingsAad,
         },
       ],
       select: ['credentialVersion'],

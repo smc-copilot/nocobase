@@ -43,6 +43,7 @@ function extractRows(payload: unknown): unknown[] {
 export function createHttpMeetingOaAdapter(options: {
   config: MeetingOaConfig;
   fetchImpl?: typeof fetch;
+  resolvePeopleUrl?: () => Promise<string | undefined>;
 }): MeetingOaAdapter {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const timeout = Math.min(
@@ -63,7 +64,9 @@ export function createHttpMeetingOaAdapter(options: {
           'INVALID_ARGUMENT',
         );
       }
-      const configured = options.config.peopleUrl?.trim();
+      const configured = (
+        (await options.resolvePeopleUrl?.()) ?? options.config.peopleUrl
+      )?.trim();
       if (!configured) {
         throw new MeetingOaError(
           'OA_NOT_CONFIGURED',

@@ -86,27 +86,38 @@ export default function MeetingOaPage(): ReactElement {
   const [people, setPeople] = useState<
     { fd_no: string; fd_name: string; fd_department: string }[]
   >([]);
+  const [savedVersion, setSavedVersion] = useState<number | null>(null);
 
   const shownTitle = title ?? draft?.title ?? '';
   const shownSummary = summary ?? draft?.summary ?? '';
+  const currentVersion = savedVersion ?? draft?.version;
   const isolation = useMemo(() => t('meetingOa.isolationBanner'), [t]);
+
+  const persistDraft = async (
+    tasks = draft?.tasks ?? [],
+  ): Promise<Draft | undefined> => {
+    if (!draft || currentVersion == null) return undefined;
+    const result = await api.request<{ data: Draft }>({
+      path: `meetings/${meetingId}/oa-draft`,
+      method: 'PUT',
+      json: {
+        expectedVersion: currentVersion,
+        title: shownTitle,
+        summary: shownSummary,
+        tasks,
+      },
+    });
+    setSavedVersion(result.data.version);
+    void draftRequest.reload();
+    return result.data;
+  };
 
   const save = async (tasks = draft?.tasks ?? []) => {
     if (!draft) return;
     setBusy(true);
     try {
-      await api.request({
-        path: `meetings/${meetingId}/oa-draft`,
-        method: 'PUT',
-        json: {
-          expectedVersion: draft.version,
-          title: shownTitle,
-          summary: shownSummary,
-          tasks,
-        },
-      });
+      await persistDraft(tasks);
       toaster.show({ type: 'success', title: t('meetingOa.draftSaved') });
-      draftRequest.reload();
     } catch (error) {
       toaster.show({
         type: 'error',
@@ -124,13 +135,15 @@ export default function MeetingOaPage(): ReactElement {
     if (!draft) return;
     setBusy(true);
     try {
+      const saved = await persistDraft();
+      if (!saved) return;
       const result = await api.request<{ data: { id: string } }>({
         path: 'meetingOa/operations',
         method: 'POST',
         json: {
           meetingId,
           requestId: createUuid(),
-          expectedDraftVersion: draft.version,
+          expectedDraftVersion: saved.version,
         },
       });
       void navigate(`/meeting-operations/${result.data.id}`);
@@ -172,6 +185,10 @@ export default function MeetingOaPage(): ReactElement {
         {content?.lastImportError === 'IMPORT_CONTRACT_UNAVAILABLE' ? (
           <p className='text-sm text-muted-foreground'>
             {t('meetingOa.importContractMissing')}
+          </p>
+        ) : content?.lastImportError ? (
+          <p className='text-sm text-muted-foreground'>
+            {t('meetingOa.importFailed')}
           </p>
         ) : null}
         {content?.localMinutesEdited ? (

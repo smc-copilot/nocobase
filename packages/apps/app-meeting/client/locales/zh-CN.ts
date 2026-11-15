@@ -98,6 +98,7 @@ const zhCN: AppResource = {
     mappedAs: '当前登录身份映射到工号 {{employeeNo}}。',
     importContractMissing:
       '已发布网关客户端没有录制文件下载契约。本地内容仍可编辑。',
+    importFailed: '录制导入失败。本地内容行已记录错误，源文未被覆盖。',
     localMinutesKept: '本地纪要修订与导入源文分开保存。',
     sourceTodos: '腾讯原始待办（不是已分派 OA 任务）',
     sourceTodosNotAssigned:
@@ -114,13 +115,13 @@ const zhCN: AppResource = {
     syncFailed: 'OA 同步未被提交。',
     operationTitle: 'OA 执行',
     operationDescription:
-      'GET 是纯读。UNKNOWN 步骤不会重发。恢复只继续已确认未发送的工作。',
+      'GET 是纯读。UNKNOWN 步骤不会重发。Resume 只继续已确认未发送的工作。Recover 是核对标记未发送后的独立命令。',
     liveWriteBlocked: '真实 OA 写 HTTP 尚未发布。本页展示本地执行账本。',
     resume: '恢复未发送步骤',
     resumeFailed: '此执行不能恢复。',
     reconciliationTitle: 'OA 核对',
     reconciliationDescription:
-      '只登记证据。核对不会写 OA。恢复保持冻结的创建人与载荷。',
+      '只登记证据。核对不会写 OA。恢复是执行页上的独立命令，并保持冻结的创建人与载荷。',
     reconcileEmpty: '没有 UNKNOWN 或 PARTIAL 执行。',
     evidencePlaceholder: '关于该写入是否已发出的证据',
     markNotSent: '标记未发送',

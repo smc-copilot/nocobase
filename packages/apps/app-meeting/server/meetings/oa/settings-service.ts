@@ -9,8 +9,12 @@ import {
   type MeetingOaSettings,
 } from '../resources.js';
 import type { MeetingOaAdapter } from './adapter.js';
+import { oaSettingsAad } from './secrets.js';
 
 export interface OaSettingsPublic {
+  tokenUrl: string | null;
+  peopleUrl: string | null;
+  clientId: string | null;
   tokenUrlConfigured: boolean;
   peopleUrlConfigured: boolean;
   clientIdConfigured: boolean;
@@ -49,7 +53,10 @@ export class MeetingOaSettingsService {
     const actor = requireUser(this.userId);
     const now = new Date();
     const existing = await this.row();
-    const nextVersion = (existing?.credentialVersion ?? 0) + 1;
+    const secret = input.clientSecret?.trim() || '';
+    const nextVersion = secret
+      ? (existing?.credentialVersion ?? 0) + 1
+      : (existing?.credentialVersion ?? 1);
     const values: Partial<MeetingOaSettings> = {
       tokenUrl:
         input.tokenUrl === undefined
@@ -63,14 +70,14 @@ export class MeetingOaSettingsService {
         input.clientId === undefined
           ? (existing?.clientId ?? null)
           : input.clientId,
-      credentialVersion: nextVersion,
       updatedBy: actor,
       updatedAt: now,
     };
-    if (input.clientSecret) {
-      values.sealedClientSecret = this.secrets.seal(input.clientSecret, {
+    if (secret) {
+      values.credentialVersion = nextVersion;
+      values.sealedClientSecret = this.secrets.seal(secret, {
         purpose: OA_SECRET_PURPOSE,
-        aad: ['default', String(nextVersion)],
+        aad: oaSettingsAad({ id: 'default', credentialVersion: nextVersion }),
       });
     }
     if (existing) {
@@ -87,7 +94,7 @@ export class MeetingOaSettingsService {
             peopleUrl: values.peopleUrl ?? null,
             clientId: values.clientId ?? null,
             sealedClientSecret: values.sealedClientSecret ?? null,
-            credentialVersion: nextVersion,
+            credentialVersion: values.credentialVersion ?? nextVersion,
             updatedBy: actor,
             createdAt: now,
             updatedAt: now,
@@ -105,6 +112,9 @@ export class MeetingOaSettingsService {
 
   private publicRow(row: MeetingOaSettings | undefined): OaSettingsPublic {
     return {
+      tokenUrl: row?.tokenUrl ?? null,
+      peopleUrl: row?.peopleUrl ?? null,
+      clientId: row?.clientId ?? null,
       tokenUrlConfigured: Boolean(row?.tokenUrl || this.config.tokenUrl),
       peopleUrlConfigured: Boolean(row?.peopleUrl || this.config.peopleUrl),
       clientIdConfigured: Boolean(row?.clientId || this.config.clientId),
@@ -119,11 +129,4 @@ export class MeetingOaSettingsService {
       updatedAt: row ? toIso(row.updatedAt) : null,
     };
   }
-}
-
-export function oaSettingsAad(row: {
-  id: string;
-  credentialVersion: number;
-}): readonly string[] {
-  return [row.id, String(row.credentialVersion)];
 }

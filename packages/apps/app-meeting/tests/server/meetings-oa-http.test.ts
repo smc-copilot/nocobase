@@ -42,6 +42,30 @@ describe('OA people HTTP contract (oaPeople.js)', () => {
     ]);
   });
 
+  it('reads peopleUrl from stored settings at call time, not boot-time env', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.origin).toBe('https://oa.example.test');
+      expect(url.pathname).toBe('/from-settings');
+      expect(url.searchParams.get('fd_name')).toBe('Alice');
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    const adapter = createHttpMeetingOaAdapter({
+      config: {
+        peopleUrl: 'https://oa.example.test/from-env',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      },
+      resolvePeopleUrl: async () => 'https://oa.example.test/from-settings',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await adapter.searchPeople('Alice');
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
   it('does not send OA write HTTP when createMeeting is called', async () => {
     const fetchImpl = vi.fn();
     const adapter = createHttpMeetingOaAdapter({

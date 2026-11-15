@@ -7,6 +7,10 @@ import { createHttpMeetingOaAdapter } from '../meetings/oa/http-adapter.js';
 import { createMeetingOaSecretsStores } from '../meetings/oa/secrets.js';
 import { TestMeetingOaAdapter } from '../meetings/oa/test-adapter.js';
 import { meetingOaAdapterToken } from '../meetings/oa/token.js';
+import {
+  MEETING_OA_SETTINGS,
+  type MeetingOaSettings,
+} from '../meetings/resources.js';
 
 export default class MeetingOaProvider extends ServiceProvider<Application> {
   readonly name = 'app/meeting-oa';
@@ -18,7 +22,20 @@ export default class MeetingOaProvider extends ServiceProvider<Application> {
     this.app.container.singleton(meetingOaAdapterToken, () =>
       config.testAdapter
         ? new TestMeetingOaAdapter()
-        : createHttpMeetingOaAdapter({ config }),
+        : createHttpMeetingOaAdapter({
+            config,
+            resolvePeopleUrl: async () => {
+              if (!this.app.container.has(databaseManagerToken)) {
+                return config.peopleUrl;
+              }
+              const row = await this.app.container
+                .resolve(databaseManagerToken)
+                .connection()
+                .repository<MeetingOaSettings>(MEETING_OA_SETTINGS)
+                .findOne({ filter: { id: 'default' } });
+              return row?.peopleUrl ?? config.peopleUrl;
+            },
+          }),
     );
   }
 

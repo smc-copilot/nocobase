@@ -54,28 +54,6 @@ export default function MeetingReconciliationPage(): ReactElement {
     }
   };
 
-  const recover = async (id: string) => {
-    setBusy(true);
-    try {
-      await api.request({
-        path: `meetingOa/operations/${id}/recover`,
-        method: 'POST',
-        json: {},
-      });
-      request.reload();
-    } catch (error) {
-      toaster.show({
-        type: 'error',
-        title:
-          error instanceof ApiClientError
-            ? error.message
-            : t('meetingOa.recoverFailed'),
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <PageContainer>
       <PageHeader
@@ -125,15 +103,6 @@ export default function MeetingReconciliationPage(): ReactElement {
                   onClick={() => void reconcile(row.id, 'sent_or_unknown')}
                 >
                   {t('meetingOa.markUnknown')}
-                </Button>
-                <Button
-                  type='button'
-                  size='sm'
-                  variant='secondary'
-                  disabled={busy}
-                  onClick={() => void recover(row.id)}
-                >
-                  {t('meetingOa.recover')}
                 </Button>
               </div>
             </li>

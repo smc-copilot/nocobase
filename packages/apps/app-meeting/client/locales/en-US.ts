@@ -107,6 +107,8 @@ const enUS = {
     mappedAs: 'Signed-in identity maps to employee {{employeeNo}}.',
     importContractMissing:
       'Gateway recording download is not in the published client. Local content can still be edited.',
+    importFailed:
+      'Recording import failed. The local content row records the error; source text was not overwritten.',
     localMinutesKept:
       'Local minutes edits are kept separately from imported source text.',
     sourceTodos: 'Tencent source to-dos (not assigned OA tasks)',
@@ -124,14 +126,14 @@ const enUS = {
     syncFailed: 'OA sync was not submitted.',
     operationTitle: 'OA execution',
     operationDescription:
-      'GET is a pure read. UNKNOWN steps are not resent. Resume only continues confirmed-unsent work.',
+      'GET is a pure read. UNKNOWN steps are not resent. Resume continues confirmed-unsent work. Recover is a separate command after reconcile marks not_sent.',
     liveWriteBlocked:
       'Live OA write HTTP is not published. This page shows the local execution ledger.',
     resume: 'Resume unsent steps',
     resumeFailed: 'This operation cannot be resumed.',
     reconciliationTitle: 'OA reconcile',
     reconciliationDescription:
-      'Record evidence only. Reconcile never writes OA. Recovery keeps the frozen creator and payload.',
+      'Record evidence only. Reconcile never writes OA. Recovery is a separate command on the execution page and keeps the frozen creator and payload.',
     reconcileEmpty: 'No UNKNOWN or PARTIAL operations.',
     evidencePlaceholder: 'Evidence that the write was or was not sent',
     markNotSent: 'Mark not sent',

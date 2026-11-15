@@ -413,6 +413,9 @@ test('rejects uncontrolled delegation and records timeout as UNKNOWN without res
   );
   expect(resume.status).toBe(400);
   expect(adapter.createMeetingCalls).toHaveLength(1);
+  const carol = await createUser(testApp, 'carol');
+  await grant(testApp, carol.user.id, 'meeting-operator');
+  await grant(testApp, carol.user.id, 'meeting-oa-reconciler');
   await grant(testApp, alice.user.id, 'meeting-oa-reconciler');
   await expectOk(
     await alice.fetch(
@@ -423,6 +426,12 @@ test('rejects uncontrolled delegation and records timeout as UNKNOWN without res
       }),
     ),
   );
+  expect(adapter.createMeetingCalls).toHaveLength(1);
+  const carolRecover = await carol.fetch(
+    `/meetingOa/operations/${timed.data.id}/recover`,
+    write({}),
+  );
+  expect(carolRecover.status).toBe(403);
   expect(adapter.createMeetingCalls).toHaveLength(1);
   adapter.createMeetingError = undefined;
   const recovered = (await expectOk(
@@ -582,6 +591,17 @@ test('does not overwrite local minutes on re-import and does not echo OA secrets
   expect(again.data.localMinutesEdited).toBe(true);
   expect(again.data.minutes.source).toBe('local');
   expect(again.data.minutes.text).toBe('Human edited minutes');
+  gateway.importError = new Error('upstream import failed');
+  const failedImport = (await expectOk(
+    await alice.fetch(
+      '/meetings/meet-imp/imports',
+      write({ recordFileId: 'rec-meet-imp' }),
+    ),
+  )) as {
+    data: { lastImportError: string | null; minutes: { text: string } };
+  };
+  expect(failedImport.data.lastImportError).toBe('IMPORT_FAILED');
+  expect(failedImport.data.minutes.text).toBe('Human edited minutes');
 
   const saved = (await expectOk(
     await alice.fetch(
@@ -594,7 +614,23 @@ test('does not overwrite local minutes on re-import and does not echo OA secrets
   )) as { data: Record<string, unknown> };
   expect(JSON.stringify(saved)).not.toContain('super-secret-value');
   expect(saved.data.hasSecret).toBe(true);
+  expect(saved.data.peopleUrl).toBe('https://oa.example.test/people');
   expect(saved.data.writeContract).toBe('test');
+  const urlOnly = (await expectOk(
+    await alice.fetch(
+      '/meetingOa/settings',
+      put({ tokenUrl: 'https://oa.example.test/token' }),
+    ),
+  )) as { data: Record<string, unknown> };
+  expect(JSON.stringify(urlOnly)).not.toContain('super-secret-value');
+  expect(urlOnly.data.hasSecret).toBe(true);
+  expect(urlOnly.data.peopleUrl).toBe('https://oa.example.test/people');
+  expect(urlOnly.data.tokenUrl).toBe('https://oa.example.test/token');
+  const settingsRow = (await connection
+    .repository('meetingOaSettings')
+    .findOne({ filter: { id: 'default' } })) as
+    { credentialVersion?: number } | undefined;
+  expect(settingsRow?.credentialVersion).toBe(1);
   const rootMap = await alice.fetch(
     '/meetingOa/identities',
     put({ userId: alice.user.id, employeeNo: 'root' }),

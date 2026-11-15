@@ -177,18 +177,7 @@ export class MeetingContentService {
         },
       });
     if (typeof this.adapter.importRecordingContent !== 'function') {
-      await this.failRun(runId, 'IMPORT_CONTRACT_UNAVAILABLE');
-      const content = await this.ensure(meetingId);
-      await this.connection
-        .repository<MeetingContent>(MEETING_CONTENTS)
-        .updateOne({
-          filter: { id: content.id },
-          values: {
-            lastImportError: 'IMPORT_CONTRACT_UNAVAILABLE',
-            importStatus: content.sourceHash ? content.importStatus : 'failed',
-            updatedAt: new Date(),
-          },
-        });
+      await this.failImport(meetingId, runId, 'IMPORT_CONTRACT_UNAVAILABLE');
       return {
         data: await this.get(meetingId),
         importRun: await this.getRun(runId),
@@ -251,10 +240,8 @@ export class MeetingContentService {
       });
     } catch (error) {
       const code =
-        error instanceof MeetingOaError
-          ? error.reason
-          : 'IMPORT_CONTRACT_UNAVAILABLE';
-      await this.failRun(runId, code);
+        error instanceof MeetingOaError ? error.reason : 'IMPORT_FAILED';
+      await this.failImport(meetingId, runId, code);
     }
     return {
       data: await this.get(meetingId),
@@ -271,6 +258,25 @@ export class MeetingContentService {
           status: 'failed',
           progress: 100,
           errorCode,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  private async failImport(
+    meetingId: string,
+    runId: string,
+    errorCode: string,
+  ): Promise<void> {
+    await this.failRun(runId, errorCode);
+    const content = await this.ensure(meetingId);
+    await this.connection
+      .repository<MeetingContent>(MEETING_CONTENTS)
+      .updateOne({
+        filter: { id: content.id },
+        values: {
+          lastImportError: errorCode,
+          importStatus: content.sourceHash ? content.importStatus : 'failed',
           updatedAt: new Date(),
         },
       });

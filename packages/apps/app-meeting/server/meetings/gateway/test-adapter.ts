@@ -24,6 +24,7 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
   queryError: MeetingGatewayError | undefined;
   participantError: MeetingGatewayError | undefined;
   recordingError: MeetingGatewayError | undefined;
+  importError: Error | undefined = undefined;
   queryCalls: unknown[] = [];
   startCalls: unknown[] = [];
 
@@ -37,6 +38,7 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     this.queryError = undefined;
     this.participantError = undefined;
     this.recordingError = undefined;
+    this.importError = undefined;
     this.queryCalls = [];
     this.startCalls = [];
   }
@@ -134,6 +136,7 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     recordFileId: string;
   }): Promise<readonly GatewayContentArtifact[]> {
     this.requireToken(input.accessToken);
+    if (this.importError) throw this.importError;
     return (
       this.artifacts.get(input.recordFileId) ?? [
         {

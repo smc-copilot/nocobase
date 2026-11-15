@@ -11,6 +11,9 @@ import { useSettingsData } from './hooks.js';
 import { SettingsError, SettingsLoading } from './shared.js';
 
 interface Settings {
+  tokenUrl: string | null;
+  peopleUrl: string | null;
+  clientId: string | null;
   tokenUrlConfigured: boolean;
   peopleUrlConfigured: boolean;
   clientIdConfigured: boolean;
@@ -31,13 +34,16 @@ export default function MeetingIntegrationsPage(): ReactElement {
     data: { userId: string; employeeNo: string | null }[];
   }>('meetingOa/identities');
   const row = request.data?.data;
-  const [tokenUrl, setTokenUrl] = useState('');
-  const [peopleUrl, setPeopleUrl] = useState('');
-  const [clientId, setClientId] = useState('');
+  const [tokenUrl, setTokenUrl] = useState<string | null>(null);
+  const [peopleUrl, setPeopleUrl] = useState<string | null>(null);
+  const [clientId, setClientId] = useState<string | null>(null);
   const [clientSecret, setClientSecret] = useState('');
   const [mapUserId, setMapUserId] = useState('');
   const [employeeNo, setEmployeeNo] = useState('');
   const [busy, setBusy] = useState(false);
+  const shownTokenUrl = tokenUrl ?? row?.tokenUrl ?? '';
+  const shownPeopleUrl = peopleUrl ?? row?.peopleUrl ?? '';
+  const shownClientId = clientId ?? row?.clientId ?? '';
 
   if (request.loading && !row) return <SettingsLoading />;
   if (request.error) return <SettingsError error={request.error} />;
@@ -75,10 +81,24 @@ export default function MeetingIntegrationsPage(): ReactElement {
               path: 'meetingOa/settings',
               method: 'PUT',
               json: {
-                tokenUrl: tokenUrl || null,
-                peopleUrl: peopleUrl || null,
-                clientId: clientId || null,
-                clientSecret: clientSecret || null,
+                ...(shownTokenUrl.trim()
+                  ? { tokenUrl: shownTokenUrl.trim() }
+                  : row?.tokenUrl
+                    ? { tokenUrl: null }
+                    : {}),
+                ...(shownPeopleUrl.trim()
+                  ? { peopleUrl: shownPeopleUrl.trim() }
+                  : row?.peopleUrl
+                    ? { peopleUrl: null }
+                    : {}),
+                ...(shownClientId.trim()
+                  ? { clientId: shownClientId.trim() }
+                  : row?.clientId
+                    ? { clientId: null }
+                    : {}),
+                ...(clientSecret.trim()
+                  ? { clientSecret: clientSecret.trim() }
+                  : {}),
               },
             })
             .then(() => {
@@ -104,19 +124,19 @@ export default function MeetingIntegrationsPage(): ReactElement {
         <Label htmlFor='oa-token'>{t('meetingOa.fields.tokenUrl')}</Label>
         <Input
           id='oa-token'
-          value={tokenUrl}
+          value={shownTokenUrl}
           onChange={(event) => setTokenUrl(event.target.value)}
         />
         <Label htmlFor='oa-people-url'>{t('meetingOa.fields.peopleUrl')}</Label>
         <Input
           id='oa-people-url'
-          value={peopleUrl}
+          value={shownPeopleUrl}
           onChange={(event) => setPeopleUrl(event.target.value)}
         />
         <Label htmlFor='oa-client'>{t('meetingOa.fields.clientId')}</Label>
         <Input
           id='oa-client'
-          value={clientId}
+          value={shownClientId}
           onChange={(event) => setClientId(event.target.value)}
         />
         <Label htmlFor='oa-secret'>{t('meetingOa.fields.clientSecret')}</Label>

@@ -152,6 +152,120 @@ describe('OA workspace page', () => {
     );
   });
 
+  it('persists the current editor state before submitting OA sync', async () => {
+    const posted: { path: string; method?: string; json?: unknown }[] = [];
+    await renderWithApp(
+      <Routes>
+        <Route path='/meetings/:meetingId/oa' element={<MeetingOaPage />} />
+      </Routes>,
+      {
+        namespace: packageMetadata.name,
+        namespaces: { [packageMetadata.name]: enUS },
+        route: '/meetings/meet-1/oa',
+        fetch: answerApi(async ({ path, method, json }) => {
+          posted.push({ path, method, json });
+          if (path === 'authorization/permissions') return grantPages();
+          if (path === 'meetingOa/identity') {
+            return {
+              data: {
+                userId: 'u1',
+                employeeNo: 'E1001',
+                canSync: true,
+                denyReason: null,
+              },
+            };
+          }
+          if (path === 'meetings/meet-1/oa-draft' && method !== 'PUT') {
+            return {
+              data: {
+                meetingId: 'meet-1',
+                version: 1,
+                title: 'Draft meeting',
+                startAt: null,
+                endAt: null,
+                location: null,
+                summary: 'Minutes',
+                tasks: [],
+                filledFromContentVersion: 0,
+                writesOa: false,
+                isolationAdapter: true,
+              },
+            };
+          }
+          if (path === 'meetings/meet-1/oa-draft' && method === 'PUT') {
+            expect(json).toMatchObject({
+              expectedVersion: 1,
+              title: 'Edited title',
+              summary: 'Minutes',
+            });
+            return {
+              data: {
+                meetingId: 'meet-1',
+                version: 2,
+                title: 'Edited title',
+                summary: 'Minutes',
+                tasks: [],
+                writesOa: false,
+                isolationAdapter: true,
+              },
+            };
+          }
+          if (path === 'meetings/meet-1/content') {
+            return {
+              data: {
+                minutes: { text: 'Minutes', source: 'local' },
+                sourceTodos: [],
+                localMinutesEdited: false,
+                importStatus: 'empty',
+                lastImportError: null,
+                liveGatewayImport: 'unavailable',
+              },
+            };
+          }
+          if (path === 'meetingOa/operations' && method === 'POST') {
+            expect(json).toMatchObject({
+              meetingId: 'meet-1',
+              expectedDraftVersion: 2,
+            });
+            return { data: { id: 'op-1' } };
+          }
+          return new Response(null, { status: 404 });
+        }),
+        services: (app) => {
+          app.container.singleton(
+            authorizationClientToken,
+            (resolver) =>
+              new AuthorizationClient(resolver.resolve(apiClientToken)),
+          );
+        },
+      },
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: enUS.meetingOa.workspaceTitle,
+      }),
+    ).toBeInTheDocument();
+    await userEvent.clear(
+      screen.getByRole('textbox', { name: enUS.meetingOa.fields.title }),
+    );
+    await userEvent.type(
+      screen.getByRole('textbox', { name: enUS.meetingOa.fields.title }),
+      'Edited title',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: enUS.meetingOa.submitSync }),
+    );
+    const putIndex = posted.findIndex(
+      (call) =>
+        call.path === 'meetings/meet-1/oa-draft' && call.method === 'PUT',
+    );
+    const syncIndex = posted.findIndex(
+      (call) => call.path === 'meetingOa/operations' && call.method === 'POST',
+    );
+    expect(putIndex).toBeGreaterThanOrEqual(0);
+    expect(syncIndex).toBeGreaterThan(putIndex);
+  });
+
   it('reads an operation without posting a write and records reconcile evidence only', async () => {
     const posted: { path: string; method?: string }[] = [];
     const { unmount } = await renderWithApp(
@@ -209,9 +323,13 @@ describe('OA workspace page', () => {
     expect(screen.getByText(enUS.meetingOa.isolationBanner)).toBeVisible();
     expect(screen.getByText('unknown')).toBeVisible();
     expect(
+      screen.getByRole('button', { name: enUS.meetingOa.recover }),
+    ).toBeVisible();
+    expect(
       posted.some(
         (call) =>
           call.path === 'meetingOa/operations/op-1/resume' ||
+          call.path === 'meetingOa/operations/op-1/recover' ||
           call.path === 'meetingOa/operations',
       ),
     ).toBe(false);
@@ -295,5 +413,11 @@ describe('OA workspace page', () => {
           call.path === 'meetingOa/operations' && call.method === 'POST',
       ),
     ).toBe(false);
+    expect(reconcilePosted.some((call) => call.path.endsWith('/recover'))).toBe(
+      false,
+    );
+    expect(
+      screen.queryByRole('button', { name: enUS.meetingOa.recover }),
+    ).not.toBeInTheDocument();
   });
 });

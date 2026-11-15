@@ -63,6 +63,28 @@ export default function MeetingOperationPage(): ReactElement {
     }
   };
 
+  const recover = async () => {
+    setBusy(true);
+    try {
+      await api.request({
+        path: `meetingOa/operations/${operationId}/recover`,
+        method: 'POST',
+        json: {},
+      });
+      request.reload();
+    } catch (error) {
+      toaster.show({
+        type: 'error',
+        title:
+          error instanceof ApiClientError
+            ? error.message
+            : t('meetingOa.recoverFailed'),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <PageContainer>
       <PageHeader
@@ -138,6 +160,14 @@ export default function MeetingOperationPage(): ReactElement {
       <div className='mt-4 flex gap-2'>
         <Button type='button' disabled={busy} onClick={() => void resume()}>
           {t('meetingOa.resume')}
+        </Button>
+        <Button
+          type='button'
+          variant='secondary'
+          disabled={busy}
+          onClick={() => void recover()}
+        >
+          {t('meetingOa.recover')}
         </Button>
         <Link className='text-sm underline' to='/meeting-reconciliation'>
           {t('meetingOa.reconciliationTitle')}
