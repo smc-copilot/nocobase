@@ -242,7 +242,9 @@ export default function MeetingsPage(): ReactElement {
             renderCard={(row) => (
               <div className='rounded-lg border p-4'>
                 <p className='font-medium'>
-                  {row.original.title?.trim() || t('meetings.untitled')}
+                  <RecordLink to={`/meetings/${row.original.id}`}>
+                    {row.original.title?.trim() || t('meetings.untitled')}
+                  </RecordLink>
                 </p>
                 <p className='text-sm text-muted-foreground'>
                   {row.original.meetingCode ?? t('meetings.notProvided')}

@@ -176,6 +176,9 @@ test('documents meeting gateway routes and keeps tokens off the wire', async ({
   expect(started.data.authorizationUrl).toContain(
     'https://meeting.tencent.com/',
   );
+  expect(decodeURIComponent(started.data.authorizationUrl)).toContain(
+    `localState=${started.data.state}`,
+  );
   const peek = await alice.fetch(
     `/meetingGateway/oauth/callback?state=${started.data.state}`,
   );
@@ -361,6 +364,17 @@ test('refuses a connection id that is not in the trusted list', async ({
   expect(await tamper.json()).toMatchObject({
     error: { reason: 'CONNECTION_NOT_ALLOWED' },
   });
+  const selected = (await expectOk(
+    await alice.fetch(
+      `/meetingGateway/bindings/${bound.id}/select`,
+      write({ connectionId: 'conn-alice-2' }),
+    ),
+  )) as {
+    data: { availableConnections: { connectionId: string }[] };
+  };
+  expect(
+    selected.data.availableConnections.map((item) => item.connectionId).sort(),
+  ).toEqual(['conn-alice', 'conn-alice-2']);
 });
 
 test('repeats a query without duplicating meetings and keeps rows after a later failure', async ({
@@ -435,6 +449,68 @@ test('repeats a query without duplicating meetings and keeps rows after a later 
     meta: { total: number };
   };
   expect(kept.meta.total).toBe(2);
+});
+
+test('a successful participant refetch drops rows the upstream no longer returns', async ({
+  app,
+  testApp,
+}) => {
+  const alice = await createUser(testApp, 'alice');
+  await grantOperator(testApp, alice.user.id);
+  const gateway = adapter(app);
+  gateway.meetings = [
+    {
+      upstreamMeetingId: 'up-people',
+      title: 'People',
+      meetingCode: 'people',
+      startedAt: null,
+      endedAt: null,
+      organizationId: 'org-1',
+      connectionRef: 'conn-alice',
+      cycleKey: '',
+    },
+  ];
+  gateway.participants.set('up-people', [
+    {
+      upstreamParticipantId: 'p-old',
+      displayName: 'Old',
+      department: null,
+      joinedAt: null,
+    },
+    {
+      upstreamParticipantId: 'p-keep',
+      displayName: 'Keep',
+      department: null,
+      joinedAt: null,
+    },
+  ]);
+  await bindUser(alice);
+  const window = {
+    startedAt: '2026-11-01T00:00:00.000Z',
+    endedAt: '2026-11-02T00:00:00.000Z',
+  };
+  expect((await alice.fetch('/meetingQueryRuns', write(window))).status).toBe(
+    200,
+  );
+  const list = (await (await alice.fetch('/meetings')).json()) as {
+    data: { id: string }[];
+  };
+  const meetingId = list.data[0]?.id as string;
+  gateway.participants.set('up-people', [
+    {
+      upstreamParticipantId: 'p-keep',
+      displayName: 'Keep',
+      department: null,
+      joinedAt: null,
+    },
+  ]);
+  expect((await alice.fetch('/meetingQueryRuns', write(window))).status).toBe(
+    200,
+  );
+  const people = (await (
+    await alice.fetch(`/meetings/${meetingId}/participants`)
+  ).json()) as { data: { displayName: string }[] };
+  expect(people.data.map((row) => row.displayName)).toEqual(['Keep']);
 });
 
 test('hides titles from another user on list and detail', async ({

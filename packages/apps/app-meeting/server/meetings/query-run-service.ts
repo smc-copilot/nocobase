@@ -56,17 +56,17 @@ function requireUser(userId: string | undefined): string {
   return userId;
 }
 
-function inclusiveDays(startedAt: Date, endedAt: Date): number {
-  const start = Date.UTC(
-    startedAt.getUTCFullYear(),
-    startedAt.getUTCMonth(),
-    startedAt.getUTCDate(),
-  );
-  const end = Date.UTC(
-    endedAt.getUTCFullYear(),
-    endedAt.getUTCMonth(),
-    endedAt.getUTCDate(),
-  );
+/** Inclusive calendar days in Asia/Shanghai, matching the list’s Beijing date inputs. */
+export function inclusiveQueryDays(startedAt: Date, endedAt: Date): number {
+  const dayStamp = (value: Date) =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(value);
+  const start = Date.parse(`${dayStamp(startedAt)}T00:00:00+08:00`);
+  const end = Date.parse(`${dayStamp(endedAt)}T00:00:00+08:00`);
   return Math.floor((end - start) / 86_400_000) + 1;
 }
 
@@ -110,7 +110,7 @@ function parseWindow(startedAt: string, endedAt: string, maxDays: number) {
       'INVALID_ARGUMENT',
     );
   }
-  const days = inclusiveDays(start, end);
+  const days = inclusiveQueryDays(start, end);
   if (days > Math.min(maxDays || MAX_QUERY_DAYS, MAX_QUERY_DAYS)) {
     throw new MeetingGatewayError(
       'QUERY_WINDOW_INVALID',
@@ -395,6 +395,7 @@ export class MeetingQueryRunService {
         { sleep: this.sleep, delaysMs: this.sleep ? [0, 0] : [1_000, 3_000] },
       );
       const now = new Date();
+      const keep = new Set(items.map((item) => item.upstreamParticipantId));
       for (const item of items) {
         const existing = await this.connection
           .repository<MeetingParticipant>(MEETING_PARTICIPANTS)
@@ -426,6 +427,16 @@ export class MeetingQueryRunService {
                 ...values,
               },
             });
+        }
+      }
+      const previous = await this.connection
+        .repository<MeetingParticipant>(MEETING_PARTICIPANTS)
+        .findMany({ filter: { meetingId } });
+      for (const row of previous) {
+        if (!keep.has(row.upstreamParticipantId)) {
+          await this.connection
+            .repository<MeetingParticipant>(MEETING_PARTICIPANTS)
+            .deleteMany({ filter: { id: row.id } });
         }
       }
       await this.connection.repository<Meeting>(MEETINGS).updateOne({
@@ -464,6 +475,7 @@ export class MeetingQueryRunService {
         { sleep: this.sleep, delaysMs: this.sleep ? [0, 0] : [1_000, 3_000] },
       );
       const now = new Date();
+      const keep = new Set(items.map((item) => item.recordFileId));
       for (const item of items) {
         const existing = await this.connection
           .repository<MeetingRecording>(MEETING_RECORDINGS)
@@ -492,6 +504,16 @@ export class MeetingQueryRunService {
                 ...values,
               },
             });
+        }
+      }
+      const previous = await this.connection
+        .repository<MeetingRecording>(MEETING_RECORDINGS)
+        .findMany({ filter: { meetingId } });
+      for (const row of previous) {
+        if (!keep.has(row.recordFileId)) {
+          await this.connection
+            .repository<MeetingRecording>(MEETING_RECORDINGS)
+            .deleteMany({ filter: { id: row.id } });
         }
       }
       await this.connection.repository<Meeting>(MEETINGS).updateOne({

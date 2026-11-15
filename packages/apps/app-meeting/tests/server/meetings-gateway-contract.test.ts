@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 import { createHttpMeetingGatewayAdapter } from '../../server/meetings/gateway/http-client.js';
 import { MeetingGatewayError } from '../../server/meetings/gateway/errors.js';
 import { validateHttpsOrigin } from '../../server/meetings/gateway/origin.js';
+import { inclusiveQueryDays } from '../../server/meetings/query-run-service.js';
 import {
   collectGatewayPages,
   withReadonlyRetry,
@@ -23,6 +24,15 @@ const config = {
   oauthStateTtlMs: 300_000,
   testAdapter: false,
 };
+
+test('counts Beijing calendar days so a 93-day +08 window is accepted', () => {
+  expect(
+    inclusiveQueryDays(
+      new Date('2026-01-01T00:00:00+08:00'),
+      new Date('2026-04-03T23:59:59.999+08:00'),
+    ),
+  ).toBe(93);
+});
 
 test('rejects a non-allowlisted origin', () => {
   expect(() => validateHttpsOrigin('http://gateway.example.test')).toThrow(

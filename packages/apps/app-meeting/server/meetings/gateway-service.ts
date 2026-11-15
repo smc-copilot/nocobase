@@ -143,6 +143,20 @@ export class MeetingGatewayService {
     });
   }
 
+  private allowedConnections(
+    connections: readonly GatewayConnection[],
+  ): GatewayConnection[] {
+    const expectedApplicationId =
+      this.config.expectedApplicationId ||
+      this.config.applicationId ||
+      'test-application';
+    return connections.filter(
+      (item) =>
+        item.applicationId === expectedApplicationId &&
+        item.type === 'THIRD_PARTY_OAUTH',
+    );
+  }
+
   private publicBinding(
     row: MeetingGatewayBinding | undefined,
     available: readonly GatewayConnection[] = [],
@@ -191,18 +205,7 @@ export class MeetingGatewayService {
         const connections = await this.adapter.listConnections({
           accessToken,
         });
-        const expectedApplicationId =
-          this.config.expectedApplicationId ||
-          this.config.applicationId ||
-          'test-application';
-        return this.publicBinding(
-          row,
-          connections.filter(
-            (item) =>
-              item.applicationId === expectedApplicationId &&
-              item.type === 'THIRD_PARTY_OAUTH',
-          ),
-        );
+        return this.publicBinding(row, this.allowedConnections(connections));
       } catch {
         return this.publicBinding(row);
       }
@@ -255,10 +258,12 @@ export class MeetingGatewayService {
     );
     const expiresAt = new Date(Date.now() + ttl);
     const applicationId = this.config.applicationId || 'test-application';
+    const returnTo = new URL(this.publicReturnTo);
+    returnTo.searchParams.set('localState', stateId);
     const started = await this.adapter.startAuthorization({
       accessToken,
       applicationId,
-      returnTo: this.publicReturnTo,
+      returnTo: returnTo.toString(),
     });
     const sealed = this.secrets.ready
       ? this.secrets.seal(accessToken, {
@@ -281,7 +286,7 @@ export class MeetingGatewayService {
         expiresAt,
         transactionId: started.transactionId,
         sealedAccessToken: sealed,
-        returnTo: this.publicReturnTo,
+        returnTo: returnTo.toString(),
         createdAt: now,
       },
     });
@@ -372,15 +377,7 @@ export class MeetingGatewayService {
         );
       }
       const connections = await this.adapter.listConnections({ accessToken });
-      const expectedApplicationId =
-        this.config.expectedApplicationId ||
-        this.config.applicationId ||
-        'test-application';
-      const owned = connections.filter(
-        (item) =>
-          item.applicationId === expectedApplicationId &&
-          item.type === 'THIRD_PARTY_OAUTH',
-      );
+      const owned = this.allowedConnections(connections);
       const now = new Date();
       const bindings = trx.repository<MeetingGatewayBinding>(
         MEETING_GATEWAY_BINDINGS,
@@ -450,16 +447,12 @@ export class MeetingGatewayService {
     }
     const row = await this.requireActiveOrAwaiting();
     const accessToken = this.openBindingToken(row);
-    const connections = await this.adapter.listConnections({ accessToken });
-    const expectedApplicationId =
-      this.config.expectedApplicationId ||
-      this.config.applicationId ||
-      'test-application';
+    const connections = this.allowedConnections(
+      await this.adapter.listConnections({ accessToken }),
+    );
     const match = connections.find(
       (item) =>
         item.connectionId === connectionId &&
-        item.applicationId === expectedApplicationId &&
-        item.type === 'THIRD_PARTY_OAUTH' &&
         item.memberId === (row.gatewayMemberId || item.memberId),
     );
     if (!match) {

@@ -99,6 +99,10 @@ describe('meetings page', () => {
       };
     });
     expect(await screen.findByText('Meeting 1')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Meeting 1' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/meetings/meeting-1'),
+    );
     expect(screen.getByText('Meeting 20')).toBeVisible();
     expect(requested.some((call) => call.pageSize === '20')).toBe(true);
     expect(

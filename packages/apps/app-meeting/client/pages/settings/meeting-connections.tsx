@@ -263,10 +263,7 @@ export function MeetingGatewayCallbackPage(): ReactElement {
   const [error, setError] = useState<unknown>();
 
   useEffect(() => {
-    const state =
-      params.get('localState') ||
-      params.get('state') ||
-      sessionStorage.getItem(STATE_KEY);
+    const state = sessionStorage.getItem(STATE_KEY) || params.get('localState');
     if (!state) {
       void navigate('/settings/meeting-connections', { replace: true });
       return;
