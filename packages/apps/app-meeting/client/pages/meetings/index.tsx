@@ -9,7 +9,10 @@ import { Alert, AlertDescription } from '#components/ui/alert';
 import { ListFeedback } from '#components/list-feedback';
 import { useListData } from '#hooks/use-list-data';
 import { useListLocation } from '#hooks/use-list-location';
-import { useTableUrlState } from '#hooks/use-table-url-state';
+import {
+  readTableUrlState,
+  useTableUrlState,
+} from '#hooks/use-table-url-state';
 
 export interface MeetingRow {
   id: string;
@@ -23,11 +26,18 @@ export interface MeetingList {
   meta: { page: number; pageSize: number; total: number };
 }
 
+const MEETING_TABLE = {
+  defaultPageSize: 20,
+  pageSizeOptions: [20, 50, 100],
+  sortColumns: [] as const,
+};
+
 export default function MeetingsPage(): ReactElement {
   const { t, i18n } = useTranslation();
   const { active, params } = useListLocation();
-  const page = Number(params.get('page') ?? '1') || 1;
-  const pageSize = Number(params.get('pageSize') ?? '20') || 20;
+  const { paginationState } = readTableUrlState(params, MEETING_TABLE);
+  const page = paginationState.pageIndex + 1;
+  const pageSize = paginationState.pageSize;
   const requestPath = `meetings?page=${page}&pageSize=${pageSize}`;
   const request = useListData<MeetingList>(requestPath, {
     active,
@@ -35,22 +45,23 @@ export default function MeetingsPage(): ReactElement {
     scopes: ['meetings'],
   });
   const rows = request.data?.data ?? [];
+  const hasCurrentResponse = request.path === requestPath;
   const tableState = useTableUrlState({
+    ...MEETING_TABLE,
     active,
     revision: request.revision,
-    sortColumns: [],
     rowCount:
-      !request.loading && !request.error && request.path === requestPath
-        ? rows.length
+      hasCurrentResponse && !request.loading && !request.error
+        ? request.data?.meta.total
         : undefined,
   });
   const listState = resolveListState(
     {
-      data: request.data,
-      error: request.error,
-      isPending: request.loading && !request.data,
+      data: hasCurrentResponse ? request.data : undefined,
+      error: tableState.error ?? request.error,
+      isPending: request.loading && !hasCurrentResponse,
     },
-    rows.length,
+    hasCurrentResponse ? (request.data?.meta.total ?? rows.length) : 0,
     false,
   );
   const columns = useMemo<ColumnDef<MeetingRow>[]>(
@@ -108,12 +119,12 @@ export default function MeetingsPage(): ReactElement {
         }
       >
         <DataTable
-          paginationState={tableState.paginationState}
-          onPaginationChange={tableState.onPaginationChange}
-          pageSizeOptions={[20, 50, 100]}
           columns={columns}
           data={rows}
           getRowId={(row) => row.id}
+          manualPagination
+          rowCount={request.data?.meta.total ?? 0}
+          {...tableState}
           showSelectedCount={false}
           emptyMessage={t('meetings.empty')}
           renderCard={(row) => (

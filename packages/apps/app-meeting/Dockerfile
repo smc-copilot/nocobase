@@ -6,11 +6,11 @@
 #
 #   docker build -t my-app .
 #
-# From source in the nocobase3 repository, the build context has to be the repository root, because the template
+# From source in the nocobase3 repository, the build context has to be the repository root, because the application
 # resolves its `workspace:` dependencies from there:
 #
-#   docker build -f packages/templates/app-template-default/Dockerfile \
-#     --build-arg APP_DIR=packages/templates/app-template-default -t my-app .
+#   docker build -f packages/apps/app-meeting/Dockerfile \
+#     --build-arg APP_DIR=packages/apps/app-meeting -t my-app .
 #
 # From a prebuilt `dist/`, which works in the template's own directory too. Build it for the image's platform first:
 #
@@ -36,7 +36,7 @@ RUN npm install --global pnpm@${PNPM_VERSION} \
 ARG APP_DIR=.
 WORKDIR /src
 # A local `dist/` is in the context for DIST=prebuilt; a source build replaces it, so it is not copied here.
-COPY --exclude=dist --exclude=packages/templates/*/dist . .
+COPY --exclude=dist --exclude=packages/templates/*/dist --exclude=packages/apps/*/dist . .
 RUN test -f pnpm-lock.yaml || { \
       echo 'No pnpm-lock.yaml in the build context. Inside the nocobase3 repository, build from the repository root' \
         'with -f <template>/Dockerfile --build-arg APP_DIR=<template>, or build dist/ first and pass' \

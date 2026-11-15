@@ -38,7 +38,10 @@ ui-library/dist
 !dist/**
 !packages/templates/*/dist
 !packages/templates/*/dist/**
+!packages/apps/*/dist
+!packages/apps/*/dist/**
 
 # Except the server settings `pnpm build` extracts from local .env files, which can include DB_PASSWORD.
 dist/.env
 packages/templates/*/dist/.env
+packages/apps/*/dist/.env
