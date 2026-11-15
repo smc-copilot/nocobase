@@ -229,3 +229,18 @@ logging:
     enabled: true
     # Set true for human-readable terminal output.
     pretty: false
+
+# Meeting gateway origin is an allowlisted HTTPS URL. The application never accepts an arbitrary request URL.
+# Tokens and client secrets stay on the server. MEETING_GATEWAY_TEST_ADAPTER is isolation tests only.
+# meetingGateway:
+#   origin: https://gateway.example.test
+#   originAllowlist:
+#     - https://gateway.example.test
+#   applicationId: replace-with-the-application-id
+#   instanceId: replace-with-a-stable-instance-id
+#   tencentCorpId: replace-with-the-corp-id
+#   tencentSdkId: replace-with-the-sdk-id
+#   callbackRef: replace-with-the-callback-ref
+#   authorizationPathAllowlist:
+#     - /oauth
+#   publicBaseUrl: https://meetings.example.test

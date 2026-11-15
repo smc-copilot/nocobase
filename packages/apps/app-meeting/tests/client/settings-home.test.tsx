@@ -65,8 +65,14 @@ it('groups the modules an administrator may open into categories of cards that o
   ]);
   expect(cards[0]).toHaveAttribute('href', '/main/settings/users');
   expect(cards[1]).toHaveAttribute('href', '/main/settings/roles');
-  // Categories without a module this viewer may open are not shown.
-  expect(screen.getAllByRole('region')).toHaveLength(1);
+  const business = screen.getByRole('region', {
+    name: 'Business configuration',
+  });
+  expect(within(business).getByRole('link')).toHaveAttribute(
+    'href',
+    '/main/settings/meeting-connections',
+  );
+  expect(screen.getAllByRole('region')).toHaveLength(2);
   cards[1].focus();
   await user.keyboard('{Enter}');
   await waitFor(() =>

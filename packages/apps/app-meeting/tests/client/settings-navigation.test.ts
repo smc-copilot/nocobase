@@ -119,6 +119,10 @@ describe('System settings navigation', () => {
           ['permissionManagement', '/settings/roles'],
         ],
       ],
+      [
+        'settingsBusiness',
+        [['meetingConnections', '/settings/meeting-connections']],
+      ],
     ]);
     const roles = find(routes, 'settingsRoles');
     expect(catalog(routes, new Set([routeKey(roles)]))).toEqual([
@@ -129,11 +133,18 @@ describe('System settings navigation', () => {
           ['permissionManagement', '/settings/default-access'],
         ],
       ],
+      [
+        'settingsBusiness',
+        [['meetingConnections', '/settings/meeting-connections']],
+      ],
     ]);
     const denied = new Set(
-      ['settingsUsers', 'settingsRoles', 'settingsDefaultAccess'].map((name) =>
-        routeKey(find(routes, name)),
-      ),
+      [
+        'settingsUsers',
+        'settingsRoles',
+        'settingsDefaultAccess',
+        'meetingConnections',
+      ].map((name) => routeKey(find(routes, name))),
     );
     expect(catalog(routes, denied)).toEqual([]);
     // Without a module to open, the sidebar entry disappears too.
@@ -226,6 +237,10 @@ describe('System settings navigation', () => {
         ],
       ],
       [
+        'settingsBusiness',
+        [['meetingConnections', '/settings/meeting-connections']],
+      ],
+      [
         'settingsSystem',
         [
           ['notificationManagement', '/settings/notifications/templates'],
@@ -262,6 +277,10 @@ it('places database browsing in System and hides its card when access is denied'
         ['permissionManagement', '/settings/roles'],
       ],
     ],
+    [
+      'settingsBusiness',
+      [['meetingConnections', '/settings/meeting-connections']],
+    ],
     ['settingsSystem', [['databaseExplorer', '/settings/database-explorer']]],
   ]);
   expect(catalog(routes, new Set([routeKey(page)]))).toEqual([
@@ -271,6 +290,10 @@ it('places database browsing in System and hides its card when access is denied'
         ['settingsUsers', '/settings/users'],
         ['permissionManagement', '/settings/roles'],
       ],
+    ],
+    [
+      'settingsBusiness',
+      [['meetingConnections', '/settings/meeting-connections']],
     ],
   ]);
 });

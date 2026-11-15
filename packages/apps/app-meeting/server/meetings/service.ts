@@ -1,7 +1,16 @@
 import type { AuthorizationContext } from '@nocobase/app-plugin-authorization/server';
 import { ApiError } from '@nocobase/app-server/router';
 import type { DatabaseConnection, RepositoryPolicy } from '@nocobase/db';
-import { MEETING_RESOURCE, MEETINGS, type Meeting } from './resources.js';
+import {
+  MEETING_PARTICIPANTS,
+  MEETING_RECORDINGS,
+  MEETING_RESOURCE,
+  MEETINGS,
+  type FetchStatus,
+  type Meeting,
+  type MeetingParticipant,
+  type MeetingRecording,
+} from './resources.js';
 
 export interface MeetingListQuery {
   page: number;
@@ -12,7 +21,25 @@ export interface MeetingPublic {
   id: string;
   title: string | null;
   meetingCode: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  participantFetchStatus: FetchStatus;
+  recordingFetchStatus: FetchStatus;
   createdAt: string;
+}
+
+export interface MeetingParticipantPublic {
+  id: string;
+  displayName: string | null;
+  department: string | null;
+  joinedAt: string | null;
+}
+
+export interface MeetingRecordingPublic {
+  id: string;
+  available: boolean;
+  format: string | null;
+  unavailableReason: string | null;
 }
 
 function meetingsForbidden(): ApiError {
@@ -24,7 +51,8 @@ function meetingsForbidden(): ApiError {
   });
 }
 
-function toIso(value: Date | string): string {
+function toIso(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
   return value instanceof Date ? value.toISOString() : value;
 }
 
@@ -34,7 +62,11 @@ function toPublic(row: Partial<Meeting>): MeetingPublic {
     id: row.id,
     title: row.title ?? null,
     meetingCode: row.meetingCode ?? null,
-    createdAt: toIso(row.createdAt),
+    startedAt: toIso(row.startedAt ?? null),
+    endedAt: toIso(row.endedAt ?? null),
+    participantFetchStatus: row.participantFetchStatus ?? 'not_fetched',
+    recordingFetchStatus: row.recordingFetchStatus ?? 'not_fetched',
+    createdAt: toIso(row.createdAt) as string,
   };
 }
 
@@ -81,5 +113,47 @@ export class MeetingQueryService {
     const row = await (await this.meetings()).findOne({ filter: { id } });
     if (!row) throw meetingsForbidden();
     return toPublic(row);
+  }
+
+  async listParticipants(
+    meetingId: string,
+  ): Promise<{ data: MeetingParticipantPublic[]; meta: { total: number } }> {
+    await this.get(meetingId);
+    const rows = await this.connection
+      .repository<MeetingParticipant>(MEETING_PARTICIPANTS)
+      .findMany({
+        filter: { meetingId },
+        sort: (sort) => sort.field('createdAt').asc(),
+      });
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        displayName: row.displayName,
+        department: row.department,
+        joinedAt: toIso(row.joinedAt),
+      })),
+      meta: { total: rows.length },
+    };
+  }
+
+  async listRecordings(
+    meetingId: string,
+  ): Promise<{ data: MeetingRecordingPublic[]; meta: { total: number } }> {
+    await this.get(meetingId);
+    const rows = await this.connection
+      .repository<MeetingRecording>(MEETING_RECORDINGS)
+      .findMany({
+        filter: { meetingId },
+        sort: (sort) => sort.field('createdAt').asc(),
+      });
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        available: row.available,
+        format: row.format,
+        unavailableReason: row.unavailableReason,
+      })),
+      meta: { total: rows.length },
+    };
   }
 }

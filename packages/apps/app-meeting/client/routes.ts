@@ -28,6 +28,43 @@ const appRoutes: AppClientRouteContribution = defineAppRoutes([
     name: 'meetings',
     navigation: { title: 'navigation.meetings', icon: Calendar },
     path: '/meetings',
+    children: [
+      {
+        name: 'meetingDetail',
+        path: ':meetingId',
+        auth: 'required',
+        authz: { resource: { type: 'page', id: 'meetings' }, action: 'access' },
+        breadcrumb: { title: 'meetings.title' },
+        presentation: { kind: 'child-page' },
+        componentLoader: () => import('./pages/meetings/detail.js'),
+        children: [
+          {
+            name: 'meetingParticipants',
+            path: 'participants',
+            auth: 'required',
+            authz: {
+              resource: { type: 'page', id: 'meetings' },
+              action: 'access',
+            },
+            breadcrumb: { title: 'meetings.tabs.participants' },
+            presentation: { kind: 'child-page' },
+            componentLoader: () => import('./pages/meetings/detail.js'),
+          },
+          {
+            name: 'meetingRecordings',
+            path: 'recordings',
+            auth: 'required',
+            authz: {
+              resource: { type: 'page', id: 'meetings' },
+              action: 'access',
+            },
+            breadcrumb: { title: 'meetings.tabs.recordings' },
+            presentation: { kind: 'child-page' },
+            componentLoader: () => import('./pages/meetings/detail.js'),
+          },
+        ],
+      },
+    ],
   },
   {
     // Declares no navigation, so the application decides where its entry goes (for example a sidebar item with an

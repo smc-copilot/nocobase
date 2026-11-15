@@ -1,4 +1,4 @@
-import { Users, ShieldCheck, KeyRound, ListFilter } from 'lucide-react';
+import { Users, ShieldCheck, KeyRound, ListFilter, Cable } from 'lucide-react';
 import {
   defineAppRoutes,
   type AppClientRouteContribution,
@@ -10,6 +10,39 @@ import {
  * without them.
  */
 const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
+  {
+    parent: 'settingsBusiness',
+    name: 'meetingConnections',
+    path: '/meeting-connections',
+    auth: 'required',
+    authz: {
+      resource: { type: 'page', id: 'meeting-connections' },
+      action: 'access',
+    },
+    navigation: {
+      title: 'meetingConnections.title',
+      description: 'meetingConnections.description',
+      icon: Cable,
+    },
+    breadcrumb: { title: 'meetingConnections.title' },
+    componentLoader: () => import('./meeting-connections.js'),
+    children: [
+      {
+        name: 'meetingGatewayCallback',
+        path: 'callback',
+        auth: 'required',
+        authz: {
+          resource: { type: 'page', id: 'meeting-connections' },
+          action: 'access',
+        },
+        breadcrumb: { title: 'meetingConnections.completing' },
+        componentLoader: () =>
+          import('./meeting-connections.js').then((module) => ({
+            default: module.MeetingGatewayCallbackPage,
+          })),
+      },
+    ],
+  },
   {
     parent: 'settingsAccount',
     name: 'settingsUsers',

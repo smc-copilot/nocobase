@@ -178,6 +178,14 @@ describe('app client routes', () => {
     }
   });
 
+  it('covers the meetings list with a child page for stored details', () => {
+    const meetings = findRoute(resolveRoutes().routes, 'meetings');
+    expect(meetings?.children?.[0]).toMatchObject({
+      name: 'meetingDetail',
+      presentation: { kind: 'child-page' },
+    });
+  });
+
   it('pins the page authorization of every signed-in page', () => {
     // A stored page grant records the page's `authz` resource id (`authorizedAs`), not its route `name`: changing an
     // id is a data change that has to migrate the grants that reference it, not a refactor — so changing this list
@@ -189,6 +197,9 @@ describe('app client routes', () => {
     expect(pageAuthorizations(resolved.routes)).toEqual([
       { name: 'home', authorizedAs: null },
       { name: 'meetings', authorizedAs: 'meetings' },
+      { name: 'meetingDetail', authorizedAs: 'meetings' },
+      { name: 'meetingParticipants', authorizedAs: 'meetings' },
+      { name: 'meetingRecordings', authorizedAs: 'meetings' },
       { name: 'inbox', authorizedAs: null },
       { name: 'settingsHome', authorizedAs: null },
       { name: 'settingsUsers', authorizedAs: 'user:*' },
@@ -215,6 +226,14 @@ describe('app client routes', () => {
         name,
         authorizedAs: 'settings:authorization.default-access',
       })),
+      {
+        name: 'meetingConnections',
+        authorizedAs: 'meeting-connections',
+      },
+      {
+        name: 'meetingGatewayCallback',
+        authorizedAs: 'meeting-connections',
+      },
       { name: 'databaseExplorer', authorizedAs: 'database-explorer' },
     ]);
   });
@@ -236,6 +255,8 @@ describe('app client routes', () => {
       '/settings/default-access',
       '/settings/default-access/create',
       '/settings/default-access/:key/edit',
+      '/settings/meeting-connections',
+      '/settings/meeting-connections/callback',
       '/settings/database-explorer',
     ]);
     const built = resolveRoutes();
@@ -268,6 +289,18 @@ function resolveRoutes() {
  * The paths of the pages a route tree registers. A menu group names no component, so it carries no path of its own
  * and inherits its parent's — filtering on `componentLoader` is what keeps that inherited path out of the list.
  */
+function findRoute(
+  routes: readonly AppClientRegisteredRoute[],
+  name: string,
+): AppClientRegisteredRoute | undefined {
+  for (const route of routes) {
+    if (route.name === name) return route;
+    const nested = findRoute(route.children ?? [], name);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
 function pagePaths(routes: readonly AppClientRegisteredRoute[]): string[] {
   return routes.flatMap((route) => [
     ...(route.componentLoader ? [route.path] : []),

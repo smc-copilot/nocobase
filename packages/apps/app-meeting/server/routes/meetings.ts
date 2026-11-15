@@ -22,12 +22,16 @@ import {
 } from '@nocobase/app-server/router';
 import { AuthorizationDeniedError } from '@nocobase/authorization/core';
 import { MEETING_RESOURCE } from '../meetings/resources.js';
-import { MeetingQueryService } from '../meetings/service.js';
+import { createMeetingServices } from '../meetings/context.js';
+import { MeetingGatewayError } from '../meetings/gateway/errors.js';
 import {
   MeetingListMeta,
   MeetingListQuery,
   MeetingParams,
+  MeetingParticipantSchema,
+  MeetingRecordingSchema,
   MeetingSchema,
+  TotalMeta,
 } from './schemas.js';
 
 const listDoc = describeRoute({
@@ -35,7 +39,7 @@ const listDoc = describeRoute({
   operationId: 'listMeetings',
   summary: 'List meetings the caller may read',
   description:
-    'Returns meetings granted to the signed-in user. The list is empty until a later query import records access. It does not call a meeting gateway.',
+    'Returns meetings granted to the signed-in user. The list is empty until a query run stores access. It does not call a meeting gateway by itself.',
   responses: {
     200: listResponse(MeetingSchema, MeetingListMeta),
     ...apiErrorResponses,
@@ -47,16 +51,45 @@ const getDoc = describeRoute({
   operationId: 'getMeeting',
   summary: 'Read one granted meeting',
   description:
-    'Hidden and missing meetings both return 403. The response never includes gateway credentials or source tokens.',
+    'Hidden and missing meetings both return 403. The response never includes gateway credentials, source tokens or signed recording URLs.',
   responses: {
     200: dataResponse(MeetingSchema),
     ...apiErrorResponses,
   },
 });
 
+const participantsDoc = describeRoute({
+  tags: ['Meetings'],
+  operationId: 'listMeetingParticipants',
+  summary: 'List stored participants of a granted meeting',
+  description:
+    'Returns locally stored participants. Unknown names stay null rather than guessed. Hidden meetings return 403 without participant rows.',
+  responses: {
+    200: listResponse(MeetingParticipantSchema, TotalMeta),
+    ...apiErrorResponses,
+  },
+});
+
+const recordingsDoc = describeRoute({
+  tags: ['Meetings'],
+  operationId: 'listMeetingRecordings',
+  summary: 'List stored recordings of a granted meeting',
+  description:
+    'Returns availability of stored recordings. Signed download URLs are never stored or returned.',
+  responses: {
+    200: listResponse(MeetingRecordingSchema, TotalMeta),
+    ...apiErrorResponses,
+  },
+});
+
 export const meetingsRoutes = defineApiRoutes((app: Application) => {
   const router = new Hono<AuthEnv & AuthorizationEnv>();
-  router.onError(apiErrorHandler);
+  router.onError((error, c) =>
+    apiErrorHandler(
+      error instanceof MeetingGatewayError ? error.toApiError() : error,
+      c,
+    ),
+  );
   const requireMeetingRead = createMiddleware<AuthorizationEnv>(
     async (context, next) => {
       const decision = await context.get('authz').authorize({
@@ -76,6 +109,8 @@ export const meetingsRoutes = defineApiRoutes((app: Application) => {
   ] as const;
   router.use('/meetings', ...protect);
   router.use('/meetings/:meetingId', ...protect);
+  router.use('/meetings/:meetingId/participants', ...protect);
+  router.use('/meetings/:meetingId/recordings', ...protect);
   if (!app.container.has(databaseManagerToken)) {
     const unavailable = () => {
       throw new ApiError({
@@ -92,19 +127,47 @@ export const meetingsRoutes = defineApiRoutes((app: Application) => {
       describeRoute({ hide: true }),
       unavailable,
     );
+    router.get(
+      '/meetings/:meetingId/participants',
+      describeRoute({ hide: true }),
+      unavailable,
+    );
+    router.get(
+      '/meetings/:meetingId/recordings',
+      describeRoute({ hide: true }),
+      unavailable,
+    );
     return new Hono().route('/', router);
   }
-  const database = app.container.resolve(databaseManagerToken);
   router.get(
     '/meetings',
     listDoc,
     apiValidator('query', MeetingListQuery),
     async (c) =>
       c.json(
-        await new MeetingQueryService(
-          database.connection(),
-          c.get('authz'),
-        ).list(c.req.valid('query')),
+        await createMeetingServices(app, c).meetings.list(c.req.valid('query')),
+      ),
+  );
+  router.get(
+    '/meetings/:meetingId/participants',
+    participantsDoc,
+    apiValidator('param', MeetingParams),
+    async (c) =>
+      c.json(
+        await createMeetingServices(app, c).meetings.listParticipants(
+          c.req.valid('param').meetingId,
+        ),
+      ),
+  );
+  router.get(
+    '/meetings/:meetingId/recordings',
+    recordingsDoc,
+    apiValidator('param', MeetingParams),
+    async (c) =>
+      c.json(
+        await createMeetingServices(app, c).meetings.listRecordings(
+          c.req.valid('param').meetingId,
+        ),
       ),
   );
   router.get(
@@ -113,10 +176,9 @@ export const meetingsRoutes = defineApiRoutes((app: Application) => {
     apiValidator('param', MeetingParams),
     async (c) =>
       c.json({
-        data: await new MeetingQueryService(
-          database.connection(),
-          c.get('authz'),
-        ).get(c.req.valid('param').meetingId),
+        data: await createMeetingServices(app, c).meetings.get(
+          c.req.valid('param').meetingId,
+        ),
       }),
   );
   return new Hono().route('/', router);

@@ -5,10 +5,16 @@ import { authorizationToken } from '@nocobase/app-plugin-authorization/server';
 import { buildFilter } from '@nocobase/repository-input';
 import {
   MEETING_ACCESS,
+  MEETING_GATEWAY_BINDINGS,
+  MEETING_QUERY_RUNS,
   MEETINGS,
   meetingGrantedAccess,
+  meetingOwnBindingsAccess,
+  meetingOwnQueryRunsAccess,
   meetingResource,
   type MeetingAccess,
+  type MeetingGatewayBinding,
+  type MeetingQueryRun,
 } from '../meetings/resources.js';
 
 export default class MeetingsAuthorizationProvider extends ServiceProvider<Application> {
@@ -24,6 +30,14 @@ export default class MeetingsAuthorizationProvider extends ServiceProvider<Appli
     authz.database.collections.add({
       name: MEETING_ACCESS,
       title: 'Meeting access',
+    });
+    authz.database.collections.add({
+      name: MEETING_GATEWAY_BINDINGS,
+      title: 'Meeting gateway bindings',
+    });
+    authz.database.collections.add({
+      name: MEETING_QUERY_RUNS,
+      title: 'Meeting query runs',
     });
     authz.recordAccess.define(
       meetingGrantedAccess.resolver(async ({ collection, principal }) => {
@@ -48,6 +62,48 @@ export default class MeetingsAuthorizationProvider extends ServiceProvider<Appli
         if (!grants.length) return false;
         return buildFilter((filter) =>
           filter.or(grants.map((row) => filter.string('id').eq(row.meetingId))),
+        );
+      }),
+    );
+    authz.recordAccess.define(
+      meetingOwnBindingsAccess.resolver(async ({ collection, principal }) => {
+        if (
+          collection !== MEETING_GATEWAY_BINDINGS ||
+          principal.type !== 'user' ||
+          !this.app.container.has(databaseManagerToken)
+        )
+          return false;
+        const rows = await this.app.container
+          .resolve(databaseManagerToken)
+          .repository<MeetingGatewayBinding>(MEETING_GATEWAY_BINDINGS)
+          .findMany({
+            filter: { userId: principal.id },
+            select: (select) => select.fields('id'),
+          });
+        if (!rows.length) return false;
+        return buildFilter((filter) =>
+          filter.or(rows.map((row) => filter.string('id').eq(row.id))),
+        );
+      }),
+    );
+    authz.recordAccess.define(
+      meetingOwnQueryRunsAccess.resolver(async ({ collection, principal }) => {
+        if (
+          collection !== MEETING_QUERY_RUNS ||
+          principal.type !== 'user' ||
+          !this.app.container.has(databaseManagerToken)
+        )
+          return false;
+        const rows = await this.app.container
+          .resolve(databaseManagerToken)
+          .repository<MeetingQueryRun>(MEETING_QUERY_RUNS)
+          .findMany({
+            filter: { userId: principal.id },
+            select: (select) => select.fields('id'),
+          });
+        if (!rows.length) return false;
+        return buildFilter((filter) =>
+          filter.or(rows.map((row) => filter.string('id').eq(row.id))),
         );
       }),
     );
