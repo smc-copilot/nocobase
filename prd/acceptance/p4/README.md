@@ -1,7 +1,9 @@
 # P4 — Field / Gate B status
 
 Date: 2026-11-13  
-Hosts: Control / demo Apps (local), Casdoor (typically `:8000`), remote Docker `192.168.102.104`, PG as configured by the operator
+Hosts: Control / demo Apps (local), optional Casdoor SSO (not required for Agent OAuth / Business UI联调), remote Docker `192.168.102.104`, PG as configured by the operator
+
+Identity boundary (aligned with `prd/NocoBase-v3.0.1-Remediation-PRD-v1.1.md` §1.0): Gate A/B exit does **not** require live Casdoor; forced path is native local user → Agent Authorization → Business UI Adapter → Octop.
 
 ## Honest status
 

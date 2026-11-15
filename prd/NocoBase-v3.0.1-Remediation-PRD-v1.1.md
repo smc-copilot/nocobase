@@ -1,7 +1,7 @@
 # NocoBase 企业集成底座后续开发 PRD
 
-> **版本：V1.1｜剩余功能与联调闭环版**  
-> **日期：2026-11-14（北京时间）**  
+> **版本：V1.1.1｜剩余功能与联调闭环版（身份边界修订）**  
+> **日期：2026-11-15（北京时间）；相对 V1.1 正文修订 Casdoor 强制依赖**  
 > **开发仓库：smc-copilot/nocobase**  
 > **统一合并目标：develop/v3.0.1**  
 > **本轮复核基线：f930624436f78fd31dd1f8b4a00bda72564417ec**  
@@ -11,17 +11,23 @@
 
 ## 1. 目标与文档关系
 
+### 1.0 本期产品边界（硬约束）
+
+1. NocoBase 是独立的应用底座：通过插件与模板模块做业务系统二开；Control／Integration Demo 是底座上的模板应用，不是外挂第三套产品。
+2. 与 Octop 的本期对接路径为：**原生本地用户与 Permission Sets** → **Agent Authorization（OAuth2／PKCE／consent／token／revoke）** → **Business UI Adapter（business-ui.v1）** → **Octop Business UI 插件**。
+3. **Casdoor 不是本期联调或 Gate 退出的前置条件。** 用户身份与业务授权不依赖 Casdoor；Casdoor Identity 仅可作为可选浏览器 SSO／目录扩展保留，相关 NEXT／N 用例降级为可选（OPTIONAL），不得因未接 Casdoor 阻断 Gate A／B 或宣称“联调未完成”。
+
 ### 1.1 本轮目标
 
-在已经合入的修复基础上，完成剩余的身份登录、真实业务授权、票据与嵌入撤销、异常操作恢复、IAM 一致性、控制面管理页面及现场联调能力。
+在已经合入的修复基础上，完成剩余的真实业务授权、票据与嵌入撤销、异常操作恢复、主体绑定安全、控制面管理页面及与 Octop 的现场联调能力。
 
 交付结果必须同时满足：
 
-1. 原生 NocoBase 应用能够接收并正确处理合法 Casdoor 用户凭证；浏览器登录和外部 token 访问关联到同一个稳定本地身份。
+1. 原生 NocoBase 本地用户完成浏览器登录后，经 Agent Authorization 向 Octop 发放可用委托凭证；协议用户路由接受声明的 Agent／会话凭证，并映射到同一稳定本地身份。
 2. 用户只能操作当前获得原生权限授权的通用表单和记录，服务密钥、票据、嵌入上下文均不能替代业务授权。
 3. Octop 现有 Business UI 插件可以展示真实保存、提交、拒绝、FAILED、UNKNOWN 与恢复后的权威状态。
 4. 管理员可以通过控制面完成本期集成配置、撤销、查询和审计；发布人员只能管理被授权的 App。
-5. 开发交付通过可复现的 Gate A，再在真实 Casdoor、Octop 和目标浏览器环境完成 Gate B。
+5. 开发交付通过可复现的 Gate A，再在真实 Octop 与目标浏览器环境完成 Gate B；**不要求真实 Casdoor 已接入。**
 
 ### 1.2 与既有文档的关系
 
@@ -34,7 +40,7 @@
 | 用户提供的 Adapter 协议附件                     | 仅参考对接协议与规范，不扩大本期产品范围                          |
 | 项目附件 wiki-nocobase.md                       | 作为项目背景参考；架构、目录和扩展 API 以本次 V3 分支实际源码为准 |
 
-本文是 V1.0 修复 PRD 的增量更新。重复事项按本次复核状态调整，不要求重做已完成能力；未被本文修改的既有范围及验收要求继续有效。
+本文是 V1.0 修复 PRD 的增量更新。重复事项按本次复核状态调整，不要求重做已完成能力；未被本文修改的既有范围及验收要求继续有效。V1.1.1 起：凡与「必须接入 Casdoor 才算联调／Gate 完成」冲突的表述，以第 1.0 节硬约束及 OPTIONAL 标注为准。
 
 附件中的旧版 Koa、Sequelize、resourcer 等描述不能直接作为本分支开发指令。本期复用当前 V3 分支的 App Server、Hono、Better Auth、Authorization／Permission Sets、Releases、App Host 和 Secret 服务，不为适配旧文档重写内核。
 
@@ -48,30 +54,38 @@
 
 ### 2.1 本期必须交付
 
-| 模块                     | 本轮范围                                                                  |
-| ------------------------ | ------------------------------------------------------------------------- |
-| NocoBase 控制面          | 原生权限入口、集成配置页面、Releases 关联 App 边界、运行与审计查询        |
-| Casdoor Identity Adapter | 浏览器登录关联、准入、资源 token 验证、目录快照、权限归属和主体绑定一致性 |
-| Business UI Adapter      | 用户凭证路由、原生授权、票据和 embed 生命周期、统一回执、操作恢复         |
-| Integration Demo         | 通用编辑／详情表单、受控故障夹具、同用户允许与拒绝场景                    |
-| 工程交付                 | 新增迁移、真实 HTTP 和数据库回归、消费者契约、部署及验收证据              |
+| 模块                | 本轮范围                                                                          |
+| ------------------- | --------------------------------------------------------------------------------- |
+| NocoBase 控制面     | 原生权限入口、集成配置页面、Releases 关联 App 边界、运行与审计查询                |
+| Agent Authorization | 机密客户端、本地用户 consent、opaque token、refresh／revoke；供 Octop 委托接入    |
+| Business UI Adapter | 用户凭证路由、原生授权、票据和 embed 生命周期、统一回执、操作恢复                 |
+| Integration Demo    | 通用编辑／详情表单、受控故障夹具、同用户允许与拒绝场景；可在无 Casdoor 插件下启动 |
+| 工程交付            | 新增迁移、真实 HTTP 和数据库回归、消费者契约、部署及验收证据                      |
+
+### 2.1.1 本期可选交付（不进 Gate 强制退出）
+
+| 模块                     | 说明                                                                 |
+| ------------------------ | -------------------------------------------------------------------- |
+| Casdoor Identity Adapter | 可选浏览器 SSO、目录快照与 IAM 映射；启用时仍须走原生 Auth／授权边界 |
 
 主要代码对象：
 
 - packages/templates/app-template-smc-control
 - packages/templates/app-template-integration-demo
-- packages/plugins/app-plugin-casdoor-identity
+- packages/plugins/app-plugin-agent-authorization
 - packages/plugins/app-plugin-business-ui-adapter
 - 关联配置、lockfile、迁移、测试和 prd/acceptance 文档
+- （可选）packages/plugins/app-plugin-casdoor-identity
 
 ### 2.2 明确不包含
 
 - HR、招聘、CRM、财务实际 App，以及这些领域的数据模型、单据、审批、报表和导入。
 - Octop 核心、会话数据结构、Dashboard 或现有插件协议改造。
 - Casdoor 核心改造、新表单引擎、新工作流引擎和通用低代码平台重建。
+- 将「接入真实 Casdoor」或「Casdoor 资源 JWT 业务准入」作为本期联调／Gate 强制完成条件。
 - Agent 独立业务身份、自主提交、自动审批和代理授权体系。
 - 新增 Adapter→Octop webhook、后端 patchResult 或自动唤醒模型链路。
-- 为绕过 Casdoor 登录问题而同时增加 PAT、共享管理员 token 等替代激活方式。
+- 为绕过原生登录或 Agent OAuth 而增加 PAT、共享管理员 token 等替代激活方式。
 
 如验证发现消费者限制，先定位适配器能否在现有协议内解决；确需协议变更时单独提出变更，不作为本 PRD 默认实现内容。
 
@@ -99,33 +113,33 @@
 
 ### 3.2 本次实际验证边界
 
-| 检查               | 本次结果                                          | 结论边界                                                                  |
-| ------------------ | ------------------------------------------------- | ------------------------------------------------------------------------- |
-| 冻结依赖安装       | 通过，使用 --frozen-lockfile --ignore-scripts     | 不等于完整安装生命周期、四包构建及镜像构建已通过                          |
-| Casdoor 插件测试   | 75 个用例通过                                     | 不等于浏览器首登及真实 Casdoor 联调通过                                   |
-| Adapter 插件测试   | 14 个用例通过                                     | 其中消费者测试缺少本地 Octop 路径时会提前返回，不能全部作为契约通过证据   |
-| 原始消费者握手函数 | 接受当前服务生成的握手                            | 不代表 OAuth、卡片和浏览器全链路通过                                      |
-| 用户凭证路由探针   | /tickets 返回 403 CREDENTIAL_NOT_ACCEPTED         | 使用原生 Auth 中间件及受控 issued-credential resolver，未连接真实 Casdoor |
-| 默认业务检查器     | 无真实授权时，非空 permissionRef 仍返回允许       | 生产 Provider 未注入真实业务授权检查器                                    |
-| 撤销后保存探针     | 绑定撤销且连接停用后，已有 embed 仍可保存         | 使用真实 SQLite 服务测试；需补模板 HTTP 回归                              |
-| 异常状态探针       | FAILED／UNKNOWN 提交后，getInteraction 返回 draft | 两种分支均复现，权威查询状态不一致                                        |
+| 检查               | 本次结果                                          | 结论边界                                                                |
+| ------------------ | ------------------------------------------------- | ----------------------------------------------------------------------- |
+| 冻结依赖安装       | 通过，使用 --frozen-lockfile --ignore-scripts     | 不等于完整安装生命周期、四包构建及镜像构建已通过                        |
+| Casdoor 插件测试   | 75 个用例通过                                     | 历史证据；本期联调不强制 Casdoor，该项 OPTIONAL                         |
+| Adapter 插件测试   | 14 个用例通过                                     | 其中消费者测试缺少本地 Octop 路径时会提前返回，不能全部作为契约通过证据 |
+| 原始消费者握手函数 | 接受当前服务生成的握手                            | 不代表 OAuth、卡片和浏览器全链路通过                                    |
+| 用户凭证路由探针   | /tickets 返回 403 CREDENTIAL_NOT_ACCEPTED         | 当时以 Casdoor issued credential 探针；强制路径应改测 Agent／会话凭证   |
+| 默认业务检查器     | 无真实授权时，非空 permissionRef 仍返回允许       | 生产 Provider 未注入真实业务授权检查器                                  |
+| 撤销后保存探针     | 绑定撤销且连接停用后，已有 embed 仍可保存         | 使用真实 SQLite 服务测试；需补模板 HTTP 回归                            |
+| 异常状态探针       | FAILED／UNKNOWN 提交后，getInteraction 返回 draft | 两种分支均复现，权威查询状态不一致                                      |
 
 **当前结论：Gate A 尚未达到。** 现有测试通过数量不能替代下述功能缺口和场景验收。
 
 ### 3.3 剩余功能总表
 
-| 需求 ID | 功能                             | 优先级              | 交付门槛                         | 对应既有修复项                    |
-| ------- | -------------------------------- | ------------------- | -------------------------------- | --------------------------------- |
-| NEXT-01 | 用户凭证路由与真实原生业务授权   | P0                  | A                                | FIX-06、FIX-08                    |
-| NEXT-02 | Casdoor 浏览器首登与身份关联     | P0                  | A 受控验证；B 真实复测           | FIX-02、FIX-03、FIX-13            |
-| NEXT-03 | 撤销、版本及历史票据失效         | P0                  | A；B 多实例复测                  | FIX-07、FIX-13、FIX-15            |
-| NEXT-04 | 权威异常回执与操作恢复           | P0                  | A；B 卡片与故障复测              | FIX-09、FIX-10、FIX-12            |
-| NEXT-05 | IAM 快照、授权所有权和绑定唯一性 | P1，Gate A 必须关闭 | A；B 目标数据库及真实 token 复测 | FIX-13、FIX-14、FIX-15            |
-| NEXT-06 | 真实应用回归与 Gate A 证据       | P1，Gate A 必须关闭 | A                                | FIX-01、FIX-02 及 R01–R42 的 A 项 |
-| NEXT-07 | 控制面集成管理页面               | P1                  | B；管理 API 边界在 A 验证        | FIX-16                            |
-| NEXT-08 | 真实环境联合验收与交付           | P1                  | B                                | FIX-16 及 R01–R42 的 B 项         |
+| 需求 ID | 功能                                          | 优先级                               | 交付门槛                            | 对应既有修复项                    |
+| ------- | --------------------------------------------- | ------------------------------------ | ----------------------------------- | --------------------------------- |
+| NEXT-01 | 用户凭证路由与真实原生业务授权                | P0                                   | A                                   | FIX-06、FIX-08                    |
+| NEXT-02 | Casdoor 浏览器首登与身份关联（可选 SSO）      | OPTIONAL，不进 Gate 强制退出         | 仅在启用 Casdoor 时验收             | FIX-02、FIX-03、FIX-13            |
+| NEXT-03 | 撤销、版本及历史票据失效                      | P0                                   | A；B 多实例复测                     | FIX-07、FIX-13、FIX-15            |
+| NEXT-04 | 权威异常回执与操作恢复                        | P0                                   | A；B 卡片与故障复测                 | FIX-09、FIX-10、FIX-12            |
+| NEXT-05 | 主体绑定唯一性（强制）／目录 IAM 快照（可选） | 绑定：P1 Gate A 必关；目录：OPTIONAL | 绑定 A；目录仅启用 Casdoor 时       | FIX-13、FIX-14、FIX-15            |
+| NEXT-06 | 真实应用回归与 Gate A 证据                    | P1，Gate A 必须关闭                  | A；含无 Casdoor 装配回归            | FIX-01、FIX-02 及 R01–R42 的 A 项 |
+| NEXT-07 | 控制面集成管理页面                            | P1                                   | B；管理 API 边界在 A 验证           | FIX-16                            |
+| NEXT-08 | 真实环境联合验收与交付                        | P1                                   | B；强制路径为原生用户＋Agent＋Octop | FIX-16 及 R01–R42 的 B 项         |
 
-优先级决定开发顺序，不表示 P1 可以跳过后直接宣布联调或最终验收通过。
+优先级决定开发顺序。标为 OPTIONAL 的项不阻塞联调完成或 Gate 放行；P1 强制项仍须在对应 Gate 关闭。
 
 ## 4. 角色、架构和授权原则
 
@@ -139,56 +153,57 @@
 | 通用表单用户 | 打开被授权表单、保存、提交、查看本人或被授权记录 | 每个动作和记录范围由原生 Authorization 决定    |
 | 审计查看人员 | 只读访问授权范围内的运行与审计信息               | 不获取明文凭据，不借审计接口读取无权业务摘要   |
 
-角色名是产品职责描述；实施时复用现有 Permission Sets 和 settings/resource/action 权限项。禁止把 Casdoor 的任意 group 字符串直接当作本地 root 或任意权限集名称执行。
+角色名是产品职责描述；实施时复用现有 Permission Sets 和 settings/resource/action 权限项。若启用 Casdoor，禁止把其任意 group 字符串直接当作本地 root 或任意权限集名称执行。
 
 ### 4.2 组件职责
 
-| 组件                     | 负责                                   | 不承担                              |
-| ------------------------ | -------------------------------------- | ----------------------------------- |
-| Casdoor                  | 用户身份、受信 token、目录事实         | NocoBase 记录级业务授权             |
-| Identity Adapter         | 验证身份、准入、稳定关联、受控目录同步 | 默认给所有已登录用户授予业务权限    |
-| 原生 Auth／Authorization | 会话、凭证准入、权限集、资源及记录判断 | 依赖前端按钮判断服务器权限          |
-| Business UI Adapter      | 协议转换、注册表、票据、操作和权威回执 | 自建绕过原生授权的第二套业务 ACL    |
-| Control／App Host        | 集成管理、发布、运行和审计入口         | 将业务容器直接变成控制面管理员      |
-| Octop 现有插件           | 交互卡片、嵌入表单、拉取权威状态       | 把前端 postMessage 当作提交成功证据 |
+| 组件                     | 负责                                                | 不承担                              |
+| ------------------------ | --------------------------------------------------- | ----------------------------------- |
+| 原生 Auth／Authorization | 本地用户会话、权限集、资源及记录判断                | 依赖前端按钮判断服务器权限          |
+| Agent Authorization      | 机密客户端、consent、opaque access／refresh、revoke | 替代原生记录级业务授权              |
+| Business UI Adapter      | 协议转换、注册表、票据、操作和权威回执              | 自建绕过原生授权的第二套业务 ACL    |
+| Control／App Host        | 集成管理、发布、运行和审计入口                      | 将业务容器直接变成控制面管理员      |
+| Octop 现有插件           | 交互卡片、嵌入表单、拉取权威状态                    | 把前端 postMessage 当作提交成功证据 |
+| Casdoor（可选）          | 仅当启用时：浏览器 SSO、受信目录事实                | 本期强制用户身份或业务授权来源      |
+| Identity Adapter（可选） | 仅当启用时：Casdoor 准入、关联、目录同步            | 默认给所有已登录用户授予业务权限    |
 
 ### 4.3 所有业务动作的必要条件
 
 服务器对出票、兑票、保存、提交、查看、查询、重试分别检查适用的条件：
 
 1. 当前 App／connection 正确且启用。
-2. 用户来自原生认证上下文，账号及受信 Provider 当前有效。
+2. 用户来自原生认证上下文（本地会话或已声明的 Agent／用户凭证），账号当前有效。
 3. Octop issuer＋subject 与当前本地身份的有效绑定一致。
 4. 票据／embed 的版本、动作、表单、记录、TTL 和连接约束有效。
 5. 当前原生授权允许该资源、动作、记录及可写字段。
-6. 目录快照与授权新鲜度满足本 PRD 的策略。
-7. 操作状态、幂等键和版本允许执行该动作。
+6. 操作状态、幂等键和版本允许执行该动作。
+7. （仅当启用 Casdoor 目录权威模式时）目录快照与授权新鲜度满足第 9 节可选策略。
 
-缺失条件失败关闭；不能通过“有 ticket”“已登录”或“permissionRef 有值”推导业务允许。
+缺失条件失败关闭；不能通过“有 ticket”“已登录”或“permissionRef 有值”推导业务允许。未启用 Casdoor 时不得因缺少目录快照而拒绝合法原生用户或 Agent 委托链路。
 
 ## 5. NEXT-01：用户凭证路由与原生业务授权
 
 ### 5.1 目标行为
 
-合法 Casdoor 资源凭证能够访问明确声明的协议路由。身份已认证但没有业务授权的用户获得拒绝；已授权用户只能操作允许的通用类型、动作和记录。
+合法的原生会话或 Agent Authorization 用户委托凭证能够访问明确声明的协议路由。身份已认证但没有业务授权的用户获得拒绝；已授权用户只能操作允许的通用类型、动作和记录。本期强制路径不要求 Casdoor issued credential。
 
 ### 5.2 用户凭证路由
 
-- 为应接受 Casdoor 用户凭证的协议路由补齐原生 security 声明与对应准入策略，使用 casdoorAccessToken 及现有 auth.required 链路。
+- 为应接受用户委托凭证的协议路由补齐原生 security 声明与对应准入策略；强制方案使用 Agent access token（及现有 auth.required／agentAccessToken 链路）与本地会话。
 - 声明、运行时路由策略和接口文档保持一致；不通过全局策略允许所有路由接受外部 token。
-- 不把 scopedKeys: true 视为已经声明允许 Casdoor issued credential。
+- 不把 scopedKeys: true 视为已经声明允许任意 issued credential。
 - service secret 只用于固定协议允许的连接级动作；不得代替用户身份创建或操作单据。
-- 错 issuer、audience、签名、有效期、停用 Provider、禁用用户或不符合资源 token 策略的凭证必须拒绝。
-- 启用集成但缺少必要受信配置时，提供可诊断错误并拒绝开放集成入口。
+- 错 client、签名／摘要、有效期、停用客户端、禁用用户或不符合 Agent 凭证策略的令牌必须拒绝。
+- （可选）若同时启用 Casdoor 资源 JWT 准入，其声明与负例须单独覆盖，且不得替代上述强制路径。
 
-| 路由类别                                 | 认证来源                     | 必要校验                                      |
-| ---------------------------------------- | ---------------------------- | --------------------------------------------- |
-| handshake、OAuth consume                 | 对应连接服务凭据             | 连接隔离、启用状态、一次消费及协议约束        |
-| OAuth callback                           | 已保存的受控授权状态         | state、连接、过期和重放；不得直接建立业务授权 |
-| tickets、interactions、operations、retry | 原生 Auth 接受的用户资源凭证 | 当前用户、主体绑定、当前原生授权              |
-| tickets/redeem                           | 一次性 ticket＋nonce         | 当前状态和版本重新验证后建立受限 embed        |
-| documents/save、documents/submit         | 原生会话及对应 embed 上下文  | 动作、记录、字段、版本和当前授权              |
-| 管理 API                                 | 原生管理员／受委派管理会话   | 对应 settings／resource 权限，先授权后查询    |
+| 路由类别                                 | 认证来源                                    | 必要校验                                    |
+| ---------------------------------------- | ------------------------------------------- | ------------------------------------------- |
+| handshake、OAuth consume                 | 对应连接服务凭据                            | 连接隔离、启用状态、一次消费及协议约束      |
+| Agent OAuth authorize／token／revoke     | 本地用户会话或机密客户端认证                | PKCE、client secret、consent、epoch／revoke |
+| tickets、interactions、operations、retry | Agent access token 或原生用户会话（按声明） | 当前用户、主体绑定、当前原生授权            |
+| tickets/redeem                           | 一次性 ticket＋nonce                        | 当前状态和版本重新验证后建立受限 embed      |
+| documents/save、documents/submit         | 原生会话及对应 embed 上下文                 | 动作、记录、字段、版本和当前授权            |
+| 管理 API                                 | 原生管理员／受委派管理会话                  | 对应 settings／resource 权限，先授权后查询  |
 
 路径及 HTTP 方法沿用固定消费者契约，不为本表新增替代协议。
 
@@ -204,9 +219,11 @@
 
 ### 5.4 验收
 
-合法资源 token 成功访问指定路由，未声明路由仍拒绝该凭证。同一用户分别验证有授权、无授权、撤权、跨记录、越权字段和服务密钥冒充。测试必须经过实际模板 HTTP，不仅调用注入 allowlist 的 service。
+合法 Agent／会话凭证成功访问指定路由，未声明路由仍拒绝该凭证。同一用户分别验证有授权、无授权、撤权、跨记录、越权字段和服务密钥冒充。测试必须经过实际模板 HTTP，不仅调用注入 allowlist 的 service。须包含「省略 Casdoor 插件仍可完成出票／协议用户动作」的回归。
 
-## 6. NEXT-02：Casdoor 浏览器首登与稳定身份关联
+## 6. NEXT-02：Casdoor 浏览器首登与稳定身份关联（OPTIONAL）
+
+> **可选。** 仅当产品决定启用 Casdoor SSO 时实施与验收。未启用不得记 Gate FAIL／BLOCKED，也不得作为联调完成条件。
 
 ### 6.1 目标行为
 
@@ -234,9 +251,9 @@
 - 账号、Provider 停用后拒绝新登录，并按原生能力撤销已有会话；重新启用不恢复旧会话。
 - 保留受控本地管理员恢复入口及操作说明。
 
-### 6.4 验收
+### 6.4 验收（仅 OPTIONAL）
 
-Gate A 通过受控 OIDC 服务执行真实浏览器／HTTP 回调链：首次、重复、并发、两种登录顺序、同邮箱不同主体、准入拒绝、错误或过期回调、重放、账号禁用。Gate B 用真实 Casdoor Client 和准确 Redirect URI 复测。
+若启用 Casdoor：通过受控 OIDC 服务执行真实浏览器／HTTP 回调链（首次、重复、并发、两种登录顺序、同邮箱不同主体、准入拒绝、错误或过期回调、重放、账号禁用）；现场可用真实 Casdoor Client 与 Redirect URI 复测。未启用时本节约为不适用（N/A），不计入 Gate。
 
 ## 7. NEXT-03：撤销、版本与历史凭证失效
 
@@ -335,9 +352,14 @@ UNKNOWN、成功、已确认存在不允许重复的副作用、撤权和过期�
 
 表单 postMessage 只提示刷新，带正确 interaction、nonce 和批准 targetOrigin；不得作为权威成功来源。消息丢失或伪造不改变服务器结果，原插件拉取和历史恢复继续有效。
 
-## 9. NEXT-05：IAM 一致性与资源凭证策略
+## 9. NEXT-05：主体绑定唯一性（强制）与目录 IAM（OPTIONAL）
 
-### 9.1 目录快照与授权新鲜度
+### 9.0 强制与可选拆分
+
+- **强制（Gate A）：** 第 9.3 节有效主体绑定唯一性，以及与 Agent／Adapter 相关的绑定 revision 安全（与 NEXT-03 交叉）。
+- **可选（仅启用 Casdoor 目录／IAM 时）：** 第 9.1、9.2、9.4 节；对应 N21–N24、N26 中的 Casdoor／目录断言。未启用时标 N/A，不阻断 Gate。
+
+### 9.1 目录快照与授权新鲜度（OPTIONAL）
 
 - 首次 JIT 可在明确准入策略下使用已验证 token 初始化；首次目录对账后进入目录权威模式。
 - 已同步身份的权限映射只使用当前目录快照，旧 JWT 的 groups 不得重新授予目录已经撤销的权限。
@@ -351,7 +373,7 @@ UNKNOWN、成功、已确认存在不允许重复的副作用、撤权和过期�
 
 该策略约束集成访问，不把本项目扩展成全站所有本地用户的统一离线认证改造。
 
-### 9.2 权限 assignment 所有权
+### 9.2 权限 assignment 所有权（OPTIONAL，Casdoor／目录映射）
 
 - IAM 只撤销它实际创建且当前 assignmentId 仍一致的授权。
 - 同一个 Permission Set 上存在旧 managed row，不足以证明当前 assignment 归 IAM 所有。
@@ -373,13 +395,13 @@ UNKNOWN、成功、已确认存在不允许重复的副作用、撤权和过期�
 
 不同 subject 并发绑定同一个 localUserId，必须最多一个成功；撤销／重绑与占位、revision、审计原子一致。导入提交重新验证 preview 结果，不能信任过期预览。
 
-### 9.4 资源 token 策略
+### 9.4 资源 token 策略（OPTIONAL，Casdoor JWT 准入）
 
+- 仅当启用 Casdoor 资源 JWT 业务准入时适用。强制 Agent opaque token 策略由 Agent Authorization 与 NEXT-01 覆盖，不依赖本节。
 - 保留签名、受信 issuer、明确 audience、有效期、账号和 Provider 校验。
-- 根据真实 Casdoor 配置冻结 client／resource／scope／purpose 的可验证规则，不臆造固定 typ 值。
+- 根据实际 Casdoor 配置冻结 client／resource／scope／purpose 的可验证规则，不臆造固定 typ 值。
 - 仅用于登录的 ID token 不应因为具有相似签名和 aud 就被自动接受为业务资源凭证。
-- Gate A 使用受控 token 矩阵验证已实现规则；Gate B 用真实 Casdoor token 与 Client 配置核对。
-- 若现场不能可靠区分 ID token 与资源凭证，使用授权服务器支持的资源配置／验证方式解决；未解决前 Gate B 阻断。
+- 受控 token 矩阵与真实 Casdoor 复测均属 OPTIONAL；未启用时不得因本节未测阻断 Gate B。
 - 缺少必要配置失败关闭，禁止为“先联调”放宽成任意签名 JWT 均可访问。
 
 ## 10. NEXT-06：真实应用回归与 Gate A 证据
@@ -388,7 +410,7 @@ UNKNOWN、成功、已确认存在不允许重复的副作用、撤权和过期�
 
 Control 和 Integration Demo 以真实 Application 初始化、迁移、Provider、路由、Auth 和 Authorization 启动。执行原始 HTTP 请求，不能只检查插件名称列表或直接传 userId 调用 service。
 
-允许受控 OIDC／JWKS 和隔离数据库；不允许同时伪造认证结果、业务授权和数据库，再将结果称为端到端。
+允许隔离数据库与受控 Agent 客户端；原生本地登录即可。受控 OIDC／JWKS 仅用于 OPTIONAL 的 Casdoor 用例。不允许同时伪造认证结果、业务授权和数据库，再将结果称为端到端。
 
 ### 10.2 固定消费者 fixture
 
@@ -401,20 +423,26 @@ Control 和 Integration Demo 以真实 Application 初始化、迁移、Provider
 
 ### 10.3 构建与执行记录
 
-四个目标包分别执行 lint、typecheck、test、build；先满足仓库构建依赖。每项保留命令、完整提交、运行环境、退出码和输出。
+强制目标包分别执行 lint、typecheck、test、build；先满足仓库构建依赖。每项保留命令、完整提交、运行环境、退出码和输出。Casdoor 包仅在 OPTIONAL 启用时纳入。
 
 ```bash
 pnpm install --frozen-lockfile
 
-pnpm --filter @nocobase/app-plugin-casdoor-identity lint
-pnpm --filter @nocobase/app-plugin-casdoor-identity typecheck
-pnpm --filter @nocobase/app-plugin-casdoor-identity test
-pnpm --filter @nocobase/app-plugin-casdoor-identity build
+pnpm --filter @nocobase/app-plugin-agent-authorization lint
+pnpm --filter @nocobase/app-plugin-agent-authorization typecheck
+pnpm --filter @nocobase/app-plugin-agent-authorization test
+pnpm --filter @nocobase/app-plugin-agent-authorization build
 
 pnpm --filter @nocobase/app-plugin-business-ui-adapter lint
 pnpm --filter @nocobase/app-plugin-business-ui-adapter typecheck
 pnpm --filter @nocobase/app-plugin-business-ui-adapter test
 pnpm --filter @nocobase/app-plugin-business-ui-adapter build
+
+# OPTIONAL — only when Casdoor SSO / directory is in scope
+# pnpm --filter @nocobase/app-plugin-casdoor-identity lint
+# pnpm --filter @nocobase/app-plugin-casdoor-identity typecheck
+# pnpm --filter @nocobase/app-plugin-casdoor-identity test
+# pnpm --filter @nocobase/app-plugin-casdoor-identity build
 
 pnpm --filter @nocobase/app-template-smc-control lint
 pnpm --filter @nocobase/app-template-smc-control typecheck
@@ -473,15 +501,16 @@ Gate A 可由已授权 API 完成初始化，管理 API 和 Releases 安全边�
 
 ### 12.1 环境输入及记录
 
-| 输入       | 交付要求                                                                             |
-| ---------- | ------------------------------------------------------------------------------------ |
-| Casdoor    | 真实 issuer、Client、精确 Redirect URI、资源 audience／scope、目录接口及最小权限凭据 |
-| NocoBase   | 合并提交、制品版本、Control 与 Demo 地址、独立 Secret／加密密钥配置                  |
-| Octop      | 固定目标 SHA／安装包、Business UI 插件版本、连接注册、批准 Origin 与私网例外         |
-| 浏览器     | 目标 Chrome／Edge 及版本，记录 Cookie 策略                                           |
-| Host       | 通用 Demo 的 in-process 和 Docker 测试实例、base path、网络与生命周期配置            |
-| 数据库     | 目标 PostgreSQL 版本与隔离测试库；SQLite 本地回归结果                                |
-| TLS 与恢复 | HTTPS／CA 配置、备份位置、恢复隔离环境及轮换方案                                     |
+| 输入                | 交付要求                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| NocoBase            | 合并提交、制品版本、Control 与 Demo 地址、原生用户、独立 Secret／加密密钥配置                    |
+| Agent Authorization | 已登记 confidential client、redirect URI、audience；与 Octop 一致的 client_id／secret 分发方式   |
+| Octop               | 固定目标 SHA／安装包、Business UI 插件版本、连接注册、批准 Origin 与私网例外                     |
+| 浏览器              | 目标 Chrome／Edge 及版本，记录 Cookie 策略                                                       |
+| Host                | 通用 Demo 的 in-process 和 Docker 测试实例、base path、网络与生命周期配置                        |
+| 数据库              | 目标 PostgreSQL 版本与隔离测试库；SQLite 本地回归结果                                            |
+| TLS 与恢复          | HTTPS／CA 配置、备份位置、恢复隔离环境及轮换方案                                                 |
+| Casdoor（OPTIONAL） | 仅当启用 SSO／目录时：issuer、Client、Redirect URI、资源 audience／scope、目录接口及最小权限凭据 |
 
 缺少输入时标记具体 BLOCKED 及受影响用例；配置存在但代码无法处理的，记录为代码 FAIL，不能统称环境待准备。
 
@@ -500,8 +529,9 @@ A–F 在主通用 Demo、同一用户下完成；第二个 Demo 实例用于另
 
 ### 12.3 现场专项
 
-- 真 Casdoor 首登、重复、两种身份路径、停用及目录删组后的旧 token。
+- 原生本地用户登录、Agent OAuth consent／token、用户禁用与凭证 revoke、连接停用后的旧 ticket／embed 拒绝。
 - 真 Octop OAuth code＋PKCE、连接隔离、表单兑票、回执卡片、query_status、retry 和历史恢复。
+- （OPTIONAL）真 Casdoor 首登、重复、两种身份路径、停用及目录删组后的旧 token。
 - HTTPS iframe 的 Cookie、SameSite／Secure、CSP frame-ancestors、Origin／CSRF、postMessage 来源与 nonce。
 - 正确 App base path、多 connection publicBaseUrl 和跨连接拒绝。
 - in-process／Docker 启停、重启及对账；进程结束后任务和连接释放。
@@ -549,46 +579,46 @@ A–F 在主通用 Demo、同一用户下完成；第二个 Demo 实例用于另
 
 ## 14. 增量验收用例
 
-以下 N01–N36 是本轮必须新增或加强的用例。它们补充既有 R01–R42，不替代旧矩阵；原有通过项仍需按改动范围回归。A/B 表示受控环境验证后在真实现场复测，不能任选其一。
+以下 N01–N36 补充既有 R01–R42。Gate 列中的 **OPTIONAL** 表示仅在启用 Casdoor／目录 IAM 时强制；未启用记 N/A，**不得**因此判定 Gate FAIL 或联调未完成。A/B 表示强制项在受控环境通过后于真实现场复测。
 
-| ID  | 对应需求   | 场景与必须断言                                                                                        | Gate            |
-| --- | ---------- | ----------------------------------------------------------------------------------------------------- | --------------- |
-| N01 | NEXT-01    | 真实模板 HTTP 携带受控签发的合法资源 token，出票及必要用户路由成功；无 CREDENTIAL_NOT_ACCEPTED 误拒绝 | A/B             |
-| N02 | NEXT-01    | 未声明路由继续拒绝 Casdoor issued credential，服务密钥不能冒充用户                                    | A               |
-| N03 | NEXT-01    | 生产检查器未接入／无 Permission Set 时默认拒绝；非空 permissionRef 不产生授权                         | A               |
-| N04 | NEXT-01    | 同一用户允许资源成功、拒绝资源失败；跨记录和越权字段无写入                                            | A/B             |
-| N05 | NEXT-01    | interaction／operation 查询和 retry 从真实目标恢复权限范围，无固定编辑资源绕过                        | A               |
-| N06 | NEXT-01/03 | 权限撤销后下一个受保护请求拒绝，多个实例不继续使用陈旧允许缓存                                        | A/B             |
-| N07 | NEXT-02    | 受控 OIDC 首登建立唯一 user、account、external identity 和有效 Session                                | A/B             |
-| N08 | NEXT-02    | 重复与并发首登、JWT 先／浏览器先，均命中同一本地用户                                                  | A/B             |
-| N09 | NEXT-02    | 同邮箱不同 subject、准入拒绝、回调重放／过期／错误 state，不产生有效业务会话                          | A/B             |
-| N10 | NEXT-02/03 | 账号及 Provider 停用拒绝新访问并失效会话；重新启用不恢复旧会话                                        | A/B             |
-| N11 | NEXT-03    | 出票后撤销／重新启用／改绑，旧 ticket 均不能兑票                                                      | A               |
-| N12 | NEXT-03    | 兑票后撤销绑定或停用连接，保存、提交和新受保护读取按策略拒绝                                          | A/B             |
-| N13 | NEXT-03    | 绑定 ID 不变但 revision 已变，旧 ticket／embed 拒绝；跨连接和动作越界拒绝                             | A               |
-| N14 | NEXT-03    | 原版本遗留 nullable 安全字段的票据和 embed 升级后失效；正式记录保留                                   | A               |
-| N15 | NEXT-04    | failBeforeWrite 后提交／interaction／operation 均返回同一 FAILED、result 和安全动作                   | A/B             |
-| N16 | NEXT-04    | UNKNOWN 在所有查询中保持一致且只允许 query_status，不回退 draft，不允许 retry                         | A/B             |
-| N17 | NEXT-04    | 安全重试和并发重试最多一份正式单据，保留原操作关联与 attempt                                          | A/B             |
-| N18 | NEXT-04    | COMMIT 后丢提交响应并丢首次回执，仍由 interaction 找回原 operation 并恢复成功                         | A/B             |
-| N19 | NEXT-04    | 无法确认时保持 UNKNOWN；确认未执行才 FAILED；拒绝回执不能被恢复器当成功                               | A/B             |
-| N20 | NEXT-04    | 旧 sequence 不覆盖新结果，旧成功不覆盖新失败；草稿查询版本真实且无提交 SUCCESS                        | A/B             |
-| N21 | NEXT-05    | 目录删组同步撤权后继续使用有效旧 JWT，不重新授权                                                      | A/B             |
-| N22 | NEXT-05    | 已目录权威身份快照过期时，新会话／出票／保存／提交／retry 失败关闭；恢复同步后重新校验                | A               |
-| N23 | NEXT-05    | 人工替代 assignment 后规则 A→B→无规则，人工授权始终保留且不被认领                                     | A               |
-| N24 | NEXT-05    | 真 IAM 多规则共享授权，最后引用退出才撤销；审计可还原来源                                             | A               |
-| N25 | NEXT-05    | 不同 subject 并发绑定同一连接／用户最多一个成功；撤销重绑和预览过期不破坏约束                         | A；PG 于 B 复测 |
-| N26 | NEXT-05    | 错 audience、缺／过期 exp、不受信 issuer、ID token、缺受信配置按规则拒绝                              | A/B             |
-| N27 | NEXT-06    | 四包独立 lint／typecheck／test／build、完整安装前置通过；保留输出和退出码                             | A               |
-| N28 | NEXT-06    | 真 Control／Demo 启动、迁移、Provider 和路由装配生效，执行原始 HTTP                                   | A               |
-| N29 | NEXT-06    | 原始消费者握手及回执正负例执行；缺 fixture 不计通过；测试无个人绝对路径                               | A               |
-| N30 | NEXT-06    | 报告逐项绑定 SHA／命令／环境／断言，PARTIAL 和 NOT RUN 不计 Gate 通过                                 | A/B             |
-| N31 | NEXT-07    | 非 root 发布人员实际页面可进入，仅可操作关联 App，普通成员和非关联 App 被拒绝                         | A/B             |
-| N32 | NEXT-07    | 本期管理页面真实读写、分页、状态及权限边界有效；直接 API 越权也拒绝                                   | B；API 边界于 A |
-| N33 | NEXT-08    | 同一用户完整 A–F，经真实 Casdoor＋Octop；卡片、记录与操作状态一致                                     | B               |
-| N34 | NEXT-08    | HTTPS iframe、目标浏览器、Origin／CSP／Cookie、多连接及 App base path 通过                            | B               |
-| N35 | NEXT-08    | 双 Host 生命周期、PostgreSQL 升级／并发和恢复、重启后回执一致                                         | B               |
-| N36 | NEXT-08    | 备份恢复、密钥轮换和生产故障入口关闭可验证；日志与证据脱敏                                            | B               |
+| ID  | 对应需求   | 场景与必须断言                                                                                           | Gate            |
+| --- | ---------- | -------------------------------------------------------------------------------------------------------- | --------------- |
+| N01 | NEXT-01    | 真实模板 HTTP 携带合法 Agent access token（或声明的会话），出票及必要用户路由成功；无误拒绝              | A/B             |
+| N02 | NEXT-01    | 未声明路由拒绝用户委托凭证；服务密钥不能冒充用户；省略 Casdoor 插件仍成立                                | A               |
+| N03 | NEXT-01    | 生产检查器未接入／无 Permission Set 时默认拒绝；非空 permissionRef 不产生授权                            | A               |
+| N04 | NEXT-01    | 同一用户允许资源成功、拒绝资源失败；跨记录和越权字段无写入                                               | A/B             |
+| N05 | NEXT-01    | interaction／operation 查询和 retry 从真实目标恢复权限范围，无固定编辑资源绕过                           | A               |
+| N06 | NEXT-01/03 | 权限撤销后下一个受保护请求拒绝，多个实例不继续使用陈旧允许缓存                                           | A/B             |
+| N07 | NEXT-02    | 受控 OIDC 首登建立唯一 user、account、external identity 和有效 Session                                   | OPTIONAL A/B    |
+| N08 | NEXT-02    | 重复与并发首登、JWT 先／浏览器先，均命中同一本地用户                                                     | OPTIONAL A/B    |
+| N09 | NEXT-02    | 同邮箱不同 subject、准入拒绝、回调重放／过期／错误 state，不产生有效业务会话                             | OPTIONAL A/B    |
+| N10 | NEXT-02/03 | 账号及 Casdoor Provider 停用拒绝新访问并失效会话；重新启用不恢复旧会话                                   | OPTIONAL A/B    |
+| N11 | NEXT-03    | 出票后撤销／重新启用／改绑，旧 ticket 均不能兑票                                                         | A               |
+| N12 | NEXT-03    | 兑票后撤销绑定或停用连接，保存、提交和新受保护读取按策略拒绝                                             | A/B             |
+| N13 | NEXT-03    | 绑定 ID 不变但 revision 已变，旧 ticket／embed 拒绝；跨连接和动作越界拒绝                                | A               |
+| N14 | NEXT-03    | 原版本遗留 nullable 安全字段的票据和 embed 升级后失效；正式记录保留                                      | A               |
+| N15 | NEXT-04    | failBeforeWrite 后提交／interaction／operation 均返回同一 FAILED、result 和安全动作                      | A/B             |
+| N16 | NEXT-04    | UNKNOWN 在所有查询中保持一致且只允许 query_status，不回退 draft，不允许 retry                            | A/B             |
+| N17 | NEXT-04    | 安全重试和并发重试最多一份正式单据，保留原操作关联与 attempt                                             | A/B             |
+| N18 | NEXT-04    | COMMIT 后丢提交响应并丢首次回执，仍由 interaction 找回原 operation 并恢复成功                            | A/B             |
+| N19 | NEXT-04    | 无法确认时保持 UNKNOWN；确认未执行才 FAILED；拒绝回执不能被恢复器当成功                                  | A/B             |
+| N20 | NEXT-04    | 旧 sequence 不覆盖新结果，旧成功不覆盖新失败；草稿查询版本真实且无提交 SUCCESS                           | A/B             |
+| N21 | NEXT-05    | 目录删组同步撤权后继续使用有效旧 JWT，不重新授权                                                         | OPTIONAL A/B    |
+| N22 | NEXT-05    | 已目录权威身份快照过期时，新会话／出票／保存／提交／retry 失败关闭；恢复同步后重新校验                   | OPTIONAL A      |
+| N23 | NEXT-05    | 人工替代 assignment 后规则 A→B→无规则，人工授权始终保留且不被认领                                        | OPTIONAL A      |
+| N24 | NEXT-05    | 真 IAM 多规则共享授权，最后引用退出才撤销；审计可还原来源                                                | OPTIONAL A      |
+| N25 | NEXT-05    | 不同 subject 并发绑定同一连接／用户最多一个成功；撤销重绑和预览过期不破坏约束                            | A；PG 于 B 复测 |
+| N26 | NEXT-05    | 错 audience、缺／过期 exp、不受信 issuer、ID token、缺受信配置按规则拒绝                                 | OPTIONAL A/B    |
+| N27 | NEXT-06    | 强制包（agent-authorization、adapter、Control、Demo）独立 lint／typecheck／test／build；保留输出和退出码 | A               |
+| N28 | NEXT-06    | 真 Control／Demo 启动（可省略 Casdoor）、迁移、Provider 和路由装配生效，执行原始 HTTP                    | A               |
+| N29 | NEXT-06    | 原始消费者握手及回执正负例执行；缺 fixture 不计通过；测试无个人绝对路径                                  | A               |
+| N30 | NEXT-06    | 报告逐项绑定 SHA／命令／环境／断言；OPTIONAL 未测记 N/A；PARTIAL／NOT RUN 不计强制 Gate 通过             | A/B             |
+| N31 | NEXT-07    | 非 root 发布人员实际页面可进入，仅可操作关联 App，普通成员和非关联 App 被拒绝                            | A/B             |
+| N32 | NEXT-07    | 本期管理页面真实读写、分页、状态及权限边界有效；直接 API 越权也拒绝                                      | B；API 边界于 A |
+| N33 | NEXT-08    | 同一本地用户完整 A–F，经原生登录＋Agent OAuth＋真实 Octop；卡片、记录与操作状态一致                      | B               |
+| N34 | NEXT-08    | HTTPS iframe、目标浏览器、Origin／CSP／Cookie、多连接及 App base path 通过                               | B               |
+| N35 | NEXT-08    | 双 Host 生命周期、PostgreSQL 升级／并发和恢复、重启后回执一致                                            | B               |
+| N36 | NEXT-08    | 备份恢复、密钥轮换和生产故障入口关闭可验证；日志与证据脱敏                                               | B               |
 
 拒绝测试除 HTTP 状态外，还需断言无业务副作用、无额外会话、无越权摘要或无重复记录等适用结果。
 
@@ -598,13 +628,15 @@ A–F 在主通用 Demo、同一用户下完成；第二个 Demo 实例用于另
 
 必须同时满足：
 
-- NEXT-01–NEXT-06 对应的 A 项完成。
+- NEXT-01、NEXT-03、NEXT-04、NEXT-05（仅绑定唯一性）、NEXT-06 对应的**强制** A 项完成。
+- NEXT-02 及 NEXT-05 目录／Casdoor JWT 相关 A 项为 OPTIONAL：未启用记 N/A，不阻塞本 Gate。
 - 管理 API、原生管理入口和 Releases 权限边界达到 A 级验收。
-- 既有 R01–R42 的全部 A 项，以及本轮 N 用例的 A 项，有可运行且通过的证据。
-- 干净安装、四包检查、真实应用 HTTP、受控 OIDC／JWKS、数据库并发和消费者契约可复现。
+- 既有 R01–R42 中与强制路径相关的 A 项，以及本轮强制 N 用例的 A 项，有可运行且通过的证据；明确依赖 Casdoor 的历史 R 项可标 OPTIONAL／N/A 并说明。
+- 干净安装、强制包检查、真实应用 HTTP（可省略 Casdoor）、数据库并发和消费者契约可复现。
 - 本轮复现的 403 误拒绝、默认业务放行、撤销后可保存、FAILED／UNKNOWN 回 draft 均有回归关闭证据。
-- 无剩余 P0，也无未关闭的 Gate A 必做 P1。
+- 无剩余强制 P0，也无未关闭的 Gate A 必做 P1。
 - 未执行的现场项明确列为 Gate B，不伪称已端到端通过。
+- **不得**将「未接 Casdoor」写成联调未完成或 Gate A 阻断理由。
 
 通过后允许进入隔离现场联合测试。它不表示管理页面已全部交付或允许生产上线。
 
@@ -613,12 +645,11 @@ A–F 在主通用 Demo、同一用户下完成；第二个 Demo 实例用于另
 必须同时满足：
 
 - Gate A 已通过，且证据对应本次交付提交／制品。
-- NEXT-07 管理页面完成，NEXT-08 全部适用现场项通过。
-- 真实 Casdoor 的身份与资源 token 策略明确、可验证。
-- 同一用户 A–F、真实 Octop 卡片及目标浏览器通过。
-- 双 Host、目标 PostgreSQL、升级、备份恢复与密钥轮换有证据。
-- 本期必做项不存在 FAIL、PARTIAL、NOT RUN 或 BLOCKED。
-- 部署、初始化、撤销、恢复、轮换和故障排查手册可执行。
+- NEXT-07 管理页面完成，NEXT-08 强制现场项通过。
+- 同一本地用户 A–F、真实 Octop 卡片及目标浏览器通过；路径为原生登录＋Agent OAuth＋Adapter，不要求真实 Casdoor。
+- 双 Host、目标 PostgreSQL、升级、备份恢复与密钥轮换有证据（按现场适用性）。
+- 本期**强制**项不存在 FAIL、PARTIAL、NOT RUN 或 BLOCKED；OPTIONAL 未测记 N/A。
+- 部署、初始化、撤销、恢复、轮换和故障排查手册可执行（Casdoor 章节标可选）。
 
 缺少现场条件时保留明确阻断项，不把“环境未测”写成“默认通过”。本期最终验收也不替代组织的生产发布流程。
 
@@ -641,25 +672,25 @@ A–F 在主通用 Demo、同一用户下完成；第二个 Demo 实例用于另
 
 ### 16.1 推荐批次
 
-| 批次          | 工作                                                       | 退出条件                                               |
-| ------------- | ---------------------------------------------------------- | ------------------------------------------------------ |
-| M1 运行阻断   | NEXT-01、NEXT-03、NEXT-04，边修边补针对性 HTTP／数据库回归 | 用户凭证、真实授权、撤销和异常权威状态的已复现问题关闭 |
-| M2 身份一致性 | NEXT-02、NEXT-05，补首登、快照、归属和并发测试             | 两条身份路径一致，IAM 边界及新增迁移通过               |
-| M3 Gate A     | NEXT-06 及原有 A 项回归、管理 API／Releases 边界           | 完整证据支持 Gate A 放行                               |
-| M4 产品与现场 | NEXT-07 管理页面、NEXT-08 现场验证                         | Gate B 通过，交付手册和恢复演练齐备                    |
+| 批次          | 工作                                                                  | 退出条件                                                      |
+| ------------- | --------------------------------------------------------------------- | ------------------------------------------------------------- |
+| M1 运行阻断   | NEXT-01、NEXT-03、NEXT-04，边修边补针对性 HTTP／数据库回归            | Agent／会话凭证、真实授权、撤销和异常权威状态的已复现问题关闭 |
+| M2 绑定安全   | NEXT-05 主体绑定唯一性；OPTIONAL：NEXT-02／目录 IAM                   | 强制绑定约束通过；Casdoor 项可 N/A                            |
+| M3 Gate A     | NEXT-06 及强制 A 项回归、管理 API／Releases 边界、无 Casdoor 装配回归 | 完整证据支持 Gate A 放行（不依赖 Casdoor）                    |
+| M4 产品与现场 | NEXT-07 管理页面、NEXT-08 现场验证（原生＋Agent＋Octop）              | Gate B 通过，交付手册和恢复演练齐备                           |
 
 管理页面可在 API 稳定后推进；环境准备可提前进行，但不得用现场调试代替尚未关闭的本地代码缺陷。
 
 ### 16.2 必须交付
 
-1. 四个目标包及关联配置的实现代码，统一合入 develop/v3.0.1。
+1. 强制目标包（agent-authorization、business-ui-adapter、smc-control、integration-demo）及关联配置，统一合入 develop/v3.0.1；Casdoor 包仅在 OPTIONAL 启用时纳入。
 2. 新增数据库迁移、存量凭证失效处理和异常数据说明。
-3. 真实 Auth／Authorization／HTTP、受控 OIDC、数据库及固定消费者测试。
+3. 真实 Auth／Authorization／HTTP、Agent OAuth、数据库及固定消费者测试；受控 OIDC 仅 OPTIONAL。
 4. 通用 Demo、隔离故障代理／夹具和 A–F 操作说明。
 5. 本期控制面管理页面及权限配置说明。
-6. 逐项修订的 R01–R42、N01–N36 验收报告。
-7. Gate A 报告、Gate B 报告及真实未测／阻断项。
-8. 部署初始化、准入与撤销、目录对账、UNKNOWN 恢复、备份恢复、密钥轮换和回退手册。
+6. 逐项修订的 R01–R42、N01–N36 验收报告（OPTIONAL 项显式 N/A）。
+7. Gate A 报告、Gate B 报告及真实未测／阻断项；不得因未接 Casdoor 标阻断。
+8. 部署初始化、撤销、UNKNOWN 恢复、备份恢复、密钥轮换和回退手册；目录对账章节标可选。
 
 ### 16.3 合并要求
 
@@ -673,29 +704,29 @@ PR 描述必须列明对应 NEXT／FIX／R／N、行为变化、迁移影响、�
 
 - [ ] 核对最新 HEAD 与 f9306244 的差异，确认缺口是否已有后续修复。
 - [ ] 阅读目标目录实际约束和 package scripts，确认使用 V3 扩展 API。
-- [ ] 固定消费者 fixture、受控 OIDC 及数据库测试准备。
+- [ ] 固定消费者 fixture、Agent 客户端与数据库测试准备；Casdoor／OIDC 仅 OPTIONAL。
 - [ ] 备份需要升级的测试数据和加密密钥，核对已有迁移顺序。
-- [ ] 将 NEXT-01–NEXT-08 拆成可验收任务，并关联本文件用例。
+- [ ] 将强制 NEXT 拆成可验收任务；OPTIONAL 项单独列表，不进本期退出条件。
 
 ### 17.2 Gate A 完成
 
-- [ ] 合法用户凭证路由可用，未声明路由和服务密钥冒充被拒绝。
+- [ ] 合法 Agent／会话凭证路由可用，未声明路由和服务密钥冒充被拒绝；无 Casdoor 亦可。
 - [ ] 生产环境使用真实原生业务授权，缺检查器默认拒绝。
-- [ ] 受控浏览器首登与 JWT 路径使用同一本地身份。
-- [ ] 连接／Provider／账号／绑定／权限撤销有效，旧上下文不会复活。
+- [ ] 本地用户经 Agent OAuth 完成委托；省略 Casdoor 插件的装配回归通过。
+- [ ] 连接／账号／绑定／权限撤销有效，旧上下文不会复活。
 - [ ] FAILED／UNKNOWN 等结果持久化并可由现有查询一致恢复。
-- [ ] 快照过期策略、人工授权保护和有效主体数据库唯一性通过。
-- [ ] 真实应用 HTTP、固定消费者及完整构建检查通过。
-- [ ] 所有 A 项证据真实，无静默跳过或无断言通过。
+- [ ] 有效主体绑定唯一性通过；目录快照／Casdoor JWT 策略为 OPTIONAL。
+- [ ] 真实应用 HTTP、固定消费者及强制包构建检查通过。
+- [ ] 强制 A 项证据真实，无静默跳过或无断言通过；OPTIONAL 未测记 N/A。
 
 ### 17.3 Gate B 完成
 
 - [ ] 本期管理页面、分页及直接 API 权限边界完整。
-- [ ] 真实 Casdoor 和固定 Octop 全链路通过。
+- [ ] 原生本地用户＋Agent Authorization＋固定 Octop 全链路通过（不要求 Casdoor）。
 - [ ] 同一用户 A–F、HTTPS iframe 与目标浏览器通过。
-- [ ] in-process／Docker、PostgreSQL、升级及恢复通过。
+- [ ] in-process／Docker、PostgreSQL、升级及恢复通过（按适用性）。
 - [ ] 备份、密钥轮换、故障入口关闭和手册验证完成。
-- [ ] 本期强制项无未关闭状态，交付提交与证据一致。
+- [ ] 本期强制项无未关闭状态，交付提交与证据一致；OPTIONAL 可为 N/A。
 - [ ] 未引入 HR、CRM 或其他真实业务 App 范围。
 
 ## 附录 A：本轮复核代码定位
