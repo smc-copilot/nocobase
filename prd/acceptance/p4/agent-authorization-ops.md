@@ -32,7 +32,7 @@ Disabling a client sets `enabled` to false, increments the client’s persistent
 
 ## User disable and re-enable
 
-Disabling a local user through native user administration runs the agent-authorization hook: every grant for that user bumps `credentialEpoch`, and the user’s agent tokens and unused codes are revoked. Existing embeds that stored the previous credential epoch fail closed. Enabling the user does not restore those credentials; a fresh consent and code exchange is required. Local password login after enable is separate from agent OAuth credentials.
+Disabling a local user through native user administration opens a database transaction (or a savepoint when an outer write already holds one), writes `disabledAt`, revokes sessions, then runs `addOnUserDisabled` handlers on that same connection. Agent authorization registers `lifecycle.revokeUser` as a critical hook: every grant for that user bumps `credentialEpoch`, and the user’s agent tokens and unused codes are revoked on the transaction connection. A critical hook failure rolls the disable back (`disabledAt` and epoch stay unchanged) so the HTTP disable can be retried; non-critical hooks log and continue. Successful disable through `POST /api/users/{userId}/disable` uses `Idempotency-Key` receipts: a replayed success does not bump epoch again; a failed attempt leaves no success receipt so the same key can complete once. Existing embeds that stored the previous credential epoch fail closed. Enabling the user does not restore those credentials; a fresh consent and code exchange is required. Local password login after enable is separate from agent OAuth credentials.
 
 ## Login redirect and consent
 
@@ -44,7 +44,7 @@ An unauthenticated browser that opens authorize is sent to `{basePath}/login?red
 2. Rotate connection service secret separately via Business UI Adapter admin API.
 3. Users revoke at `/agent-authorization/grants` (or `POST /api/agentAuthorization/me/grants/{grantId}/revoke`).
 4. Admins may revoke grants from the Control grants page or with settings permission; this does not expand user consent.
-5. `POST /api/agentAuthorization/oauth/revoke` still requires confidential-client authentication (`client_secret` or HTTP Basic). An Octop build that sends only `token` and `client_id` does not revoke the token. The supported user path is My authorized apps.
+5. `POST /api/agentAuthorization/oauth/revoke` still requires confidential-client authentication (`client_secret_post` body or `client_secret_basic` HTTP Basic). Missing credentials return 401 and leave the token usable. Octop disconnect reads `oauth_client_secret` from the protected secret bundle and revokes each held access and refresh token; local disconnect and remote revoke are separate statuses (`remote_revoke_status`: `succeeded` / `failed` / `skipped`). On remote failure Octop keeps the token credential for retry and does not write secrets into ordinary records, logs, URLs, or UI. My authorized apps and Control grant revoke remain the in-product paths for end-user and admin grant revocation.
 
 ## Daily checks
 

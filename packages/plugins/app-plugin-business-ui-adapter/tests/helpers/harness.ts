@@ -150,9 +150,12 @@ export async function createAdapterHarness(
     config: () => ({ audience: AUDIENCE }),
     defaultAudience: () => AUDIENCE,
   });
-  users.addOnUserDisabled(async (userId) => {
-    await agent.lifecycle.revokeUser(userId);
-  });
+  users.addOnUserDisabled(
+    async (userId, connection) => {
+      await agent.lifecycle.revokeUser(userId, connection);
+    },
+    { critical: true },
+  );
   const grantsByUser = new Map<string, GrantContext>();
   let clientReady: Promise<string> | undefined;
   const ensureClient = (): Promise<string> => {
