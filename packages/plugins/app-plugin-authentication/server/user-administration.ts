@@ -70,8 +70,29 @@ export interface UpdateAdministratedUserInput {
   readonly email?: string;
 }
 
-/** Called after a local user is disabled. Optional plugins register here. */
-export type OnUserDisabledHandler = (userId: string) => void | Promise<void>;
+/**
+ * Called after a local user is marked disabled and sessions are revoked.
+ * Receives the same database connection the disable write used (a transaction
+ * or savepoint connection when disable runs inside one).
+ */
+export type OnUserDisabledHandler = (
+  userId: string,
+  connection: DatabaseConnection,
+) => void | Promise<void>;
+
+export interface AddOnUserDisabledOptions {
+  /**
+   * When true, a thrown error fails the disable and rolls back its transaction
+   * (or savepoint). Security plugins that revoke credentials must set this.
+   * Default handlers are notifications: their errors are logged and skipped.
+   */
+  readonly critical?: boolean;
+}
+
+interface RegisteredUserDisabledHandler {
+  readonly handler: OnUserDisabledHandler;
+  readonly critical: boolean;
+}
 
 export interface UserAdministrationService {
   withConnection(connection: DatabaseConnection): UserAdministrationService;
@@ -105,7 +126,10 @@ export interface UserAdministrationService {
    * are revoked. Returns an unsubscribe function. Handlers are shared across
    * `withConnection` views of the same service.
    */
-  addOnUserDisabled(handler: OnUserDisabledHandler): () => void;
+  addOnUserDisabled(
+    handler: OnUserDisabledHandler,
+    options?: AddOnUserDisabledOptions,
+  ): () => void;
 }
 
 export class UserAdministrationError extends Error {
@@ -130,7 +154,7 @@ export interface CreateUserAdministrationServiceOptions {
   readonly connection: DatabaseConnection;
   readonly realtime?: RealtimeService;
   /** Shared mutable list so withConnection keeps the same disable hooks. */
-  readonly onUserDisabledHandlers?: OnUserDisabledHandler[];
+  readonly onUserDisabledHandlers?: RegisteredUserDisabledHandler[];
 }
 
 export function createUserAdministrationService(
@@ -145,7 +169,7 @@ export function createUserAdministrationService(
 class DefaultUserAdministrationService implements UserAdministrationService {
   constructor(
     private readonly options: CreateUserAdministrationServiceOptions & {
-      readonly onUserDisabledHandlers: OnUserDisabledHandler[];
+      readonly onUserDisabledHandlers: RegisteredUserDisabledHandler[];
     },
   ) {}
 
@@ -157,10 +181,17 @@ class DefaultUserAdministrationService implements UserAdministrationService {
     });
   }
 
-  addOnUserDisabled(handler: OnUserDisabledHandler): () => void {
-    this.options.onUserDisabledHandlers.push(handler);
+  addOnUserDisabled(
+    handler: OnUserDisabledHandler,
+    options?: AddOnUserDisabledOptions,
+  ): () => void {
+    const entry: RegisteredUserDisabledHandler = {
+      handler,
+      critical: options?.critical === true,
+    };
+    this.options.onUserDisabledHandlers.push(entry);
     return () => {
-      const index = this.options.onUserDisabledHandlers.indexOf(handler);
+      const index = this.options.onUserDisabledHandlers.indexOf(entry);
       if (index >= 0) this.options.onUserDisabledHandlers.splice(index, 1);
     };
   }
@@ -354,19 +385,37 @@ class DefaultUserAdministrationService implements UserAdministrationService {
 
   async disable(userId: string): Promise<AdministratedUser> {
     await this.requireUser(userId);
-    const context = await this.options.auth.administrationContext();
-    await context.internalAdapter.updateUser(userId, {
-      disabledAt: new Date(),
-    });
-    await this.revokeSessions(userId);
-    for (const handler of [...this.options.onUserDisabledHandlers]) {
-      try {
-        await handler(userId);
-      } catch {
-        // One plugin hook must not skip the remaining hooks or undo the disable.
+    // Outer callers (UserManagementService) may already hold a transaction;
+    // Knex then opens a savepoint on the same connection instead of waiting
+    // on the pool. Hooks must use this connection for credential revocation.
+    return this.options.connection.transaction(async (connection) => {
+      const auth = this.options.auth.forConnection(connection);
+      const context = await auth.administrationContext();
+      await context.internalAdapter.updateUser(userId, {
+        disabledAt: new Date(),
+      });
+      await context.internalAdapter.deleteUserSessions(userId);
+      await this.options.realtime?.disconnectUser(userId);
+      const criticalErrors: unknown[] = [];
+      for (const entry of [...this.options.onUserDisabledHandlers]) {
+        try {
+          await entry.handler(userId, connection);
+        } catch (error) {
+          if (entry.critical) {
+            criticalErrors.push(error);
+          } else {
+            console.error(
+              '[user-administration] onUserDisabled handler failed',
+              error,
+            );
+          }
+        }
       }
-    }
-    return (await this.get(userId))!;
+      if (criticalErrors.length > 0) {
+        throw criticalErrors[0];
+      }
+      return (await this.withConnection(connection).get(userId))!;
+    });
   }
 
   async enable(userId: string): Promise<AdministratedUser> {

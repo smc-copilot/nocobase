@@ -1,4 +1,4 @@
-import type { DatabaseManager } from '@nocobase/db';
+import type { DatabaseConnection, DatabaseManager } from '@nocobase/db';
 
 import { readEpoch } from './epochs.js';
 
@@ -10,12 +10,17 @@ function now(): Date {
  * User-disable revocation. Bumps `credentialEpoch` on every grant for the user,
  * then revokes their tokens and consumes unused authorization codes.
  * Re-enabling the user does not move the epoch back, so old credentials stay dead.
+ *
+ * When called from a disable hook, pass the disable transaction connection so
+ * SQLite (and other single-connection pools) do not wait on the root pool.
  */
 export function createLifecycleService(database: () => DatabaseManager) {
-  const db = () => database().connection().query;
-
   return {
-    async revokeUser(userId: string): Promise<void> {
+    async revokeUser(
+      userId: string,
+      connection?: DatabaseConnection,
+    ): Promise<void> {
+      const db = () => (connection ?? database().connection()).query;
       const updatedAt = now();
       const grants = await db()
         .selectFrom('agentGrants')

@@ -71,38 +71,53 @@ Full `pnpm --filter @nocobase/app-template-smc-control test` and a concurrent wo
 
 ## A01–A24 checklist
 
-| ID  | Result            | Evidence                                                                                                                                                                       |
-| --- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A01 | PASS              | `agent-auth-without-casdoor.test.ts` boots agent+adapter with Casdoor plugin omitted                                                                                           |
-| A02 | PASS              | `clients.test.ts`                                                                                                                                                              |
-| A03 | PASS              | `oauth-browser.test.ts` unauthenticated authorize uses `/login?redirect=`                                                                                                      |
-| A04 | PASS              | consent deny → `access_denied`                                                                                                                                                 |
-| A05 | PASS              | wrong secret / disabled client authenticate                                                                                                                                    |
-| A06 | PASS              | code replay + wrong PKCE                                                                                                                                                       |
-| A07 | PASS              | exchange + refresh; issuance gated by `requireUsable`                                                                                                                          |
-| A08 | PASS              | save/submit session-only                                                                                                                                                       |
-| A09 | PASS              | two grants; revoke A leaves B                                                                                                                                                  |
-| A10 | PASS              | `caller-authorization.test.ts` cross-client query/retry refused                                                                                                                |
-| A11 | PASS              | body subject audit-only                                                                                                                                                        |
-| A12 | PASS              | Demo Permission Set revoke / record scope                                                                                                                                      |
-| A13 | PASS              | grant revoke invalidates tokens                                                                                                                                                |
-| A14 | PASS              | `client-lifecycle.test.ts` disabled client blocks embed save; re-enable does not revive old embed                                                                              |
-| A15 | PASS              | `lifecycle.test.ts` disabled user cannot create codes or refresh                                                                                                               |
-| A16 | PASS              | re-enable does **not** revive old refresh/code/token/embed; new authorization code required (`lifecycle.test.ts`, `client-lifecycle.test.ts`, epochs)                          |
-| A17 | PASS              | `audience-isolation.test.ts`                                                                                                                                                   |
-| A18 | PASS              | no Octop subject pre-binding                                                                                                                                                   |
-| A19 | PASS              | UNKNOWN/FAILED receipt actions                                                                                                                                                 |
-| A20 | PASS              | idempotency / loseSubmitResponse                                                                                                                                               |
-| A21 | PASS              | Control clients create/edit with description, origins, authMethod, multi redirect URIs (`agent-clients.test.tsx`); secret never re-listed; authMethod change remains API-only  |
-| A22 | PASS              | Unscoped embeds/tickets deleted by migration; runtime refuses null/malformed scopes (no fallback). Legacy null after `202611160001` is intentionally cleared by `202611170001` |
-| A23 | PASS              | Octop fixture contract + `client_secret_post`                                                                                                                                  |
-| A24 | PASS (documented) | NocoBase revoke requires client_secret; use My authorized apps / Control revoke                                                                                                |
+| ID  | Result | Evidence                                                                                                                                                                                                 |
+| --- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A01 | PASS   | `agent-auth-without-casdoor.test.ts` boots agent+adapter with Casdoor plugin omitted                                                                                                                     |
+| A02 | PASS   | `clients.test.ts`                                                                                                                                                                                        |
+| A03 | PASS   | `oauth-browser.test.ts` unauthenticated authorize uses `/login?redirect=`                                                                                                                                |
+| A04 | PASS   | consent deny → `access_denied`                                                                                                                                                                           |
+| A05 | PASS   | wrong secret / disabled client authenticate                                                                                                                                                              |
+| A06 | PASS   | code replay + wrong PKCE                                                                                                                                                                                 |
+| A07 | PASS   | exchange + refresh; issuance gated by `requireUsable`                                                                                                                                                    |
+| A08 | PASS   | save/submit session-only                                                                                                                                                                                 |
+| A09 | PASS   | two grants; revoke A leaves B                                                                                                                                                                            |
+| A10 | PASS   | `caller-authorization.test.ts` cross-client query/retry refused                                                                                                                                          |
+| A11 | PASS   | body subject audit-only                                                                                                                                                                                  |
+| A12 | PASS   | Demo Permission Set revoke / record scope                                                                                                                                                                |
+| A13 | PASS   | grant revoke invalidates tokens                                                                                                                                                                          |
+| A14 | PASS   | `client-lifecycle.test.ts` disabled client blocks embed save; re-enable does not revive old embed                                                                                                        |
+| A15 | PASS   | `lifecycle.test.ts` disable in outer transaction without pool timeout; critical hook failure rolls back `disabledAt` + epoch; Idempotency-Key replay does not re-bump                                    |
+| A16 | PASS   | re-enable does **not** revive old refresh/code/token/embed; new authorization code required (`lifecycle.test.ts`, `client-lifecycle.test.ts`, epochs)                                                    |
+| A17 | PASS   | `audience-isolation.test.ts`                                                                                                                                                                             |
+| A18 | PASS   | no Octop subject pre-binding                                                                                                                                                                             |
+| A19 | PASS   | UNKNOWN/FAILED receipt actions                                                                                                                                                                           |
+| A20 | PASS   | idempotency / loseSubmitResponse                                                                                                                                                                         |
+| A21 | PASS   | Control clients create/edit with description, origins, authMethod, multi redirect URIs (`agent-clients.test.tsx`); secret never re-listed; authMethod change remains API-only                            |
+| A22 | PASS   | Unscoped embeds/tickets deleted by migration; runtime refuses null/malformed scopes (no fallback). Legacy null after `202611160001` is intentionally cleared by `202611170001`                           |
+| A23 | PASS   | Octop fixture contract + `client_secret_post`                                                                                                                                                            |
+| A24 | PASS   | NocoBase revoke requires confidential client auth; Octop-shaped form body (token+client_id+client_secret) → 200 and tokens unusable; wrong secret → 401 and tokens remain (`octop-revoke-route.test.ts`) |
+
+## Disable-transaction + Octop remote revoke (2026-11-15)
+
+Branch: `fix/v3-agent-disable-revoke` (NocoBase) / `cursor/business-ui-plugin-a7f2` (Octop). Baseline: `ae66c30019` / `64689a5b`.
+
+| Area                            | Result        | Evidence                                                                                                                                                                                                                                 |
+| ------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Disable trx + critical hooks    | PASS (SQLite) | `lifecycle.test.ts` outer trx, rollback on critical failure, Idempotency-Key replay/retry; `user-administration.test.ts` critical vs non-critical                                                                                        |
+| Octop disconnect remote revoke  | PASS (unit)   | `uv run pytest tests/unit/plugins/test_business_ui_activation.py` → 6 passed (succeeded/failed/retry); keeps credential_id on failure; `ActivationPanel` surfaces retry                                                                  |
+| Protocol form → NocoBase revoke | PASS          | `octop-revoke-route.test.ts`                                                                                                                                                                                                             |
+| Package verification            | PASS          | authentication / agent-authorization (12 files / 29 tests) / business-ui-adapter (10 / 36) / users lint+typecheck+test+build exit 0; Demo+Control `submission-settings.test.ts` 2+2 passed; `validate-changesets` / `peers:check` exit 0 |
+| PostgreSQL same cases           | NOT RUN       | No local target DB in this session                                                                                                                                                                                                       |
+| Real Octop Host / HTTPS browser | NOT RUN       | Gate B                                                                                                                                                                                                                                   |
+
+Gate A automated evidence for this slice remains PASS. Gate B stays unverified. Failures or NOT RUN items keep Gate B (and any full “all PASS” claim that includes them) from being marked complete.
 
 ## Known compatibility notes
 
-- Octop fixed plugin revoke may send `token` + `client_id` without `client_secret`. NocoBase revoke stays confidential-client strict.
+- NocoBase revoke stays confidential-client strict. Octop on `cursor/business-ui-plugin-a7f2` sends `oauth_client_secret` (or Basic when `oauth_client_auth_method=client_secret_basic`) and records `remote_revoke_status` separately from local disconnect.
 - Casdoor remains optional SSO; agent OAuth and adapter protocol do not require it.
-- Ops: `prd/acceptance/p4/agent-authorization-ops.md` (epoch disable semantics and Control registration).
+- Ops: `prd/acceptance/p4/agent-authorization-ops.md` (transaction disable, critical hooks, Octop remote revoke retry).
 
 ## Out of scope (Gate B)
 

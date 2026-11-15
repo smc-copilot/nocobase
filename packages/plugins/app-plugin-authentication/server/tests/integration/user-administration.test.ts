@@ -137,7 +137,7 @@ describe('user administration', () => {
     expect(response.status).toBe(200);
   });
 
-  it('runs shared disable hooks and continues after one hook throws', async () => {
+  it('runs shared non-critical disable hooks and continues after one throws', async () => {
     const { users, signUp, connection } = await setup();
     await signUp();
     const user = await connection.query
@@ -168,6 +168,36 @@ describe('user administration', () => {
     await users.enable(id);
     await users.disable(id);
     expect(seen).toEqual([`scoped:${id}`, `after:${id}`]);
+  });
+
+  it('fails disable and rolls back when a critical hook throws', async () => {
+    const { users, signUp, connection } = await setup();
+    await signUp();
+    const user = await connection.query
+      .selectFrom('user')
+      .select('id')
+      .where('email', '=', 'alice@example.com')
+      .executeTakeFirstOrThrow();
+    const id = String(user.id);
+    const seen: string[] = [];
+    users.addOnUserDisabled(
+      (userId) => {
+        seen.push(`critical:${userId}`);
+        throw new Error('credential revoke failed');
+      },
+      { critical: true },
+    );
+    users.addOnUserDisabled((userId) => {
+      seen.push(`after:${userId}`);
+    });
+    await expect(users.disable(id)).rejects.toThrow('credential revoke failed');
+    expect(seen).toEqual([`critical:${id}`, `after:${id}`]);
+    const row = await connection.query
+      .selectFrom('user')
+      .select('disabledAt')
+      .where('id', '=', id)
+      .executeTakeFirstOrThrow();
+    expect(row.disabledAt).toBeNull();
   });
 
   it('validates a new password and revokes existing sessions after reset', async () => {

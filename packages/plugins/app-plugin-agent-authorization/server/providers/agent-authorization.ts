@@ -50,11 +50,14 @@ export class AgentAuthorizationProvider extends ServiceProvider<AppPluginApplica
     if (container.has(userAdministrationServiceToken)) {
       const users = container.resolve(userAdministrationServiceToken);
       this.releases.push(
-        users.addOnUserDisabled(async (userId) => {
-          await container
-            .resolve(agentAuthorizationServiceToken)
-            .lifecycle.revokeUser(userId);
-        }),
+        users.addOnUserDisabled(
+          async (userId, connection) => {
+            await container
+              .resolve(agentAuthorizationServiceToken)
+              .lifecycle.revokeUser(userId, connection);
+          },
+          { critical: true },
+        ),
       );
     }
   }

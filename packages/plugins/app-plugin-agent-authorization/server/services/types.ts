@@ -1,4 +1,4 @@
-import type { DatabaseManager } from '@nocobase/db';
+import type { DatabaseConnection, DatabaseManager } from '@nocobase/db';
 
 import type { AgentAuthorizationConfig } from '../config.js';
 
@@ -169,8 +169,12 @@ export interface AgentAuthorizationServices {
      * Bumps credentialEpoch for the user's grants and revokes their tokens and
      * unconsumed authorization codes. Used when the local account is disabled.
      * Re-enabling the user does not move the epoch back.
+     * Pass the disable transaction connection when invoked from a disable hook.
      */
-    revokeUser(localUserId: string): Promise<void>;
+    revokeUser(
+      localUserId: string,
+      connection?: DatabaseConnection,
+    ): Promise<void>;
   };
   readonly oauth: {
     createAuthorizationCode(input: {
