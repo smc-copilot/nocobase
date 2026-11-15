@@ -87,14 +87,16 @@ export default function MeetingOaPage(): ReactElement {
     { fd_no: string; fd_name: string; fd_department: string }[]
   >([]);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  const [tasks, setTasks] = useState<DraftTask[] | null>(null);
 
   const shownTitle = title ?? draft?.title ?? '';
   const shownSummary = summary ?? draft?.summary ?? '';
+  const shownTasks = tasks ?? draft?.tasks ?? [];
   const currentVersion = savedVersion ?? draft?.version;
   const isolation = useMemo(() => t('meetingOa.isolationBanner'), [t]);
 
   const persistDraft = async (
-    tasks = draft?.tasks ?? [],
+    nextTasks: DraftTask[] = shownTasks,
   ): Promise<Draft | undefined> => {
     if (!draft || currentVersion == null) return undefined;
     const result = await api.request<{ data: Draft }>({
@@ -104,19 +106,20 @@ export default function MeetingOaPage(): ReactElement {
         expectedVersion: currentVersion,
         title: shownTitle,
         summary: shownSummary,
-        tasks,
+        tasks: nextTasks,
       },
     });
     setSavedVersion(result.data.version);
+    setTasks([...(result.data.tasks ?? nextTasks)]);
     void draftRequest.reload();
     return result.data;
   };
 
-  const save = async (tasks = draft?.tasks ?? []) => {
+  const save = async (nextTasks: DraftTask[] = shownTasks) => {
     if (!draft) return;
     setBusy(true);
     try {
-      await persistDraft(tasks);
+      await persistDraft(nextTasks);
       toaster.show({ type: 'success', title: t('meetingOa.draftSaved') });
     } catch (error) {
       toaster.show({
@@ -307,8 +310,8 @@ export default function MeetingOaPage(): ReactElement {
                 variant='outline'
                 onClick={() => {
                   if (!taskTitle.trim()) return;
-                  void save([
-                    ...(draft.tasks ?? []),
+                  const nextTasks = [
+                    ...shownTasks,
                     {
                       clientTaskId: createUuid(),
                       title: taskTitle.trim(),
@@ -318,15 +321,17 @@ export default function MeetingOaPage(): ReactElement {
                       description: null,
                       fromSourceTodo: false,
                     },
-                  ]);
+                  ];
+                  setTasks(nextTasks);
                   setTaskTitle('');
+                  void save(nextTasks);
                 }}
               >
                 {t('meetingOa.addTask')}
               </Button>
             </div>
             <ul className='text-sm'>
-              {(draft.tasks ?? []).map((task) => (
+              {shownTasks.map((task) => (
                 <li key={task.clientTaskId}>
                   {task.title} ·{' '}
                   {task.assigneeEmployeeNo ?? t('meetings.notProvided')}
