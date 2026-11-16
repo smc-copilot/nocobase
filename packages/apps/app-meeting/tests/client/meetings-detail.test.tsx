@@ -77,7 +77,9 @@ describe('meeting detail page', () => {
         },
       },
     );
-    expect(await screen.findByText(enUS.meetings.unavailable)).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { name: enUS.meetings.unavailable }),
+    ).toBeVisible();
     expect(
       screen.queryByText(enUS.meetings.recordingAvailable),
     ).not.toBeInTheDocument();

@@ -39,6 +39,16 @@ const appRoutes: AppClientRouteContribution = defineAppRoutes([
         componentLoader: () => import('./pages/meetings/detail.js'),
         children: [
           {
+            name: 'meetingOa',
+            path: 'oa',
+            auth: 'required',
+            authz: {
+              resource: { type: 'page', id: 'meetings' },
+              action: 'access',
+            },
+            componentLoader: () => import('./pages/meetings/oa.js'),
+          },
+          {
             name: 'meetingParticipants',
             path: 'participants',
             auth: 'required',
@@ -46,9 +56,7 @@ const appRoutes: AppClientRouteContribution = defineAppRoutes([
               resource: { type: 'page', id: 'meetings' },
               action: 'access',
             },
-            breadcrumb: { title: 'meetings.tabs.participants' },
-            presentation: { kind: 'child-page' },
-            componentLoader: () => import('./pages/meetings/detail.js'),
+            componentLoader: () => import('./pages/meetings/participants.js'),
           },
           {
             name: 'meetingRecordings',
@@ -58,21 +66,17 @@ const appRoutes: AppClientRouteContribution = defineAppRoutes([
               resource: { type: 'page', id: 'meetings' },
               action: 'access',
             },
-            breadcrumb: { title: 'meetings.tabs.recordings' },
-            presentation: { kind: 'child-page' },
-            componentLoader: () => import('./pages/meetings/detail.js'),
+            componentLoader: () => import('./pages/meetings/recordings.js'),
           },
           {
-            name: 'meetingOa',
-            path: 'oa',
+            name: 'meetingSummary',
+            path: 'summary',
             auth: 'required',
             authz: {
               resource: { type: 'page', id: 'meetings' },
               action: 'access',
             },
-            breadcrumb: { title: 'meetings.tabs.oa' },
-            presentation: { kind: 'child-page' },
-            componentLoader: () => import('./pages/meetings/oa.js'),
+            componentLoader: () => import('./pages/meetings/summary.js'),
           },
         ],
       },

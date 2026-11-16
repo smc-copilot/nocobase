@@ -82,3 +82,23 @@ describeMigration('202611150003_oa_content_and_operations', {
     ).rejects.toThrow();
   },
 });
+
+describeMigration('202611160001_meeting_pages_fields', {
+  sources,
+  up: async ({ connection, expectCollection }) => {
+    await expectCollection('meetingOaDrafts').toExist();
+    await expectCollection('meetingTranscriptRepairs').toExist();
+    await expectCollection('meetingSupplementalFiles').toExist();
+    const now = new Date();
+    await connection.repository('meetingTranscriptRepairs').createOne({
+      values: {
+        id: 'repair-1',
+        meetingId: 'meeting-oa-unique',
+        contentId: 'content-1',
+        action: 'skipped',
+        reason: 'no-import-evidence',
+        createdAt: now,
+      },
+    });
+  },
+});

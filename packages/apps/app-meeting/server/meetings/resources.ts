@@ -23,6 +23,8 @@ export const MEETING_OA_STEPS = 'meetingOaSteps';
 export const MEETING_OA_TASK_RESULTS = 'meetingOaTaskResults';
 export const MEETING_OA_OUTBOX = 'meetingOaOutbox';
 export const MEETING_OA_RECONCILE_RECORDS = 'meetingOaReconcileRecords';
+export const MEETING_SUPPLEMENTAL_FILES = 'meetingSupplementalFiles';
+export const MEETING_TRANSCRIPT_REPAIRS = 'meetingTranscriptRepairs';
 export const MEETING_AUDIT_EVENTS = 'meetingAuditEvents';
 
 export const MEETING_RESOURCE = 'meeting';
@@ -87,7 +89,8 @@ export type MeetingOaAction =
   | 'oaSync'
   | 'oaResume'
   | 'oaReconcile'
-  | 'identityManage';
+  | 'identityManage'
+  | 'supplement';
 
 export interface Meeting {
   id: string;
@@ -183,6 +186,12 @@ export interface MeetingRecording {
   updatedAt: Date;
 }
 
+export interface MeetingPersonSnapshot {
+  fd_no: string;
+  fd_name: string;
+  fd_department: string;
+}
+
 export interface MeetingContent {
   id: string;
   meetingId: string;
@@ -199,8 +208,34 @@ export interface MeetingContent {
   localMinutesEdited: boolean;
   localTranscriptEdited: boolean;
   sourceTodos: MeetingSourceTodo[] | null;
+  transcriptProvenance: Record<string, unknown> | null;
   importStatus: string;
   lastImportError: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MeetingTranscriptRepair {
+  id: string;
+  meetingId: string;
+  contentId: string;
+  action: string;
+  reason: string;
+  createdAt: Date;
+}
+
+export interface MeetingSupplementalFile {
+  id: string;
+  meetingId: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  contentHash: string;
+  storageKey: string;
+  parseStatus: string;
+  parseError: string | null;
+  parsedText: string | null;
+  uploadedBy: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -222,6 +257,9 @@ export interface MeetingOaSettings {
   id: string;
   tokenUrl: string | null;
   peopleUrl: string | null;
+  meetingUrl: string | null;
+  viewUrl: string | null;
+  scope: string | null;
   clientId: string | null;
   sealedClientSecret: string | null;
   credentialVersion: number;
@@ -259,8 +297,18 @@ export interface MeetingOaDraft {
   startAt: Date | null;
   endAt: Date | null;
   location: string | null;
+  purpose: string | null;
+  remark: string | null;
+  otherAttendPerson: string | null;
   attendeeEmployeeNos: string[] | null;
+  attendeeSnapshots: MeetingPersonSnapshot[] | null;
+  emceeSnapshot: MeetingPersonSnapshot | null;
+  hostSnapshot: MeetingPersonSnapshot | null;
+  actualAttendSnapshots: MeetingPersonSnapshot[] | null;
+  copyToSnapshots: MeetingPersonSnapshot[] | null;
+  summaryTitle: string | null;
   summary: string | null;
+  summaryCompleteTime: string | null;
   filledFromContentVersion: number | null;
   updatedBy: string;
   createdAt: Date;
@@ -274,6 +322,11 @@ export interface MeetingOaDraftTask {
   title: string;
   assigneeEmployeeNo: string | null;
   assigneeName: string | null;
+  appointEmployeeNo: string | null;
+  appointName: string | null;
+  attentionEmployeeNos: string[] | null;
+  attentionSnapshots: MeetingPersonSnapshot[] | null;
+  startAt: string | null;
   dueAt: string | null;
   description: string | null;
   fromSourceTodo: boolean;
@@ -465,11 +518,30 @@ const reconcileData = defineDatabasePermission((permission) =>
     .create(['id', 'operationId', 'conclusion', 'evidence']),
 );
 
+const supplementalData = defineDatabasePermission((permission) =>
+  permission
+    .collection<MeetingSupplementalFile>(MEETING_SUPPLEMENTAL_FILES)
+    .read(['id', 'meetingId', 'fileName', 'sizeBytes', 'parseStatus'])
+    .create(['id', 'meetingId', 'fileName', 'sizeBytes'])
+    .update(['parseStatus', 'parseError'])
+    .delete(),
+);
+
+const transcriptRepairData = defineDatabasePermission((permission) =>
+  permission
+    .collection<MeetingTranscriptRepair>(MEETING_TRANSCRIPT_REPAIRS)
+    .read(['id', 'meetingId', 'contentId', 'action', 'reason', 'createdAt'])
+    .create(['id', 'meetingId', 'contentId', 'action', 'reason']),
+);
+
 export const meetingResource = defineCompositeResource(MEETING_RESOURCE, (r) =>
   r
     .title('Meetings')
     .action('read', (action) =>
-      action.title('Read meetings').grant('meetings', meetingData),
+      action
+        .title('Read meetings')
+        .grant('meetings', meetingData)
+        .grant('meetingTranscriptRepairs', transcriptRepairData),
     )
     .action('manageConnections', (action) =>
       action
@@ -485,7 +557,8 @@ export const meetingResource = defineCompositeResource(MEETING_RESOURCE, (r) =>
       action
         .title('Import selected recording content')
         .grant('meetingImportRuns', importRunData)
-        .grant('meetingContents', contentData),
+        .grant('meetingContents', contentData)
+        .grant('meetingTranscriptRepairs', transcriptRepairData),
     )
     .action('edit', (action) =>
       action
@@ -516,5 +589,10 @@ export const meetingResource = defineCompositeResource(MEETING_RESOURCE, (r) =>
       action
         .title('Manage trusted OA employee mappings')
         .grant('meetingOaEmployeeMaps', identityData),
+    )
+    .action('supplement', (action) =>
+      action
+        .title('Manage restricted meeting supplemental files')
+        .grant('meetingSupplementalFiles', supplementalData),
     ),
 );

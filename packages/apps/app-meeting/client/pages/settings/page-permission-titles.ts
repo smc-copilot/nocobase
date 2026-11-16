@@ -7,4 +7,9 @@ import type { PagePermissionTitles } from './page-permissions.js';
 export const pagePermissionTitles: PagePermissionTitles = {
   // The template detail drawer shares the list page grant.
   notificationTemplate: 'settings.notificationTemplates',
+  // Meeting child tabs share the parent shell and declare no breadcrumb.
+  meetingOa: 'meetingOa.workspaceTitle',
+  meetingParticipants: 'meetings.tabs.participants',
+  meetingRecordings: 'meetings.tabs.recordings',
+  meetingSummary: 'meetings.summaryTitle',
 };

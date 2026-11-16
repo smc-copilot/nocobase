@@ -20,10 +20,20 @@ import {
   MEETING_CONTENTS,
   MEETING_IMPORT_RUNS,
   MEETING_RECORDINGS,
+  MEETING_TRANSCRIPT_REPAIRS,
   type MeetingContent,
   type MeetingImportRun,
   type MeetingRecording,
+  type MeetingTranscriptRepair,
 } from './resources.js';
+import {
+  alignedProvenance,
+  concatenateGroupTexts,
+  LEGACY_REPAIRED,
+  LEGACY_REVERSED,
+  TENCENT_GROUPS_V1,
+  type TranscriptProvenance,
+} from './tencent-groups.js';
 
 export interface MeetingContentPublic {
   meetingId: string;
@@ -32,6 +42,16 @@ export interface MeetingContentPublic {
   originalTranscript: string | null;
   optimizedTranscript: string | null;
   minutes: { text: string; source: string };
+  tencentMinutes: {
+    ai_ds_minutes: string;
+    ai_minutes: string;
+    ai_speaker_minutes: string;
+    ai_topic_minutes: string;
+  };
+  tencentDialogues: {
+    original: string;
+    optimized: string;
+  };
   localMinutes: string | null;
   localTranscript: string | null;
   localMinutesEdited: boolean;
@@ -39,14 +59,24 @@ export interface MeetingContentPublic {
   sourceTodos: readonly SourceTodo[];
   importStatus: string;
   lastImportError: string | null;
-  liveGatewayImport: 'unavailable' | 'test-adapter';
+  transcriptProvenance: TranscriptProvenance | null;
+  liveGatewayImport: 'unavailable' | 'test-adapter' | 'http';
 }
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function publicContent(row: MeetingContent): MeetingContentPublic {
+function emptyToNull(value: string): string | null {
+  return value.trim() ? value : null;
+}
+
+function publicContent(
+  row: MeetingContent,
+  liveGatewayImport: MeetingContentPublic['liveGatewayImport'],
+): MeetingContentPublic {
+  const original = row.originalTranscript ?? '';
+  const optimized = row.optimizedTranscript ?? '';
   return {
     meetingId: row.meetingId,
     contentVersion: row.contentVersion,
@@ -56,6 +86,16 @@ function publicContent(row: MeetingContent): MeetingContentPublic {
       : row.originalTranscript,
     optimizedTranscript: row.optimizedTranscript,
     minutes: resolveMinutes(row),
+    tencentMinutes: {
+      ai_ds_minutes: row.minutesAiDs ?? '',
+      ai_minutes: row.minutesAi ?? '',
+      ai_speaker_minutes: row.minutesSpeaker ?? '',
+      ai_topic_minutes: row.minutesTopic ?? '',
+    },
+    tencentDialogues: {
+      original,
+      optimized,
+    },
     localMinutes: row.localMinutes,
     localTranscript: row.localTranscript,
     localMinutesEdited: row.localMinutesEdited,
@@ -63,12 +103,10 @@ function publicContent(row: MeetingContent): MeetingContentPublic {
     sourceTodos: parseJsonField<SourceTodo[]>(row.sourceTodos ?? null) ?? [],
     importStatus: row.importStatus,
     lastImportError: row.lastImportError,
-    liveGatewayImport:
-      row.lastImportError === 'IMPORT_CONTRACT_UNAVAILABLE'
-        ? 'unavailable'
-        : row.importStatus === 'succeeded'
-          ? 'test-adapter'
-          : 'unavailable',
+    transcriptProvenance: parseJsonField<TranscriptProvenance>(
+      row.transcriptProvenance ?? null,
+    ),
+    liveGatewayImport,
   };
 }
 
@@ -81,10 +119,18 @@ export class MeetingContentService {
     private readonly userId: string | undefined,
   ) {}
 
+  private liveImport(): MeetingContentPublic['liveGatewayImport'] {
+    if (typeof this.adapter.importRecordingContent !== 'function') {
+      return 'unavailable';
+    }
+    if (this.adapter.kind === 'test') return 'test-adapter';
+    return 'http';
+  }
+
   async get(meetingId: string): Promise<MeetingContentPublic> {
     await requireReadableMeeting(this.connection, this.authz, meetingId);
     const row = await this.ensure(meetingId);
-    return publicContent(row);
+    return publicContent(row, this.liveImport());
   }
 
   async edit(
@@ -190,9 +236,7 @@ export class MeetingContentService {
         connectionRef: binding.connectionRef ?? '',
         recordFileId,
       });
-      const grouped = Object.fromEntries(
-        artifacts.map((item) => [item.group, item.text]),
-      ) as Record<string, string>;
+      const grouped = concatenateGroupTexts(artifacts);
       const sourceHash = sha256(
         artifacts.map((item) => `${item.group}\n${item.text}`).join('\n'),
       );
@@ -210,14 +254,19 @@ export class MeetingContentService {
             contentVersion: content.contentVersion + 1,
             sourceHash,
             originalTranscript:
-              grouped.ai_meeting_transcripts ?? content.originalTranscript,
+              emptyToNull(grouped.meeting_summary) ??
+              content.originalTranscript,
             optimizedTranscript:
-              grouped.meeting_summary ?? content.optimizedTranscript,
-            minutesAiDs: grouped.ai_ds_minutes ?? null,
-            minutesAi: grouped.ai_minutes ?? null,
-            minutesTopic: grouped.ai_topic_minutes ?? null,
-            minutesSpeaker: grouped.ai_speaker_minutes ?? null,
+              emptyToNull(grouped.ai_meeting_transcripts) ??
+              content.optimizedTranscript,
+            minutesAiDs: emptyToNull(grouped.ai_ds_minutes),
+            minutesAi: emptyToNull(grouped.ai_minutes),
+            minutesTopic: emptyToNull(grouped.ai_topic_minutes),
+            minutesSpeaker: emptyToNull(grouped.ai_speaker_minutes),
             sourceTodos: [...extractSourceTodos(minutesText)],
+            transcriptProvenance: {
+              ...alignedProvenance(),
+            } as Record<string, unknown>,
             importStatus: 'succeeded',
             lastImportError: null,
             updatedAt: new Date(),
@@ -247,6 +296,111 @@ export class MeetingContentService {
       data: await this.get(meetingId),
       importRun: await this.getRun(runId),
     };
+  }
+
+  async listTranscriptRepairs(): Promise<
+    readonly {
+      id: string;
+      meetingId: string;
+      contentId: string;
+      action: string;
+      reason: string;
+      createdAt: string;
+    }[]
+  > {
+    await requireMeetingAction(this.authz, 'read');
+    const rows = await this.connection
+      .repository<MeetingTranscriptRepair>(MEETING_TRANSCRIPT_REPAIRS)
+      .findMany({
+        sort: (sort) => sort.field('createdAt').desc(),
+      });
+    return rows.map((row) => ({
+      id: row.id,
+      meetingId: row.meetingId,
+      contentId: row.contentId,
+      action: row.action,
+      reason: row.reason,
+      createdAt: toIso(row.createdAt) as string,
+    }));
+  }
+
+  async repairLegacyTranscripts(): Promise<{
+    repaired: number;
+    skipped: number;
+  }> {
+    await requireMeetingAction(this.authz, 'import');
+    const rows = await this.connection
+      .repository<MeetingContent>(MEETING_CONTENTS)
+      .findMany();
+    let repaired = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      const result = this.planRepair(row);
+      await this.connection
+        .repository<MeetingTranscriptRepair>(MEETING_TRANSCRIPT_REPAIRS)
+        .createOne({
+          values: {
+            id: randomUUID(),
+            meetingId: row.meetingId,
+            contentId: row.id,
+            action: result.action,
+            reason: result.reason,
+            createdAt: new Date(),
+          },
+        });
+      if (result.action !== 'swapped') {
+        skipped += 1;
+        continue;
+      }
+      await this.connection
+        .repository<MeetingContent>(MEETING_CONTENTS)
+        .updateOne({
+          filter: { id: row.id },
+          values: {
+            originalTranscript: row.optimizedTranscript,
+            optimizedTranscript: row.originalTranscript,
+            transcriptProvenance: {
+              mappingVersion: LEGACY_REPAIRED,
+              originalGroup: 'meeting_summary',
+              optimizedGroup: 'ai_meeting_transcripts',
+              repairedAt: new Date().toISOString(),
+            } as Record<string, unknown>,
+            updatedAt: new Date(),
+          },
+        });
+      repaired += 1;
+    }
+    return { repaired, skipped };
+  }
+
+  planRepair(row: MeetingContent): { action: string; reason: string } {
+    const provenance = parseJsonField<TranscriptProvenance>(
+      row.transcriptProvenance ?? null,
+    );
+    if (provenance?.mappingVersion === TENCENT_GROUPS_V1) {
+      return { action: 'skipped', reason: 'already-aligned' };
+    }
+    if (provenance?.mappingVersion === LEGACY_REPAIRED) {
+      return { action: 'skipped', reason: 'already-repaired' };
+    }
+    if (row.localTranscriptEdited) {
+      return { action: 'skipped', reason: 'local-transcript-edit' };
+    }
+    if (!row.sourceHash || row.importStatus !== 'succeeded') {
+      return { action: 'skipped', reason: 'no-import-evidence' };
+    }
+    const original = String(row.originalTranscript ?? '').trim();
+    const optimized = String(row.optimizedTranscript ?? '').trim();
+    if (!original || !optimized || original === optimized) {
+      return { action: 'skipped', reason: 'ambiguous-fields' };
+    }
+    if (
+      provenance?.mappingVersion &&
+      provenance.mappingVersion !== LEGACY_REVERSED
+    ) {
+      return { action: 'skipped', reason: 'unknown-provenance' };
+    }
+    return { action: 'swapped', reason: 'legacy-reversed-import' };
   }
 
   private async failRun(runId: string, errorCode: string): Promise<void> {
@@ -332,6 +486,7 @@ export class MeetingContentService {
         localMinutesEdited: false,
         localTranscriptEdited: false,
         sourceTodos: [],
+        transcriptProvenance: null,
         importStatus: 'empty',
         lastImportError: null,
         createdAt: now,
