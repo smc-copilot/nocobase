@@ -13,9 +13,13 @@ import { SettingsError, SettingsLoading } from './shared.js';
 interface Settings {
   tokenUrl: string | null;
   peopleUrl: string | null;
+  meetingUrl: string | null;
+  viewUrl: string | null;
+  scope: string | null;
   clientId: string | null;
   tokenUrlConfigured: boolean;
   peopleUrlConfigured: boolean;
+  meetingUrlConfigured: boolean;
   clientIdConfigured: boolean;
   hasSecret: boolean;
   writeContract: string;
@@ -23,6 +27,7 @@ interface Settings {
   peopleContract: string;
   testAdapter: boolean;
   isolationNote: string | null;
+  liveVerified: false;
 }
 
 export default function MeetingIntegrationsPage(): ReactElement {
@@ -36,6 +41,9 @@ export default function MeetingIntegrationsPage(): ReactElement {
   const row = request.data?.data;
   const [tokenUrl, setTokenUrl] = useState<string | null>(null);
   const [peopleUrl, setPeopleUrl] = useState<string | null>(null);
+  const [meetingUrl, setMeetingUrl] = useState<string | null>(null);
+  const [viewUrl, setViewUrl] = useState<string | null>(null);
+  const [scope, setScope] = useState<string | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
   const [clientSecret, setClientSecret] = useState('');
   const [mapUserId, setMapUserId] = useState('');
@@ -43,6 +51,9 @@ export default function MeetingIntegrationsPage(): ReactElement {
   const [busy, setBusy] = useState(false);
   const shownTokenUrl = tokenUrl ?? row?.tokenUrl ?? '';
   const shownPeopleUrl = peopleUrl ?? row?.peopleUrl ?? '';
+  const shownMeetingUrl = meetingUrl ?? row?.meetingUrl ?? '';
+  const shownViewUrl = viewUrl ?? row?.viewUrl ?? '';
+  const shownScope = scope ?? row?.scope ?? '';
   const shownClientId = clientId ?? row?.clientId ?? '';
 
   if (request.loading && !row) return <SettingsLoading />;
@@ -71,6 +82,9 @@ export default function MeetingIntegrationsPage(): ReactElement {
             : t('meetingOa.secretMissing'),
         })}
       </p>
+      <p className='text-sm text-muted-foreground'>
+        {t('meetingOa.liveVerified')}
+      </p>
       <form
         className='mt-4 flex max-w-xl flex-col gap-3'
         onSubmit={(event) => {
@@ -90,6 +104,21 @@ export default function MeetingIntegrationsPage(): ReactElement {
                   ? { peopleUrl: shownPeopleUrl.trim() }
                   : row?.peopleUrl
                     ? { peopleUrl: null }
+                    : {}),
+                ...(shownMeetingUrl.trim()
+                  ? { meetingUrl: shownMeetingUrl.trim() }
+                  : row?.meetingUrl
+                    ? { meetingUrl: null }
+                    : {}),
+                ...(shownViewUrl.trim()
+                  ? { viewUrl: shownViewUrl.trim() }
+                  : row?.viewUrl
+                    ? { viewUrl: null }
+                    : {}),
+                ...(shownScope.trim()
+                  ? { scope: shownScope.trim() }
+                  : row?.scope
+                    ? { scope: null }
                     : {}),
                 ...(shownClientId.trim()
                   ? { clientId: shownClientId.trim() }
@@ -132,6 +161,26 @@ export default function MeetingIntegrationsPage(): ReactElement {
           id='oa-people-url'
           value={shownPeopleUrl}
           onChange={(event) => setPeopleUrl(event.target.value)}
+        />
+        <Label htmlFor='oa-meeting-url'>
+          {t('meetingOa.fields.meetingUrl')}
+        </Label>
+        <Input
+          id='oa-meeting-url'
+          value={shownMeetingUrl}
+          onChange={(event) => setMeetingUrl(event.target.value)}
+        />
+        <Label htmlFor='oa-view-url'>{t('meetingOa.fields.viewUrl')}</Label>
+        <Input
+          id='oa-view-url'
+          value={shownViewUrl}
+          onChange={(event) => setViewUrl(event.target.value)}
+        />
+        <Label htmlFor='oa-scope'>{t('meetingOa.fields.scope')}</Label>
+        <Input
+          id='oa-scope'
+          value={shownScope}
+          onChange={(event) => setScope(event.target.value)}
         />
         <Label htmlFor='oa-client'>{t('meetingOa.fields.clientId')}</Label>
         <Input

@@ -79,8 +79,12 @@ export class MeetingOaExecutor {
     if (upload && upload.status === 'pending') {
       await this.markInFlight(upload);
       try {
-        await this.adapter.uploadSummary(token, payload, createNow.externalId);
-        await this.succeedStep(upload, createNow.externalId);
+        const uploaded = await this.adapter.uploadSummary(
+          token,
+          payload,
+          createNow.externalId,
+        );
+        await this.succeedStep(upload, uploaded.externalSummaryId);
       } catch (error) {
         await this.failStep(
           operationId,
@@ -281,6 +285,12 @@ export class MeetingOaExecutor {
         : oaError.writeOutcome === 'CONFIRMED_FAILURE'
           ? 'failed_confirmed'
           : 'unknown';
+    const clue =
+      stepKey === 'createMeeting'
+        ? oaError.details.externalMeetingId
+        : stepKey === 'uploadSummary'
+          ? oaError.details.externalSummaryId
+          : null;
     await this.connection
       .repository<MeetingOaStep>(MEETING_OA_STEPS)
       .updateOne({
@@ -288,9 +298,33 @@ export class MeetingOaExecutor {
         values: {
           status,
           errorCode: oaError.reason,
+          ...(clue ? { externalId: clue } : {}),
           updatedAt: new Date(),
         },
       });
+    if (stepKey === 'createTaskByMeeting' && oaError.details.tasks?.length) {
+      const now = new Date();
+      for (const item of oaError.details.tasks) {
+        if (!item.clientTaskId || !item.taskId) continue;
+        const row = await this.connection
+          .repository<MeetingOaTaskResult>(MEETING_OA_TASK_RESULTS)
+          .findOne({
+            filter: { operationId, clientTaskId: item.clientTaskId },
+          });
+        if (!row || row.status === 'succeeded') continue;
+        await this.connection
+          .repository<MeetingOaTaskResult>(MEETING_OA_TASK_RESULTS)
+          .updateOne({
+            filter: { id: row.id },
+            values: {
+              status: 'unknown',
+              externalTaskId: item.taskId,
+              errorCode: oaError.reason,
+              updatedAt: now,
+            },
+          });
+      }
+    }
     if (stepKey === 'createTaskByMeeting' && status === 'unknown') {
       await this.markPendingTasks(operationId, 'unknown', oaError.reason);
     }

@@ -13,7 +13,8 @@ export type MeetingGatewayReason =
   | 'OAUTH_ALREADY_PENDING'
   | 'CONNECTION_NOT_ALLOWED'
   | 'QUERY_WINDOW_INVALID'
-  | 'QUERY_IN_PROGRESS';
+  | 'QUERY_IN_PROGRESS'
+  | 'SOURCE_NOT_IMPORTABLE';
 
 export class MeetingGatewayError extends Error {
   constructor(

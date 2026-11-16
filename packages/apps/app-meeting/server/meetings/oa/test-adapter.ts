@@ -16,6 +16,7 @@ import { MeetingOaError } from './errors.js';
 export class TestMeetingOaAdapter implements MeetingOaAdapter {
   readonly kind = 'test' as const;
   readonly writeContract = 'test' as const;
+  readonly tokenContract = 'test' as const;
   people: OaPerson[] = [];
   tokenTtlMs = 60_000;
   createMeetingError: MeetingOaError | undefined;
@@ -105,7 +106,11 @@ export class TestMeetingOaAdapter implements MeetingOaAdapter {
   ): Promise<OaUploadSummaryResult> {
     this.uploadSummaryCalls.push(payload);
     if (this.uploadSummaryError) throw this.uploadSummaryError;
-    return { uploaded: true };
+    return {
+      uploaded: true,
+      externalSummaryId: `oa-summary-${payload.meeting.title.slice(0, 24)}`,
+      externalMeetingId: _externalMeetingId,
+    };
   }
 
   async createTaskByMeeting(

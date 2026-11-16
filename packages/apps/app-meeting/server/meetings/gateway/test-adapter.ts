@@ -140,12 +140,16 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     return (
       this.artifacts.get(input.recordFileId) ?? [
         {
+          group: 'meeting_summary',
+          text: 'ORIGINAL_ONLY isolation dialogue',
+        },
+        {
           group: 'ai_meeting_transcripts',
-          text: 'Isolation transcript for local content tests.',
+          text: 'OPTIMIZED_ONLY isolation dialogue',
         },
         {
           group: 'ai_ds_minutes',
-          text: '## 待办事项\n- Isolation source todo',
+          text: '## 会议摘要\nIsolation minutes body\n## 待办事项\n- Isolation source todo',
         },
       ]
     );

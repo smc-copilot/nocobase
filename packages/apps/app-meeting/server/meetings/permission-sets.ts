@@ -33,6 +33,7 @@ export const meetingOperatorPermissionSet = definePermissionSet(
       import: {},
       edit: {},
       oaDraftEdit: {},
+      supplement: {},
     }),
   )
   .build();

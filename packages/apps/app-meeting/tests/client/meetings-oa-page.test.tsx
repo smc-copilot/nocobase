@@ -117,6 +117,9 @@ describe('OA workspace page', () => {
               },
             };
           }
+          if (path.includes('supplementalFiles')) {
+            return { data: [], meta: { total: 0, totalBytes: 0 } };
+          }
           return new Response(null, { status: 404 });
         }),
         services: (app) => {
@@ -229,6 +232,9 @@ describe('OA workspace page', () => {
             });
             return { data: { id: 'op-1' } };
           }
+          if (path.includes('supplementalFiles')) {
+            return { data: [], meta: { total: 0, totalBytes: 0 } };
+          }
           return new Response(null, { status: 404 });
         }),
         services: (app) => {
@@ -338,6 +344,9 @@ describe('OA workspace page', () => {
           if (path === 'meetingOa/operations' && method === 'POST') {
             return { data: { id: 'op-1' } };
           }
+          if (path.includes('supplementalFiles')) {
+            return { data: [], meta: { total: 0, totalBytes: 0 } };
+          }
           return new Response(null, { status: 404 });
         }),
         services: (app) => {
@@ -361,7 +370,7 @@ describe('OA workspace page', () => {
     await userEvent.click(
       screen.getByRole('button', { name: enUS.meetingOa.addTask }),
     );
-    expect(await screen.findByText(/Assigned follow-up/)).toBeVisible();
+    expect(await screen.findByDisplayValue('Assigned follow-up')).toBeVisible();
     await waitFor(() => {
       expect(
         screen.getByRole('button', { name: enUS.meetingOa.submitSync }),
@@ -464,6 +473,9 @@ describe('OA workspace page', () => {
               },
             };
           }
+          if (path.includes('supplementalFiles')) {
+            return { data: [], meta: { total: 0, totalBytes: 0 } };
+          }
           return new Response(null, { status: 404 });
         }),
         services: (app) => {
@@ -541,6 +553,9 @@ describe('OA workspace page', () => {
               },
             };
           }
+          if (path.includes('supplementalFiles')) {
+            return { data: [], meta: { total: 0, totalBytes: 0 } };
+          }
           return new Response(null, { status: 404 });
         }),
         services: (app) => {
@@ -613,6 +628,9 @@ describe('OA workspace page', () => {
                 isolationAdapter: true,
               },
             };
+          }
+          if (path.includes('supplementalFiles')) {
+            return { data: [], meta: { total: 0, totalBytes: 0 } };
           }
           return new Response(null, { status: 404 });
         }),

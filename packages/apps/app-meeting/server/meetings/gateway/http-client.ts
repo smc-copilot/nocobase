@@ -5,7 +5,18 @@ import {
   validateAuthorizationUrl,
 } from './oauth-url.js';
 import { resolveConfiguredOrigin } from './origin.js';
-import type { GatewayConnection, MeetingGatewayAdapter } from './adapter.js';
+import type {
+  GatewayConnection,
+  GatewayContentArtifact,
+  MeetingGatewayAdapter,
+} from './adapter.js';
+import {
+  RECORDING_IMPORT_MAX_BYTES,
+  assertDownloadUrl,
+  artifactsFromText,
+  parseRecordFileList,
+  preferredDownloadArtifacts,
+} from './record-files.js';
 
 const QUERY_CONTRACT_MESSAGE =
   'Meeting query, participant and recording HTTP fields are not in the published gateway client at loudon84/anything-llm@codex/meeting-intelligence (server/utils/meetingGateway/client.js). server/modules/meetings/gatewayDirectory.js is absent from that branch.';
@@ -271,8 +282,95 @@ export function createHttpMeetingGatewayAdapter(options: {
     async listParticipants() {
       contractUnavailable();
     },
-    async listRecordings() {
-      contractUnavailable();
+    async listRecordings(input) {
+      if (
+        !/^[A-Za-z0-9_-]{1,128}$/.test(input.connectionRef) ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(input.meetingId)
+      ) {
+        throw new MeetingGatewayError(
+          'UPSTREAM_CONTRACT_ERROR',
+          'Recording list identifiers did not match the published contract.',
+          'INVALID_ARGUMENT',
+        );
+      }
+      const pageSize = 100;
+      const envelope = await requestJson({
+        path: `/api/v1/connections/${input.connectionRef}/meetings/${input.meetingId}/record-files?pos=0&size=${String(pageSize)}`,
+        method: 'GET',
+        accessToken: input.accessToken,
+      });
+      return parseRecordFileList(
+        { code: 0, error_code: 0, data: envelope },
+        input.meetingId,
+        0,
+        pageSize,
+      );
+    },
+    async importRecordingContent(input) {
+      if (
+        !/^[A-Za-z0-9_-]{1,128}$/.test(input.connectionRef) ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(input.recordFileId)
+      ) {
+        throw new MeetingGatewayError(
+          'UPSTREAM_CONTRACT_ERROR',
+          'Recording identifiers did not match the published contract.',
+          'INVALID_ARGUMENT',
+        );
+      }
+      const details = await requestJson({
+        path: `/api/v1/connections/${input.connectionRef}/record-files/${input.recordFileId}`,
+        method: 'GET',
+        accessToken: input.accessToken,
+      });
+      const artifacts: GatewayContentArtifact[] = [];
+      for (const item of preferredDownloadArtifacts(details)) {
+        const url = assertDownloadUrl(item.url);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        let response: Response;
+        try {
+          response = await fetchImpl(url, {
+            method: 'GET',
+            redirect: 'error',
+            signal: controller.signal,
+          });
+        } catch {
+          throw new MeetingGatewayError(
+            'SOURCE_NOT_IMPORTABLE',
+            'The recording download failed before a usable body.',
+            'UNAVAILABLE',
+            true,
+          );
+        } finally {
+          clearTimeout(timeoutId);
+        }
+        if (response.url) assertDownloadUrl(response.url);
+        const length = Number(response.headers.get('content-length') ?? '0');
+        if (length > RECORDING_IMPORT_MAX_BYTES) {
+          throw new MeetingGatewayError(
+            'SOURCE_NOT_IMPORTABLE',
+            'The recording file exceeded the import size limit.',
+            'FAILED_PRECONDITION',
+          );
+        }
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (buffer.byteLength > RECORDING_IMPORT_MAX_BYTES) {
+          throw new MeetingGatewayError(
+            'SOURCE_NOT_IMPORTABLE',
+            'The recording file exceeded the import size limit.',
+            'FAILED_PRECONDITION',
+          );
+        }
+        if (item.extension !== 'txt' && item.extension !== 'md') {
+          throw new MeetingGatewayError(
+            'SOURCE_NOT_IMPORTABLE',
+            'This recording format is not importable in this period.',
+            'FAILED_PRECONDITION',
+          );
+        }
+        artifacts.push(artifactsFromText(item.group, buffer.toString('utf8')));
+      }
+      return artifacts;
     },
   };
 }

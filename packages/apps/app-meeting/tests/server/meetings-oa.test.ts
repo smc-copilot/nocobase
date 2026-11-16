@@ -180,6 +180,33 @@ async function expectOk(response: Response): Promise<unknown> {
   return body;
 }
 
+function readyDraft(
+  expectedVersion: number,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    expectedVersion,
+    purpose: 'Follow-up',
+    location: 'Room A',
+    startAt: '2026-11-16T01:00:00.000Z',
+    endAt: '2026-11-16T03:00:00.000Z',
+    attendeeEmployeeNos: ['E1001'],
+    attendeeSnapshots: [
+      { fd_no: 'E1001', fd_name: 'Alice', fd_department: 'Meeting' },
+    ],
+    summary: 'Minutes body',
+    tasks: [
+      {
+        clientTaskId: 'task-ready',
+        title: 'Assigned follow-up',
+        assigneeEmployeeNo: 'E1001',
+        dueAt: '2026-11-20',
+      },
+    ],
+    ...extra,
+  };
+}
+
 test('saves an OA draft with zero adapter writes and keeps mapping optional', async ({
   app,
   testApp,
@@ -200,8 +227,18 @@ test('saves an OA draft with zero adapter writes and keeps mapping optional', as
   const adapter = oaAdapter(app);
   const draft = (await expectOk(
     await alice.fetch('/meetings/meet-draft/oa-draft'),
-  )) as { data: { version: number; writesOa: false; title: string } };
+  )) as {
+    data: {
+      version: number;
+      writesOa: false;
+      title: string;
+      frozen: boolean;
+      operationId: string | null;
+    };
+  };
   expect(draft.data.writesOa).toBe(false);
+  expect(draft.data.frozen).toBe(false);
+  expect(draft.data.operationId).toBeNull();
   expect(draft.data.title).toBe('Draft meeting');
   const saved = (await expectOk(
     await alice.fetch(
@@ -257,10 +294,7 @@ test('formal sync without mapping writes zero OA and same requestId replays', as
   await expectOk(
     await alice.fetch(
       '/meetings/meet-map/oa-draft',
-      put({
-        expectedVersion: draft.data.version,
-        summary: 'Minutes body',
-      }),
+      put(readyDraft(draft.data.version)),
     ),
   );
   const missing = await alice.fetch(
@@ -383,10 +417,7 @@ test('rejects uncontrolled delegation and records timeout as UNKNOWN without res
   await expectOk(
     await alice.fetch(
       '/meetings/meet-del/oa-draft',
-      put({
-        expectedVersion: aliceDraft.data.version,
-        summary: 'Alice minutes',
-      }),
+      put(readyDraft(aliceDraft.data.version, { summary: 'Alice minutes' })),
     ),
   );
   const timed = (await expectOk(
@@ -471,14 +502,25 @@ test('records partial task results per clientTaskId and confirmed business failu
   await expectOk(
     await alice.fetch(
       '/meetings/meet-part/oa-draft',
-      put({
-        expectedVersion: draft.data.version,
-        summary: 'Minutes',
-        tasks: [
-          { clientTaskId: 'c-ok', title: 'One', assigneeEmployeeNo: 'E1001' },
-          { clientTaskId: 'c-fail', title: 'Two', assigneeEmployeeNo: 'E1001' },
-        ],
-      }),
+      put(
+        readyDraft(draft.data.version, {
+          summary: 'Minutes',
+          tasks: [
+            {
+              clientTaskId: 'c-ok',
+              title: 'One',
+              assigneeEmployeeNo: 'E1001',
+              dueAt: '2026-11-20',
+            },
+            {
+              clientTaskId: 'c-fail',
+              title: 'Two',
+              assigneeEmployeeNo: 'E1001',
+              dueAt: '2026-11-20',
+            },
+          ],
+        }),
+      ),
     ),
   );
   adapter.taskResults = [
@@ -566,8 +608,88 @@ test('does not overwrite local minutes on re-import and does not echo OA secrets
       '/meetings/meet-imp/imports',
       write({ recordFileId: 'rec-meet-imp' }),
     ),
-  )) as { data: { minutes: { text: string }; contentVersion: number } };
-  expect(imported.data.minutes.text).toContain('Isolation source todo');
+  )) as {
+    data: {
+      minutes: { text: string };
+      contentVersion: number;
+      tencentDialogues: { original: string; optimized: string };
+      sourceTodos: { title: string }[];
+    };
+  };
+  expect(imported.data.minutes.text).toContain('Isolation minutes body');
+  expect(imported.data.minutes.text).not.toContain('Isolation source todo');
+  expect(imported.data.tencentDialogues.original).toContain('ORIGINAL_ONLY');
+  expect(imported.data.tencentDialogues.optimized).toContain('OPTIMIZED_ONLY');
+  expect(imported.data.tencentDialogues.original).not.toContain(
+    'OPTIMIZED_ONLY',
+  );
+  expect(imported.data.sourceTodos[0]?.title).toBe('Isolation source todo');
+  const alignedRepair = (await expectOk(
+    await alice.fetch('/meetingOa/transcriptRepairs', write({})),
+  )) as { data: { repaired: number; skipped: number } };
+  expect(alignedRepair.data.repaired).toBe(0);
+  expect(alignedRepair.data.skipped).toBeGreaterThan(0);
+  await insertMeeting(
+    connection,
+    { id: 'meet-repair', title: 'Repair' },
+    alice.user.id,
+  );
+  const now = new Date();
+  await connection.repository('meetingContents').createOne({
+    values: {
+      id: randomUUID(),
+      meetingId: 'meet-repair',
+      contentVersion: 1,
+      sourceHash: 'hash-reversed',
+      originalTranscript: 'OPTIMIZED_ONLY reversed',
+      optimizedTranscript: 'ORIGINAL_ONLY reversed',
+      minutesAiDs: null,
+      minutesAi: null,
+      minutesTopic: null,
+      minutesSpeaker: null,
+      localMinutes: null,
+      localTranscript: null,
+      localMinutesEdited: false,
+      localTranscriptEdited: false,
+      sourceTodos: [],
+      transcriptProvenance: {
+        mappingVersion: 'legacy-reversed-unverified',
+        originalGroup: 'ai_meeting_transcripts',
+        optimizedGroup: 'meeting_summary',
+      },
+      importStatus: 'succeeded',
+      lastImportError: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  const repaired = (await expectOk(
+    await alice.fetch('/meetingOa/transcriptRepairs', write({})),
+  )) as { data: { repaired: number } };
+  expect(repaired.data.repaired).toBe(1);
+  const repairedContent = (await expectOk(
+    await alice.fetch('/meetings/meet-repair/content'),
+  )) as {
+    data: {
+      tencentDialogues: { original: string; optimized: string };
+    };
+  };
+  expect(repairedContent.data.tencentDialogues.original).toContain(
+    'ORIGINAL_ONLY',
+  );
+  expect(repairedContent.data.tencentDialogues.optimized).toContain(
+    'OPTIMIZED_ONLY',
+  );
+  const repairList = (await expectOk(
+    await alice.fetch('/meetingOa/transcriptRepairs'),
+  )) as { data: { action: string; reason: string }[]; meta: { total: number } };
+  expect(repairList.meta.total).toBeGreaterThan(0);
+  expect(
+    repairList.data.some(
+      (row) =>
+        row.action === 'swapped' && row.reason === 'legacy-reversed-import',
+    ),
+  ).toBe(true);
   await expectOk(
     await alice.fetch(
       '/meetings/meet-imp/content',
@@ -669,7 +791,7 @@ test('treats confirmed unsent create as FAILED_CONFIRMED and resumes without a n
   await expectOk(
     await alice.fetch(
       '/meetings/meet-none/oa-draft',
-      put({ expectedVersion: draft.data.version, summary: 'Minutes' }),
+      put(readyDraft(draft.data.version, { summary: 'Minutes' })),
     ),
   );
   adapter.createMeetingError = new MeetingOaError(
@@ -728,7 +850,7 @@ test('records upload timeout as UNKNOWN and concurrent requestIds cannot open a 
   await expectOk(
     await alice.fetch(
       '/meetings/meet-up/oa-draft',
-      put({ expectedVersion: draft.data.version, summary: 'Minutes' }),
+      put(readyDraft(draft.data.version, { summary: 'Minutes' })),
     ),
   );
   adapter.uploadSummaryError = new MeetingOaError(
@@ -772,6 +894,11 @@ test('records upload timeout as UNKNOWN and concurrent requestIds cannot open a 
   expect(
     ((await locked.json()) as { error?: { reason?: string } }).error?.reason,
   ).toBe('OA_RESULT_UNKNOWN');
+  const frozenDraft = (await expectOk(
+    await alice.fetch('/meetings/meet-up/oa-draft'),
+  )) as { data: { frozen: boolean; operationId: string | null } };
+  expect(frozenDraft.data.frozen).toBe(true);
+  expect(frozenDraft.data.operationId).toBe(timed.data.id);
 
   await insertMeeting(
     connection,
@@ -784,7 +911,7 @@ test('records upload timeout as UNKNOWN and concurrent requestIds cannot open a 
   await expectOk(
     await alice.fetch(
       '/meetings/meet-race/oa-draft',
-      put({ expectedVersion: raceDraft.data.version, summary: 'Race minutes' }),
+      put(readyDraft(raceDraft.data.version, { summary: 'Race minutes' })),
     ),
   );
   adapter.uploadSummaryError = undefined;
@@ -840,9 +967,27 @@ test('marks missing task ids UNKNOWN and does not resend succeeded clientTaskIds
       put({
         expectedVersion: draft.data.version,
         summary: 'Minutes',
+        purpose: 'Follow-up',
+        location: 'Room A',
+        startAt: '2026-11-16T01:00:00.000Z',
+        endAt: '2026-11-16T03:00:00.000Z',
+        attendeeEmployeeNos: ['E1001'],
+        attendeeSnapshots: [
+          { fd_no: 'E1001', fd_name: 'Alice', fd_department: 'Meeting' },
+        ],
         tasks: [
-          { clientTaskId: 'keep', title: 'Keep', assigneeEmployeeNo: 'E1001' },
-          { clientTaskId: 'lost', title: 'Lost', assigneeEmployeeNo: 'E1001' },
+          {
+            clientTaskId: 'keep',
+            title: 'Keep',
+            assigneeEmployeeNo: 'E1001',
+            dueAt: '2026-11-20',
+          },
+          {
+            clientTaskId: 'lost',
+            title: 'Lost',
+            assigneeEmployeeNo: 'E1001',
+            dueAt: '2026-11-20',
+          },
         ],
       }),
     ),
@@ -918,6 +1063,88 @@ test('marks missing task ids UNKNOWN and does not resend succeeded clientTaskIds
       expect.objectContaining({ clientTaskId: 'lost', status: 'succeeded' }),
     ]),
   );
+});
+
+test('stores restricted supplemental files without a generic attachment platform', async ({
+  testApp,
+  connection,
+}) => {
+  const alice = await createUser(testApp, 'alice');
+  const bob = await createUser(testApp, 'bob');
+  await grant(testApp, alice.user.id, 'meeting-operator');
+  await grant(testApp, bob.user.id, 'meeting-operator');
+  await insertMeeting(
+    connection,
+    { id: 'meet-files', title: 'Files' },
+    alice.user.id,
+  );
+  const payload = Buffer.from('supplemental note', 'utf8').toString('base64');
+  const uploaded = (await expectOk(
+    await alice.fetch(
+      '/meetings/meet-files/supplementalFiles',
+      write({
+        fileName: 'note.txt',
+        mimeType: 'text/plain',
+        contentBase64: payload,
+      }),
+    ),
+  )) as { data: { id: string; fileName: string; parseStatus: string } };
+  expect(uploaded.data.fileName).toBe('note.txt');
+  expect(uploaded.data.parseStatus).toBe('succeeded');
+  const duplicate = await alice.fetch(
+    '/meetings/meet-files/supplementalFiles',
+    write({
+      fileName: 'note-copy.txt',
+      mimeType: 'text/plain',
+      contentBase64: payload,
+    }),
+  );
+  expect(duplicate.status).toBe(409);
+  const listed = (await expectOk(
+    await alice.fetch('/meetings/meet-files/supplementalFiles'),
+  )) as { data: unknown[]; meta: { total: number; totalBytes: number } };
+  expect(listed.meta.total).toBe(1);
+  const bobRead = await bob.fetch('/meetings/meet-files/supplementalFiles');
+  expect(bobRead.status).toBe(403);
+  const now = new Date();
+  await connection.repository('meetingOaOperations').createOne({
+    values: {
+      id: randomUUID(),
+      meetingId: 'meet-files',
+      oaTarget: 'default',
+      requestId: 'req-files-frozen',
+      status: 'unknown',
+      draftVersion: 1,
+      frozenPayload: { oaTarget: 'default' },
+      creatorUserId: alice.user.id,
+      creatorEmployeeNo: 'E1001',
+      actorUserId: alice.user.id,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  const frozenDelete = await alice.fetch(
+    `/meetings/meet-files/supplementalFiles/${uploaded.data.id}`,
+    { method: 'DELETE', headers: { origin: 'http://localhost' } },
+  );
+  expect(frozenDelete.status).toBe(400);
+  expect(
+    ((await frozenDelete.json()) as { error?: { reason?: string } }).error
+      ?.reason,
+  ).toBe('OA_OPERATION_IMMUTABLE');
+  const frozenUpload = await alice.fetch(
+    '/meetings/meet-files/supplementalFiles',
+    write({
+      fileName: 'after-freeze.txt',
+      mimeType: 'text/plain',
+      contentBase64: Buffer.from('later', 'utf8').toString('base64'),
+    }),
+  );
+  expect(frozenUpload.status).toBe(400);
+  expect(
+    ((await frozenUpload.json()) as { error?: { reason?: string } }).error
+      ?.reason,
+  ).toBe('OA_OPERATION_IMMUTABLE');
 });
 
 test('caches isolation OA tokens until near expiry', async ({ app }) => {

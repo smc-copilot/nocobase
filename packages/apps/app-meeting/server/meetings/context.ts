@@ -18,6 +18,7 @@ import { MeetingOaSettingsService } from './oa/settings-service.js';
 import { meetingOaAdapterToken } from './oa/token.js';
 import { MeetingQueryRunService } from './query-run-service.js';
 import { MeetingQueryService } from './service.js';
+import { MeetingSupplementalFileService } from './supplemental-files.js';
 
 export function currentUserId(
   context: Context<AuthEnv & AuthorizationEnv>,
@@ -123,6 +124,12 @@ export function createMeetingServices(
       oaAdapter,
       oaConfig,
       userId,
+    ),
+    files: new MeetingSupplementalFileService(
+      connection,
+      authz,
+      userId,
+      app.paths.storage('meeting-supplemental'),
     ),
     oaAdapter,
   };

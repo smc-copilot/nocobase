@@ -30,6 +30,16 @@ export type MeetingOaReason =
 
 export type OaWriteOutcome = 'NONE' | 'UNKNOWN' | 'CONFIRMED_FAILURE';
 
+export interface MeetingOaErrorDetails {
+  readonly externalMeetingId?: string;
+  readonly externalSummaryId?: string;
+  readonly tasks?: readonly {
+    readonly clientTaskId?: string;
+    readonly taskName?: string;
+    readonly taskId?: string;
+  }[];
+}
+
 export class MeetingOaError extends Error {
   constructor(
     readonly reason: MeetingOaReason,
@@ -43,6 +53,7 @@ export class MeetingOaError extends Error {
       | 'ALREADY_EXISTS'
       | 'ABORTED' = 'FAILED_PRECONDITION',
     readonly writeOutcome: OaWriteOutcome = 'NONE',
+    readonly details: MeetingOaErrorDetails = {},
   ) {
     super(message);
     this.name = 'MeetingOaError';

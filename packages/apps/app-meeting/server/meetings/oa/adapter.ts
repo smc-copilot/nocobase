@@ -12,9 +12,15 @@ export interface OaToken {
 export interface FrozenOaMeeting {
   readonly title: string;
   readonly startAt: string;
-  readonly endAt: string | null;
-  readonly location: string | null;
+  readonly endAt: string;
+  readonly location: string;
+  readonly purpose: string;
+  readonly remark: string;
   readonly attendeeEmployeeNos: readonly string[];
+  readonly attendeeSnapshots: readonly OaPerson[];
+  readonly emceeEmployeeNo: string | null;
+  readonly hostEmployeeNo: string | null;
+  readonly otherAttendPerson: string | null;
 }
 
 export interface FrozenOaTask {
@@ -22,7 +28,11 @@ export interface FrozenOaTask {
   readonly title: string;
   readonly assigneeEmployeeNo: string;
   readonly assigneeName: string | null;
-  readonly dueAt: string | null;
+  readonly appointEmployeeNo: string | null;
+  readonly appointName: string | null;
+  readonly attentionEmployeeNos: readonly string[];
+  readonly startAt: string | null;
+  readonly dueAt: string;
   readonly description: string | null;
 }
 
@@ -31,7 +41,11 @@ export interface FrozenOaPayload {
   readonly creatorEmployeeNo: string;
   readonly oaTarget: string;
   readonly meeting: FrozenOaMeeting;
+  readonly summaryTitle: string;
   readonly summary: string;
+  readonly summaryCompleteTime: string;
+  readonly actualAttendEmployeeNos: readonly string[];
+  readonly copyToEmployeeNos: readonly string[];
   readonly tasks: readonly FrozenOaTask[];
 }
 
@@ -41,6 +55,8 @@ export interface OaCreateMeetingResult {
 
 export interface OaUploadSummaryResult {
   readonly uploaded: true;
+  readonly externalSummaryId: string;
+  readonly externalMeetingId: string;
 }
 
 export type OaTaskWriteStatus = 'succeeded' | 'failed_confirmed' | 'unknown';
@@ -52,9 +68,12 @@ export interface OaTaskWriteResult {
   readonly errorCode: string | null;
 }
 
+export type OaContractMode = 'unavailable' | 'test' | 'configured';
+
 export interface MeetingOaAdapter {
   readonly kind: 'http' | 'test';
-  readonly writeContract: 'unavailable' | 'test';
+  readonly writeContract: OaContractMode;
+  readonly tokenContract: OaContractMode;
   searchPeople(query: string): Promise<readonly OaPerson[]>;
   getToken(employeeNo: string): Promise<OaToken>;
   createMeeting(

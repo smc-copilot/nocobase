@@ -166,9 +166,28 @@ export const MeetingContentSchema = z
     sourceTodos: z.array(
       z.object({ title: z.string(), description: z.string() }),
     ),
+    tencentMinutes: z.object({
+      ai_ds_minutes: z.string(),
+      ai_minutes: z.string(),
+      ai_speaker_minutes: z.string(),
+      ai_topic_minutes: z.string(),
+    }),
+    tencentDialogues: z.object({
+      original: z.string(),
+      optimized: z.string(),
+    }),
     importStatus: z.string(),
     lastImportError: z.string().nullable(),
-    liveGatewayImport: z.enum(['unavailable', 'test-adapter']),
+    transcriptProvenance: z
+      .object({
+        mappingVersion: z.string(),
+        originalGroup: z.string().nullable(),
+        optimizedGroup: z.string().nullable(),
+        repairedAt: z.string().optional(),
+        skippedReason: z.string().optional(),
+      })
+      .nullable(),
+    liveGatewayImport: z.enum(['unavailable', 'test-adapter', 'http']),
   })
   .meta({ ref: 'MeetingContent' });
 
@@ -178,8 +197,32 @@ export const MeetingContentEditBody = z.strictObject({
   localTranscript: z.string().optional(),
 });
 
+export const TranscriptRepairSchema = z
+  .object({
+    id: z.string(),
+    meetingId: MeetingId,
+    contentId: z.string(),
+    action: z.string(),
+    reason: z.string(),
+    createdAt: z.string(),
+  })
+  .meta({ ref: 'MeetingTranscriptRepair' });
+
+export const TranscriptRepairRunSchema = z
+  .object({
+    repaired: z.number(),
+    skipped: z.number(),
+  })
+  .meta({ ref: 'MeetingTranscriptRepairRun' });
+
 export const MeetingImportBody = z.strictObject({
   recordFileId: z.string().min(1).max(128),
+});
+
+const OaPersonSnapshotSchema = z.object({
+  fd_no: z.string(),
+  fd_name: z.string(),
+  fd_department: z.string(),
 });
 
 export const OaDraftTaskSchema = z.object({
@@ -187,6 +230,11 @@ export const OaDraftTaskSchema = z.object({
   title: z.string(),
   assigneeEmployeeNo: z.string().nullable(),
   assigneeName: z.string().nullable(),
+  appointEmployeeNo: z.string().nullable(),
+  appointName: z.string().nullable(),
+  attentionEmployeeNos: z.array(z.string()),
+  attentionSnapshots: z.array(OaPersonSnapshotSchema),
+  startAt: z.string().nullable(),
   dueAt: z.string().nullable(),
   description: z.string().nullable(),
   fromSourceTodo: z.boolean(),
@@ -200,10 +248,22 @@ export const OaDraftSchema = z
     startAt: z.string().nullable(),
     endAt: z.string().nullable(),
     location: z.string().nullable(),
+    purpose: z.string().nullable(),
+    remark: z.string().nullable(),
+    otherAttendPerson: z.string().nullable(),
     attendeeEmployeeNos: z.array(z.string()),
+    attendeeSnapshots: z.array(OaPersonSnapshotSchema),
+    emceeSnapshot: OaPersonSnapshotSchema.nullable(),
+    hostSnapshot: OaPersonSnapshotSchema.nullable(),
+    actualAttendSnapshots: z.array(OaPersonSnapshotSchema),
+    copyToSnapshots: z.array(OaPersonSnapshotSchema),
+    summaryTitle: z.string().nullable(),
     summary: z.string().nullable(),
+    summaryCompleteTime: z.string().nullable(),
     tasks: z.array(OaDraftTaskSchema),
     filledFromContentVersion: z.number().nullable(),
+    frozen: z.boolean(),
+    operationId: z.string().nullable(),
     writesOa: z.literal(false),
     isolationAdapter: z.boolean(),
   })
@@ -215,8 +275,18 @@ export const OaDraftSaveBody = z.strictObject({
   startAt: z.string().nullable().optional(),
   endAt: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
+  purpose: z.string().nullable().optional(),
+  remark: z.string().nullable().optional(),
+  otherAttendPerson: z.string().nullable().optional(),
   attendeeEmployeeNos: z.array(z.string()).optional(),
+  attendeeSnapshots: z.array(OaPersonSnapshotSchema).optional(),
+  emceeSnapshot: OaPersonSnapshotSchema.nullable().optional(),
+  hostSnapshot: OaPersonSnapshotSchema.nullable().optional(),
+  actualAttendSnapshots: z.array(OaPersonSnapshotSchema).optional(),
+  copyToSnapshots: z.array(OaPersonSnapshotSchema).optional(),
+  summaryTitle: z.string().nullable().optional(),
   summary: z.string().nullable().optional(),
+  summaryCompleteTime: z.string().nullable().optional(),
   tasks: z
     .array(
       z.object({
@@ -224,6 +294,11 @@ export const OaDraftSaveBody = z.strictObject({
         title: z.string(),
         assigneeEmployeeNo: z.string().nullable().optional(),
         assigneeName: z.string().nullable().optional(),
+        appointEmployeeNo: z.string().nullable().optional(),
+        appointName: z.string().nullable().optional(),
+        attentionEmployeeNos: z.array(z.string()).optional(),
+        attentionSnapshots: z.array(OaPersonSnapshotSchema).optional(),
+        startAt: z.string().nullable().optional(),
         dueAt: z.string().nullable().optional(),
         description: z.string().nullable().optional(),
       }),
@@ -263,16 +338,21 @@ export const OaSettingsSchema = z
   .object({
     tokenUrl: z.string().nullable(),
     peopleUrl: z.string().nullable(),
+    meetingUrl: z.string().nullable(),
+    viewUrl: z.string().nullable(),
+    scope: z.string().nullable(),
     clientId: z.string().nullable(),
     tokenUrlConfigured: z.boolean(),
     peopleUrlConfigured: z.boolean(),
+    meetingUrlConfigured: z.boolean(),
     clientIdConfigured: z.boolean(),
     hasSecret: z.boolean(),
-    writeContract: z.enum(['unavailable', 'test']),
-    tokenContract: z.enum(['unavailable', 'test']),
+    writeContract: z.enum(['unavailable', 'test', 'configured']),
+    tokenContract: z.enum(['unavailable', 'test', 'configured']),
     peopleContract: z.enum(['oaPeople.js', 'test']),
     testAdapter: z.boolean(),
     isolationNote: z.string().nullable(),
+    liveVerified: z.literal(false),
     updatedAt: z.string().nullable(),
   })
   .meta({ ref: 'MeetingOaSettings' });
@@ -280,8 +360,53 @@ export const OaSettingsSchema = z
 export const OaSettingsBody = z.strictObject({
   tokenUrl: z.string().max(500).nullable().optional(),
   peopleUrl: z.string().max(500).nullable().optional(),
+  meetingUrl: z.string().max(500).nullable().optional(),
+  viewUrl: z.string().max(500).nullable().optional(),
+  scope: z.string().max(255).nullable().optional(),
   clientId: z.string().max(128).nullable().optional(),
   clientSecret: z.string().max(500).nullable().optional(),
+});
+
+export const SupplementalFileSchema = z
+  .object({
+    id: MeetingId,
+    meetingId: MeetingId,
+    fileName: z.string(),
+    mimeType: z.string().nullable(),
+    sizeBytes: z.number(),
+    contentHash: z.string(),
+    parseStatus: z.string(),
+    parseError: z.string().nullable(),
+    createdAt: z.string(),
+    tencentSource: z.literal(false),
+  })
+  .meta({ ref: 'MeetingSupplementalFile' });
+
+export const SupplementalFileParams = z.object({
+  meetingId: MeetingId,
+  fileId: MeetingId,
+});
+
+export const SupplementalUploadBody = z.strictObject({
+  fileName: z.string().min(1).max(255),
+  mimeType: z.string().max(128).nullable().optional(),
+  contentBase64: z.string().min(1),
+});
+
+export const SupplementalFileContentSchema = z.object({
+  fileName: z.string(),
+  mimeType: z.string().nullable(),
+  contentBase64: z.string(),
+});
+
+export const SupplementalFileDeletedSchema = z.object({
+  id: MeetingId,
+  deleted: z.literal(true),
+});
+
+export const SupplementalListMeta = z.object({
+  total: z.number(),
+  totalBytes: z.number(),
 });
 
 export const OaOperationSchema = z

@@ -8,23 +8,38 @@ import {
   OA_SECRET_PURPOSE,
   type MeetingOaSettings,
 } from '../resources.js';
-import type { MeetingOaAdapter } from './adapter.js';
+import type { MeetingOaAdapter, OaContractMode } from './adapter.js';
 import { oaSettingsAad } from './secrets.js';
 
 export interface OaSettingsPublic {
   tokenUrl: string | null;
   peopleUrl: string | null;
+  meetingUrl: string | null;
+  viewUrl: string | null;
+  scope: string | null;
   clientId: string | null;
   tokenUrlConfigured: boolean;
   peopleUrlConfigured: boolean;
+  meetingUrlConfigured: boolean;
   clientIdConfigured: boolean;
   hasSecret: boolean;
-  writeContract: 'unavailable' | 'test';
-  tokenContract: 'unavailable' | 'test';
+  writeContract: OaContractMode;
+  tokenContract: OaContractMode;
   peopleContract: 'oaPeople.js' | 'test';
   testAdapter: boolean;
   isolationNote: string | null;
+  liveVerified: false;
   updatedAt: string | null;
+}
+
+function keep(
+  incoming: string | null | undefined,
+  existing: string | null | undefined,
+): string | null {
+  if (incoming === undefined) return existing ?? null;
+  const trimmed = incoming?.trim() ?? '';
+  if (!trimmed) return existing ?? null;
+  return trimmed;
 }
 
 export class MeetingOaSettingsService {
@@ -46,6 +61,9 @@ export class MeetingOaSettingsService {
   async save(input: {
     tokenUrl?: string | null;
     peopleUrl?: string | null;
+    meetingUrl?: string | null;
+    viewUrl?: string | null;
+    scope?: string | null;
     clientId?: string | null;
     clientSecret?: string | null;
   }): Promise<OaSettingsPublic> {
@@ -58,18 +76,12 @@ export class MeetingOaSettingsService {
       ? (existing?.credentialVersion ?? 0) + 1
       : (existing?.credentialVersion ?? 1);
     const values: Partial<MeetingOaSettings> = {
-      tokenUrl:
-        input.tokenUrl === undefined
-          ? (existing?.tokenUrl ?? null)
-          : input.tokenUrl,
-      peopleUrl:
-        input.peopleUrl === undefined
-          ? (existing?.peopleUrl ?? null)
-          : input.peopleUrl,
-      clientId:
-        input.clientId === undefined
-          ? (existing?.clientId ?? null)
-          : input.clientId,
+      tokenUrl: keep(input.tokenUrl, existing?.tokenUrl),
+      peopleUrl: keep(input.peopleUrl, existing?.peopleUrl),
+      meetingUrl: keep(input.meetingUrl, existing?.meetingUrl),
+      viewUrl: keep(input.viewUrl, existing?.viewUrl),
+      scope: keep(input.scope, existing?.scope),
+      clientId: keep(input.clientId, existing?.clientId),
       updatedBy: actor,
       updatedAt: now,
     };
@@ -92,6 +104,9 @@ export class MeetingOaSettingsService {
             id: 'default',
             tokenUrl: values.tokenUrl ?? null,
             peopleUrl: values.peopleUrl ?? null,
+            meetingUrl: values.meetingUrl ?? null,
+            viewUrl: values.viewUrl ?? null,
+            scope: values.scope ?? null,
             clientId: values.clientId ?? null,
             sealedClientSecret: values.sealedClientSecret ?? null,
             credentialVersion: values.credentialVersion ?? nextVersion,
@@ -111,21 +126,43 @@ export class MeetingOaSettingsService {
   }
 
   private publicRow(row: MeetingOaSettings | undefined): OaSettingsPublic {
+    const meetingUrl = row?.meetingUrl || this.config.meetingUrl;
+    const tokenUrl = row?.tokenUrl || this.config.tokenUrl;
+    const hasSecret = Boolean(
+      row?.sealedClientSecret || this.config.clientSecret,
+    );
+    const writeContract: OaContractMode =
+      this.adapter.kind === 'test'
+        ? 'test'
+        : meetingUrl && hasSecret && tokenUrl
+          ? 'configured'
+          : 'unavailable';
+    const tokenContract: OaContractMode =
+      this.adapter.kind === 'test'
+        ? 'test'
+        : tokenUrl && hasSecret
+          ? 'configured'
+          : 'unavailable';
     return {
       tokenUrl: row?.tokenUrl ?? null,
       peopleUrl: row?.peopleUrl ?? null,
+      meetingUrl: row?.meetingUrl ?? null,
+      viewUrl: row?.viewUrl ?? null,
+      scope: row?.scope ?? null,
       clientId: row?.clientId ?? null,
-      tokenUrlConfigured: Boolean(row?.tokenUrl || this.config.tokenUrl),
+      tokenUrlConfigured: Boolean(tokenUrl),
       peopleUrlConfigured: Boolean(row?.peopleUrl || this.config.peopleUrl),
+      meetingUrlConfigured: Boolean(meetingUrl),
       clientIdConfigured: Boolean(row?.clientId || this.config.clientId),
-      hasSecret: Boolean(row?.sealedClientSecret || this.config.clientSecret),
-      writeContract: this.adapter.writeContract,
-      tokenContract: this.adapter.kind === 'test' ? 'test' : 'unavailable',
+      hasSecret,
+      writeContract,
+      tokenContract,
       peopleContract: this.adapter.kind === 'test' ? 'test' : 'oaPeople.js',
       testAdapter: this.config.testAdapter === true,
       isolationNote: this.config.testAdapter
         ? '本地测试数据，未调用真实OA'
         : null,
+      liveVerified: false,
       updatedAt: row ? toIso(row.updatedAt) : null,
     };
   }

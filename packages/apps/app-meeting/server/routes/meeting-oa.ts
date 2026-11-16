@@ -39,7 +39,15 @@ import {
   OaSettingsBody,
   OaSettingsSchema,
   OaSyncBody,
+  SupplementalFileContentSchema,
+  SupplementalFileDeletedSchema,
+  SupplementalFileParams,
+  SupplementalFileSchema,
+  SupplementalListMeta,
+  SupplementalUploadBody,
   TotalMeta,
+  TranscriptRepairRunSchema,
+  TranscriptRepairSchema,
 } from './schemas.js';
 
 export const meetingOaRoutes = defineApiRoutes((app: Application) => {
@@ -59,8 +67,13 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
   const paths = [
     '/meetings/:meetingId/content',
     '/meetings/:meetingId/imports',
+    '/meetingOa/transcriptRepairs',
     '/meetings/:meetingId/oa-draft',
     '/meetings/:meetingId/oa-draft/refill',
+    '/meetings/:meetingId/supplementalFiles',
+    '/meetings/:meetingId/supplementalFiles/:fileId',
+    '/meetings/:meetingId/supplementalFiles/:fileId/retry',
+    '/meetings/:meetingId/supplementalFiles/:fileId/content',
     '/meetingOa/identity',
     '/meetingOa/identities',
     '/meetingOa/people',
@@ -93,7 +106,7 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
       operationId: 'getMeetingContent',
       summary: 'Read stored meeting transcripts and minutes',
       description:
-        'Returns local content versions. Live gateway download is not claimed when the published client lacks record-file details.',
+        'Returns local content versions including raw tencentMinutes and tencentDialogues. Projection minutes never replace those originals.',
       responses: {
         200: dataResponse(MeetingContentSchema),
         ...apiErrorResponses,
@@ -130,6 +143,48 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
         ),
       }),
   );
+  router.get(
+    '/meetingOa/transcriptRepairs',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'listMeetingTranscriptRepairs',
+      summary: 'List historical transcript mapping repair records',
+      description:
+        'Repair records are evidence-only. Swaps require provenance and do not overwrite local transcript edits or frozen OA payloads.',
+      responses: {
+        200: listResponse(TranscriptRepairSchema, TotalMeta),
+        ...apiErrorResponses,
+      },
+    }),
+    async (c) => {
+      const data = await createMeetingServices(
+        app,
+        c,
+      ).contents.listTranscriptRepairs();
+      return c.json({ data, meta: { total: data.length } });
+    },
+  );
+  router.post(
+    '/meetingOa/transcriptRepairs',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'runMeetingTranscriptRepairs',
+      summary: 'Repair reversed original/optimized transcript imports',
+      description:
+        'Swaps only rows with import evidence and distinct texts. Local edits and already aligned provenance are skipped and recorded.',
+      responses: {
+        200: dataResponse(TranscriptRepairRunSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    async (c) =>
+      c.json({
+        data: await createMeetingServices(
+          app,
+          c,
+        ).contents.repairLegacyTranscripts(),
+      }),
+  );
   router.post(
     '/meetings/:meetingId/imports',
     describeRoute({
@@ -137,7 +192,7 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
       operationId: 'importMeetingRecording',
       summary: 'Import a stored recording into local content versions',
       description:
-        'Uses a stored recordFileId, never a client download URL. Without a published gateway record-file contract the run fails as IMPORT_CONTRACT_UNAVAILABLE.',
+        'Uses a stored recordFileId, never a client download URL. Live import lists record-file details then downloads the signed URL without forwarding gateway tokens.',
       responses: {
         200: dataResponse(MeetingContentSchema),
         ...apiErrorResponses,
@@ -211,6 +266,130 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
           c.req.valid('json').expectedVersion,
         ),
       }),
+  );
+  router.get(
+    '/meetings/:meetingId/supplementalFiles',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'listMeetingSupplementalFiles',
+      summary: 'List restricted supplemental files for a meeting',
+      responses: {
+        200: listResponse(SupplementalFileSchema, SupplementalListMeta),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('param', MeetingParams),
+    async (c) => {
+      const result = await createMeetingServices(app, c).files.list(
+        c.req.valid('param').meetingId,
+      );
+      return c.json({
+        data: result.data,
+        meta: { total: result.meta.total, totalBytes: result.meta.totalBytes },
+      });
+    },
+  );
+  router.post(
+    '/meetings/:meetingId/supplementalFiles',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'uploadMeetingSupplementalFile',
+      summary: 'Upload a restricted supplemental file for a meeting',
+      description:
+        'Tencent original materials cannot be deleted through this API. Upload is blocked after an OA operation exists.',
+      responses: {
+        200: dataResponse(SupplementalFileSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('param', MeetingParams),
+    apiValidator('json', SupplementalUploadBody),
+    async (c) => {
+      const body = c.req.valid('json');
+      const bytes = Buffer.from(body.contentBase64, 'base64');
+      return c.json({
+        data: await createMeetingServices(app, c).files.upload(
+          c.req.valid('param').meetingId,
+          {
+            fileName: body.fileName,
+            mimeType: body.mimeType,
+            bytes,
+          },
+        ),
+      });
+    },
+  );
+  router.post(
+    '/meetings/:meetingId/supplementalFiles/:fileId/retry',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'retryMeetingSupplementalFile',
+      summary: 'Retry parsing a supplemental file',
+      responses: {
+        200: dataResponse(SupplementalFileSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('param', SupplementalFileParams),
+    async (c) => {
+      const params = c.req.valid('param');
+      return c.json({
+        data: await createMeetingServices(app, c).files.retry(
+          params.meetingId,
+          params.fileId,
+        ),
+      });
+    },
+  );
+  router.get(
+    '/meetings/:meetingId/supplementalFiles/:fileId/content',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'readMeetingSupplementalFile',
+      summary: 'Download a supplemental file the caller can read',
+      responses: {
+        200: dataResponse(SupplementalFileContentSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('param', SupplementalFileParams),
+    async (c) => {
+      const params = c.req.valid('param');
+      const file = await createMeetingServices(app, c).files.readBytes(
+        params.meetingId,
+        params.fileId,
+      );
+      return c.json({
+        data: {
+          fileName: file.fileName,
+          mimeType: file.mimeType,
+          contentBase64: file.bytes.toString('base64'),
+        },
+      });
+    },
+  );
+  router.delete(
+    '/meetings/:meetingId/supplementalFiles/:fileId',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'deleteMeetingSupplementalFile',
+      summary: 'Delete a user supplemental file before an OA operation exists',
+      responses: {
+        200: dataResponse(SupplementalFileDeletedSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('param', SupplementalFileParams),
+    async (c) => {
+      const params = c.req.valid('param');
+      await createMeetingServices(app, c).files.remove(
+        params.meetingId,
+        params.fileId,
+      );
+      return c.json({
+        data: { id: params.fileId, deleted: true as const },
+      });
+    },
   );
   router.get(
     '/meetingOa/identity',

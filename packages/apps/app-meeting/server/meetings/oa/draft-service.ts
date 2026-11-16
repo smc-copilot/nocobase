@@ -16,8 +16,14 @@ import {
   type MeetingOaDraft,
   type MeetingOaDraftTask,
   type MeetingOaOperation,
+  type MeetingPersonSnapshot,
 } from '../resources.js';
-import type { FrozenOaPayload, FrozenOaTask } from './adapter.js';
+import type { FrozenOaPayload, FrozenOaTask, OaPerson } from './adapter.js';
+import {
+  dueAtToOa,
+  isoToBeijingDateTime,
+  startAtToOa,
+} from './beijing-time.js';
 import { MeetingOaError } from './errors.js';
 
 export interface DraftTaskInput {
@@ -25,6 +31,11 @@ export interface DraftTaskInput {
   title: string;
   assigneeEmployeeNo?: string | null;
   assigneeName?: string | null;
+  appointEmployeeNo?: string | null;
+  appointName?: string | null;
+  attentionEmployeeNos?: readonly string[] | null;
+  attentionSnapshots?: readonly OaPerson[] | null;
+  startAt?: string | null;
   dueAt?: string | null;
   description?: string | null;
 }
@@ -36,10 +47,22 @@ export interface DraftPublic {
   startAt: string | null;
   endAt: string | null;
   location: string | null;
+  purpose: string | null;
+  remark: string | null;
+  otherAttendPerson: string | null;
   attendeeEmployeeNos: readonly string[];
+  attendeeSnapshots: readonly OaPerson[];
+  emceeSnapshot: OaPerson | null;
+  hostSnapshot: OaPerson | null;
+  actualAttendSnapshots: readonly OaPerson[];
+  copyToSnapshots: readonly OaPerson[];
+  summaryTitle: string | null;
   summary: string | null;
+  summaryCompleteTime: string | null;
   tasks: readonly DraftTaskPublic[];
   filledFromContentVersion: number | null;
+  frozen: boolean;
+  operationId: string | null;
   writesOa: false;
   isolationAdapter: boolean;
 }
@@ -49,12 +72,52 @@ export interface DraftTaskPublic {
   title: string;
   assigneeEmployeeNo: string | null;
   assigneeName: string | null;
+  appointEmployeeNo: string | null;
+  appointName: string | null;
+  attentionEmployeeNos: readonly string[];
+  attentionSnapshots: readonly OaPerson[];
+  startAt: string | null;
   dueAt: string | null;
   description: string | null;
   fromSourceTodo: boolean;
 }
 
-const DUE_AT = /^\d{4}-\d{2}-\d{2}$/;
+const DUE_AT = /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/;
+
+function asPerson(value: unknown): OaPerson | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  const fd_no = typeof row.fd_no === 'string' ? row.fd_no.trim() : '';
+  const fd_name = typeof row.fd_name === 'string' ? row.fd_name.trim() : '';
+  if (!fd_no) return null;
+  return {
+    fd_no,
+    fd_name: fd_name || fd_no,
+    fd_department:
+      typeof row.fd_department === 'string' ? row.fd_department.trim() : '',
+  };
+}
+
+function peopleOf(value: unknown): OaPerson[] {
+  const rows = parseJsonField<unknown[]>(value) ?? [];
+  if (!Array.isArray(rows)) {
+    const one = asPerson(value);
+    return one ? [one] : [];
+  }
+  return rows.map(asPerson).filter((row): row is OaPerson => row !== null);
+}
+
+function uniqueNos(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const no = value.trim();
+    if (!no || seen.has(no)) continue;
+    seen.add(no);
+    result.push(no);
+  }
+  return result;
+}
 
 export class MeetingOaDraftService {
   constructor(
@@ -79,8 +142,18 @@ export class MeetingOaDraftService {
       startAt?: string | null;
       endAt?: string | null;
       location?: string | null;
+      purpose?: string | null;
+      remark?: string | null;
+      otherAttendPerson?: string | null;
       attendeeEmployeeNos?: readonly string[];
+      attendeeSnapshots?: readonly OaPerson[];
+      emceeSnapshot?: OaPerson | null;
+      hostSnapshot?: OaPerson | null;
+      actualAttendSnapshots?: readonly OaPerson[];
+      copyToSnapshots?: readonly OaPerson[];
+      summaryTitle?: string | null;
       summary?: string | null;
+      summaryCompleteTime?: string | null;
       tasks?: readonly DraftTaskInput[];
     },
   ): Promise<DraftPublic> {
@@ -102,15 +175,62 @@ export class MeetingOaDraftService {
         filter: { id: current.id, version: current.version },
         values: {
           version: current.version + 1,
-          title: input.title ?? current.title,
-          startAt: input.startAt ? new Date(input.startAt) : current.startAt,
-          endAt: input.endAt ? new Date(input.endAt) : current.endAt,
-          location: input.location ?? current.location,
+          title: input.title !== undefined ? input.title : current.title,
+          startAt:
+            input.startAt !== undefined
+              ? input.startAt
+                ? new Date(input.startAt)
+                : null
+              : current.startAt,
+          endAt:
+            input.endAt !== undefined
+              ? input.endAt
+                ? new Date(input.endAt)
+                : null
+              : current.endAt,
+          location:
+            input.location !== undefined ? input.location : current.location,
+          purpose:
+            input.purpose !== undefined ? input.purpose : current.purpose,
+          remark: input.remark !== undefined ? input.remark : current.remark,
+          otherAttendPerson:
+            input.otherAttendPerson !== undefined
+              ? input.otherAttendPerson
+              : current.otherAttendPerson,
           attendeeEmployeeNos:
             input.attendeeEmployeeNos != null
-              ? [...input.attendeeEmployeeNos]
+              ? uniqueNos([...input.attendeeEmployeeNos])
               : current.attendeeEmployeeNos,
-          summary: input.summary ?? current.summary,
+          attendeeSnapshots:
+            input.attendeeSnapshots !== undefined
+              ? [...input.attendeeSnapshots]
+              : current.attendeeSnapshots,
+          emceeSnapshot:
+            input.emceeSnapshot !== undefined
+              ? input.emceeSnapshot
+              : current.emceeSnapshot,
+          hostSnapshot:
+            input.hostSnapshot !== undefined
+              ? input.hostSnapshot
+              : current.hostSnapshot,
+          actualAttendSnapshots:
+            input.actualAttendSnapshots !== undefined
+              ? [...input.actualAttendSnapshots]
+              : current.actualAttendSnapshots,
+          copyToSnapshots:
+            input.copyToSnapshots !== undefined
+              ? [...input.copyToSnapshots]
+              : current.copyToSnapshots,
+          summaryTitle:
+            input.summaryTitle !== undefined
+              ? input.summaryTitle
+              : current.summaryTitle,
+          summary:
+            input.summary !== undefined ? input.summary : current.summary,
+          summaryCompleteTime:
+            input.summaryCompleteTime !== undefined
+              ? input.summaryCompleteTime
+              : current.summaryCompleteTime,
           updatedBy: userId,
           updatedAt: now,
         },
@@ -139,6 +259,13 @@ export class MeetingOaDraftService {
             title: task.title.trim(),
             assigneeEmployeeNo: task.assigneeEmployeeNo?.trim() || null,
             assigneeName: task.assigneeName?.trim() || null,
+            appointEmployeeNo: task.appointEmployeeNo?.trim() || null,
+            appointName: task.appointName?.trim() || null,
+            attentionEmployeeNos: uniqueNos([
+              ...(task.attentionEmployeeNos ?? []),
+            ]),
+            attentionSnapshots: [...(task.attentionSnapshots ?? [])],
+            startAt: task.startAt?.trim() || null,
             dueAt: task.dueAt?.trim() || null,
             description: task.description ?? null,
             updatedAt: now,
@@ -177,11 +304,21 @@ export class MeetingOaDraftService {
       this.authz,
       meetingId,
     );
+    const todos = content.sourceTodos
+      .map((item) => item.title)
+      .filter(Boolean)
+      .join('\n');
     return this.save(meetingId, {
       expectedVersion,
       title: meeting.title,
       startAt: toIso(meeting.startedAt),
       endAt: toIso(meeting.endedAt),
+      location: meeting.meetingCode
+        ? `腾讯会议 ${meeting.meetingCode}`
+        : meeting.title,
+      remark:
+        todos ||
+        (meeting.meetingCode ? `腾讯会议 ${meeting.meetingCode}` : null),
       summary: content.minutes.text,
     });
   }
@@ -194,38 +331,94 @@ export class MeetingOaDraftService {
     const tasks = await this.tasks(draft.id);
     const title = draft.title?.trim();
     const startAt = toIso(draft.startAt);
+    const endAt = toIso(draft.endAt);
+    const location = draft.location?.trim();
+    const purpose = draft.purpose?.trim();
     const summary = draft.summary?.trim();
-    if (!title || !startAt || !summary) {
+    const attendees = uniqueNos(
+      parseJsonField<string[]>(draft.attendeeEmployeeNos) ?? [],
+    );
+    if (!title || !startAt || !endAt || !location || !purpose || !summary) {
       throw new MeetingOaError(
         'OA_DRAFT_INVALID',
-        'OA draft title, start time and summary are required before sync.',
+        'OA draft title, time range, location, purpose and summary are required before sync.',
         'INVALID_ARGUMENT',
       );
     }
-    const frozenTasks: FrozenOaTask[] = tasks.map((task) => {
-      if (!task.assigneeEmployeeNo?.trim() || !task.title.trim()) {
+    if (new Date(endAt).getTime() <= new Date(startAt).getTime()) {
+      throw new MeetingOaError(
+        'OA_DRAFT_INVALID',
+        'Meeting end time must be after start time.',
+        'INVALID_ARGUMENT',
+      );
+    }
+    if (attendees.length < 1 || attendees.length > 200) {
+      throw new MeetingOaError(
+        'OA_DRAFT_INVALID',
+        'At least one attendee employee number is required.',
+        'INVALID_ARGUMENT',
+      );
+    }
+    const completeTasks = tasks.filter(
+      (task) =>
+        task.title.trim() &&
+        task.assigneeEmployeeNo?.trim() &&
+        task.dueAt?.trim(),
+    );
+    if (completeTasks.length < 1) {
+      throw new MeetingOaError(
+        'OA_DRAFT_INVALID',
+        'At least one complete OA task is required before sync.',
+        'INVALID_ARGUMENT',
+      );
+    }
+    const frozenTasks: FrozenOaTask[] = completeTasks.map((task) => {
+      const dueAt = dueAtToOa(task.dueAt);
+      if (!dueAt) {
         throw new MeetingOaError(
           'OA_DRAFT_INVALID',
-          'Each assigned OA task needs a title and employee number.',
+          'Each assigned OA task needs a due date.',
           'INVALID_ARGUMENT',
         );
       }
-      if (task.dueAt && !DUE_AT.test(task.dueAt)) {
+      const start = startAtToOa(task.startAt);
+      if (start && start >= dueAt) {
         throw new MeetingOaError(
           'OA_DRAFT_INVALID',
-          'Task due dates must be YYYY-MM-DD.',
+          'Task start must be earlier than due date.',
           'INVALID_ARGUMENT',
         );
       }
       return {
         clientTaskId: task.clientTaskId,
         title: task.title,
-        assigneeEmployeeNo: task.assigneeEmployeeNo,
+        assigneeEmployeeNo: task.assigneeEmployeeNo as string,
         assigneeName: task.assigneeName,
-        dueAt: task.dueAt,
+        appointEmployeeNo: task.appointEmployeeNo,
+        appointName: task.appointName,
+        attentionEmployeeNos: uniqueNos(
+          parseJsonField<string[]>(task.attentionEmployeeNos) ?? [],
+        ),
+        startAt: start,
+        dueAt,
         description: task.description,
       };
     });
+    let summaryCompleteTime = draft.summaryCompleteTime?.trim() || '';
+    if (!summaryCompleteTime) {
+      summaryCompleteTime = isoToBeijingDateTime(new Date().toISOString());
+      await this.connection
+        .repository<MeetingOaDraft>(MEETING_OA_DRAFTS)
+        .updateOne({
+          filter: { id: draft.id },
+          values: { summaryCompleteTime, updatedAt: new Date() },
+        });
+      draft.summaryCompleteTime = summaryCompleteTime;
+    }
+    const actual = peopleOf(draft.actualAttendSnapshots);
+    const copies = peopleOf(draft.copyToSnapshots);
+    const emcee = asPerson(draft.emceeSnapshot);
+    const host = asPerson(draft.hostSnapshot);
     return {
       draft,
       payload: {
@@ -235,12 +428,22 @@ export class MeetingOaDraftService {
         meeting: {
           title,
           startAt,
-          endAt: toIso(draft.endAt),
-          location: draft.location,
-          attendeeEmployeeNos:
-            parseJsonField<string[]>(draft.attendeeEmployeeNos) ?? [],
+          endAt,
+          location,
+          purpose,
+          remark: draft.remark?.trim() ?? '',
+          attendeeEmployeeNos: attendees,
+          attendeeSnapshots: peopleOf(draft.attendeeSnapshots),
+          emceeEmployeeNo: emcee?.fd_no ?? null,
+          hostEmployeeNo: host?.fd_no ?? null,
+          otherAttendPerson: draft.otherAttendPerson?.trim() || null,
         },
+        summaryTitle: draft.summaryTitle?.trim() || `${title}-会议纪要`,
         summary,
+        summaryCompleteTime,
+        actualAttendEmployeeNos:
+          actual.length > 0 ? actual.map((row) => row.fd_no) : attendees,
+        copyToEmployeeNos: copies.map((row) => row.fd_no),
         tasks: frozenTasks,
       },
     };
@@ -280,10 +483,10 @@ export class MeetingOaDraftService {
         'INVALID_ARGUMENT',
       );
     }
-    if (task.dueAt && !DUE_AT.test(task.dueAt)) {
+    if (task.dueAt && !DUE_AT.test(task.dueAt.trim())) {
       throw new MeetingOaError(
         'OA_DRAFT_INVALID',
-        'Task due dates must be YYYY-MM-DD.',
+        'Task due dates must be YYYY-MM-DD or a datetime.',
         'INVALID_ARGUMENT',
       );
     }
@@ -302,6 +505,10 @@ export class MeetingOaDraftService {
     const content = await this.contents.get(meetingId);
     const now = new Date();
     const id = randomUUID();
+    const todos = content.sourceTodos
+      .map((item) => item.title)
+      .filter(Boolean)
+      .join('\n');
     await this.connection
       .repository<MeetingOaDraft>(MEETING_OA_DRAFTS)
       .createOne({
@@ -312,9 +519,21 @@ export class MeetingOaDraftService {
           title: meeting.title,
           startAt: meeting.startedAt,
           endAt: meeting.endedAt,
-          location: null,
+          location: meeting.meetingCode
+            ? `腾讯会议 ${meeting.meetingCode}`
+            : null,
+          purpose: null,
+          remark: todos || null,
+          otherAttendPerson: null,
           attendeeEmployeeNos: [],
+          attendeeSnapshots: [],
+          emceeSnapshot: null,
+          hostSnapshot: null,
+          actualAttendSnapshots: [],
+          copyToSnapshots: [],
+          summaryTitle: meeting.title ? `${meeting.title}-会议纪要` : null,
           summary: content.minutes.text || null,
+          summaryCompleteTime: null,
           filledFromContentVersion: content.contentVersion,
           updatedBy: requireUser(this.userId),
           createdAt: now,
@@ -337,6 +556,9 @@ export class MeetingOaDraftService {
 
   private async publicDraft(row: MeetingOaDraft): Promise<DraftPublic> {
     const tasks = await this.tasks(row.id);
+    const operation = await this.connection
+      .repository<MeetingOaOperation>(MEETING_OA_OPERATIONS)
+      .findOne({ filter: { meetingId: row.meetingId } });
     return {
       meetingId: row.meetingId,
       version: row.version,
@@ -344,21 +566,42 @@ export class MeetingOaDraftService {
       startAt: toIso(row.startAt),
       endAt: toIso(row.endAt),
       location: row.location,
+      purpose: row.purpose ?? null,
+      remark: row.remark ?? null,
+      otherAttendPerson: row.otherAttendPerson ?? null,
       attendeeEmployeeNos:
         parseJsonField<string[]>(row.attendeeEmployeeNos) ?? [],
+      attendeeSnapshots: peopleOf(row.attendeeSnapshots),
+      emceeSnapshot: asPerson(row.emceeSnapshot),
+      hostSnapshot: asPerson(row.hostSnapshot),
+      actualAttendSnapshots: peopleOf(row.actualAttendSnapshots),
+      copyToSnapshots: peopleOf(row.copyToSnapshots),
+      summaryTitle: row.summaryTitle ?? null,
       summary: row.summary,
+      summaryCompleteTime: row.summaryCompleteTime ?? null,
       tasks: tasks.map((task) => ({
         clientTaskId: task.clientTaskId,
         title: task.title,
         assigneeEmployeeNo: task.assigneeEmployeeNo,
         assigneeName: task.assigneeName,
+        appointEmployeeNo: task.appointEmployeeNo ?? null,
+        appointName: task.appointName ?? null,
+        attentionEmployeeNos: uniqueNos(
+          parseJsonField<string[]>(task.attentionEmployeeNos) ?? [],
+        ),
+        attentionSnapshots: peopleOf(task.attentionSnapshots),
+        startAt: task.startAt ?? null,
         dueAt: task.dueAt,
         description: task.description,
         fromSourceTodo: task.fromSourceTodo,
       })),
       filledFromContentVersion: row.filledFromContentVersion,
+      frozen: Boolean(operation),
+      operationId: operation?.id ?? null,
       writesOa: false,
       isolationAdapter: this.isolationAdapter,
     };
   }
 }
+
+export type { MeetingPersonSnapshot };

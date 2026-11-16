@@ -4,11 +4,15 @@ import type { Application } from '@nocobase/app-server/application';
 import { secretsServiceToken } from '@nocobase/app-server/secrets';
 import type { MeetingOaConfig } from '../config/meeting-oa.js';
 import { createHttpMeetingOaAdapter } from '../meetings/oa/http-adapter.js';
-import { createMeetingOaSecretsStores } from '../meetings/oa/secrets.js';
+import {
+  createMeetingOaSecretsStores,
+  oaSettingsAad,
+} from '../meetings/oa/secrets.js';
 import { TestMeetingOaAdapter } from '../meetings/oa/test-adapter.js';
 import { meetingOaAdapterToken } from '../meetings/oa/token.js';
 import {
   MEETING_OA_SETTINGS,
+  OA_SECRET_PURPOSE,
   type MeetingOaSettings,
 } from '../meetings/resources.js';
 
@@ -25,18 +29,47 @@ export default class MeetingOaProvider extends ServiceProvider<Application> {
         : createHttpMeetingOaAdapter({
             config,
             resolvePeopleUrl: async () => {
-              if (!this.app.container.has(databaseManagerToken)) {
-                return config.peopleUrl;
-              }
-              const row = await this.app.container
-                .resolve(databaseManagerToken)
-                .connection()
-                .repository<MeetingOaSettings>(MEETING_OA_SETTINGS)
-                .findOne({ filter: { id: 'default' } });
+              const row = await this.settingsRow();
               return row?.peopleUrl ?? config.peopleUrl;
+            },
+            resolveCredentials: async () => {
+              const row = await this.settingsRow();
+              let clientSecret = config.clientSecret;
+              if (
+                row?.sealedClientSecret &&
+                this.app.container.has(secretsServiceToken)
+              ) {
+                try {
+                  clientSecret = this.app.container
+                    .resolve(secretsServiceToken)
+                    .open(row.sealedClientSecret, {
+                      purpose: OA_SECRET_PURPOSE,
+                      aad: oaSettingsAad(row),
+                    });
+                } catch {
+                  clientSecret = config.clientSecret;
+                }
+              }
+              return {
+                tokenUrl: row?.tokenUrl ?? config.tokenUrl,
+                meetingUrl: row?.meetingUrl ?? config.meetingUrl,
+                peopleUrl: row?.peopleUrl ?? config.peopleUrl,
+                clientId: row?.clientId ?? config.clientId,
+                clientSecret,
+                scope: row?.scope ?? config.scope,
+              };
             },
           }),
     );
+  }
+
+  private async settingsRow(): Promise<MeetingOaSettings | undefined> {
+    if (!this.app.container.has(databaseManagerToken)) return undefined;
+    return this.app.container
+      .resolve(databaseManagerToken)
+      .connection()
+      .repository<MeetingOaSettings>(MEETING_OA_SETTINGS)
+      .findOne({ filter: { id: 'default' } });
   }
 
   public override async boot(): Promise<void> {

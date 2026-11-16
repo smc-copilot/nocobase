@@ -109,8 +109,25 @@ export default function MeetingOperationPage(): ReactElement {
             <dt className='text-muted-foreground'>
               {t('meetingOa.fields.status')}
             </dt>
-            <dd>{row.status}</dd>
+            <dd>
+              {row.status === 'succeeded'
+                ? row.status
+                : row.steps.some(
+                      (step) =>
+                        step.stepKey === 'createMeeting' &&
+                        step.status === 'succeeded',
+                    )
+                  ? t('meetingOa.meetingCreated')
+                  : row.status}
+            </dd>
           </div>
+          {row.status !== 'succeeded' &&
+          row.steps.some(
+            (step) =>
+              step.stepKey === 'createMeeting' && step.status === 'succeeded',
+          ) ? (
+            <p className='text-sm'>{t('meetingOa.notFullyComplete')}</p>
+          ) : null}
           <div>
             <dt className='text-muted-foreground'>
               {t('meetingOa.fields.requestId')}
@@ -132,7 +149,15 @@ export default function MeetingOperationPage(): ReactElement {
                 {row.steps.map((step) => (
                   <li key={step.stepKey}>
                     {step.stepKey}: {step.status}
-                    {step.externalId ? ` · ${step.externalId}` : ''}
+                    {step.externalId
+                      ? ` · ${
+                          step.stepKey === 'uploadSummary'
+                            ? t('meetingOa.externalSummaryId')
+                            : step.stepKey === 'createMeeting'
+                              ? t('meetingOa.externalMeetingId')
+                              : ''
+                        } ${step.externalId}`
+                      : ''}
                     {step.errorCode ? ` · ${step.errorCode}` : ''}
                   </li>
                 ))}
