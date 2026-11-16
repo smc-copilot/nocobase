@@ -629,3 +629,79 @@ test('OAuth complete can retry after listConnections fails', async ({
   )) as { data: { status: string } };
   expect(retried.data.status).toBe('active');
 });
+
+test('failed complete does not block a new bind', async ({
+  app,
+  testApp,
+  connection,
+}) => {
+  const alice = await createUser(testApp, 'alice');
+  await grantOperator(testApp, alice.user.id);
+  const gateway = adapter(app);
+  const started = (await expectOk(
+    await alice.fetch('/meetingGateway/bindings/start', write({})),
+  )) as { data: { state: string } };
+  gateway.listConnectionsError = new MeetingGatewayError(
+    'UPSTREAM_CONTRACT_ERROR',
+    'Isolation listConnections failure.',
+    'UNAVAILABLE',
+  );
+  expect(
+    (
+      await alice.fetch(
+        '/meetingGateway/bindings/complete',
+        write({ state: started.data.state }),
+      )
+    ).status,
+  ).toBe(503);
+  gateway.listConnectionsError = undefined;
+  const next = (await expectOk(
+    await alice.fetch('/meetingGateway/bindings/start', write({})),
+  )) as { data: { state: string } };
+  expect(next.data.state).not.toBe(started.data.state);
+  const abandoned = await connection
+    .repository('meetingOauthStates')
+    .findOne({ filter: { id: started.data.state } });
+  expect((abandoned as { consumedAt?: Date | null }).consumedAt).toBeTruthy();
+  const replay = await alice.fetch(
+    '/meetingGateway/bindings/complete',
+    write({ state: started.data.state }),
+  );
+  expect(replay.status).toBe(400);
+  expect(await replay.json()).toMatchObject({
+    error: { reason: 'OAUTH_STATE_REPLAYED' },
+  });
+  const bound = (await expectOk(
+    await alice.fetch(
+      '/meetingGateway/bindings/complete',
+      write({ state: next.data.state }),
+    ),
+  )) as { data: { status: string } };
+  expect(bound.data.status).toBe('active');
+});
+
+test('complete keeps a listing that outlives the OAuth TTL', async ({
+  app,
+  testApp,
+  connection,
+}) => {
+  const alice = await createUser(testApp, 'alice');
+  await grantOperator(testApp, alice.user.id);
+  const gateway = adapter(app);
+  const started = (await expectOk(
+    await alice.fetch('/meetingGateway/bindings/start', write({})),
+  )) as { data: { state: string } };
+  gateway.listConnectionsHook = async () => {
+    await connection.repository('meetingOauthStates').updateOne({
+      filter: { id: started.data.state },
+      values: { expiresAt: new Date(Date.now() - 1000) },
+    });
+  };
+  const bound = (await expectOk(
+    await alice.fetch(
+      '/meetingGateway/bindings/complete',
+      write({ state: started.data.state }),
+    ),
+  )) as { data: { status: string } };
+  expect(bound.data.status).toBe('active');
+});

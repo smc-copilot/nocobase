@@ -126,10 +126,6 @@ export class MeetingGatewayService {
     );
   }
 
-  private states() {
-    return this.connection.repository<MeetingOauthState>(MEETING_OAUTH_STATES);
-  }
-
   private async ownBinding(): Promise<MeetingGatewayBinding | undefined> {
     const userId = requireUser(this.userId);
     const runtime = await this.resolveRuntime();
@@ -240,24 +236,6 @@ export class MeetingGatewayService {
         'FAILED_PRECONDITION',
       );
     }
-    const pending = (
-      await this.states().findMany({
-        filter: { userId },
-      })
-    ).find((item) => !item.consumedAt);
-    if (pending) {
-      if (new Date(pending.expiresAt).getTime() > Date.now()) {
-        throw new MeetingGatewayError(
-          'OAUTH_ALREADY_PENDING',
-          'An authorization attempt is already pending for this user.',
-          'ALREADY_EXISTS',
-        );
-      }
-      await this.states().updateOne({
-        filter: { id: pending.id },
-        values: { consumedAt: new Date() },
-      });
-    }
     const accessToken = this.accessTokenForStart();
     const stateId = randomUUID();
     const ttl = Math.min(
@@ -287,16 +265,27 @@ export class MeetingGatewayService {
       );
     }
     const now = new Date();
-    await this.states().createOne({
-      values: {
-        id: stateId,
-        userId,
-        expiresAt,
-        transactionId: started.transactionId,
-        sealedAccessToken: sealed,
-        returnTo: returnTo.toString(),
-        createdAt: now,
-      },
+    await this.connection.transaction(async (trx) => {
+      const states = trx.repository<MeetingOauthState>(MEETING_OAUTH_STATES);
+      const pending = await states.findMany({ filter: { userId } });
+      for (const item of pending) {
+        if (item.consumedAt) continue;
+        await states.updateOne({
+          filter: { id: item.id },
+          values: { consumedAt: now },
+        });
+      }
+      await states.createOne({
+        values: {
+          id: stateId,
+          userId,
+          expiresAt,
+          transactionId: started.transactionId,
+          sealedAccessToken: sealed,
+          returnTo: returnTo.toString(),
+          createdAt: now,
+        },
+      });
     });
     return {
       authorizationUrl: started.authorizationUrl,
@@ -321,12 +310,18 @@ export class MeetingGatewayService {
     const userId = requireUser(this.userId);
     const runtime = await this.resolveRuntime();
     const accessToken = await this.connection.transaction(async (trx) =>
-      this.openPendingOauthToken(trx, state, userId, { consume: false }),
+      this.openPendingOauthToken(trx, state, userId, {
+        consume: false,
+        expire: true,
+      }),
     );
     const connections = await this.adapter.listConnections({ accessToken });
     const owned = this.allowedConnections(connections, runtime);
     return this.connection.transaction(async (trx) => {
-      await this.openPendingOauthToken(trx, state, userId, { consume: true });
+      await this.openPendingOauthToken(trx, state, userId, {
+        consume: true,
+        expire: false,
+      });
       const now = new Date();
       const bindings = trx.repository<MeetingGatewayBinding>(
         MEETING_GATEWAY_BINDINGS,
@@ -492,7 +487,7 @@ export class MeetingGatewayService {
     connection: DatabaseConnection,
     state: string,
     userId: string,
-    options: { consume: boolean },
+    options: { consume: boolean; expire: boolean },
   ): Promise<string> {
     const states =
       connection.repository<MeetingOauthState>(MEETING_OAUTH_STATES);
@@ -513,7 +508,7 @@ export class MeetingGatewayService {
         'FAILED_PRECONDITION',
       );
     }
-    if (new Date(row.expiresAt).getTime() <= Date.now()) {
+    if (options.expire && new Date(row.expiresAt).getTime() <= Date.now()) {
       await states.updateOne({
         filter: buildFilter((filter) =>
           filter.and([
