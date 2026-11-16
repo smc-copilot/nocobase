@@ -323,8 +323,15 @@ export function createHttpMeetingGatewayAdapter(options: {
         accessToken: input.accessToken,
       });
       const artifacts: GatewayContentArtifact[] = [];
+      let failed = 0;
       for (const item of preferredDownloadArtifacts(details)) {
-        const url = assertDownloadUrl(item.url);
+        let url: URL;
+        try {
+          url = assertDownloadUrl(item.url);
+        } catch {
+          failed += 1;
+          continue;
+        }
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         let response: Response;
@@ -335,28 +342,39 @@ export function createHttpMeetingGatewayAdapter(options: {
             signal: controller.signal,
           });
         } catch {
+          failed += 1;
           continue;
         } finally {
           clearTimeout(timeoutId);
         }
-        if (!response.ok) continue;
+        if (!response.ok) {
+          failed += 1;
+          continue;
+        }
         if (response.url) {
           try {
             assertDownloadUrl(response.url);
           } catch {
+            failed += 1;
             continue;
           }
         }
         const length = Number(response.headers.get('content-length') ?? '0');
-        if (length > RECORDING_IMPORT_MAX_BYTES) continue;
+        if (length > RECORDING_IMPORT_MAX_BYTES) {
+          failed += 1;
+          continue;
+        }
         const buffer = Buffer.from(await response.arrayBuffer());
-        if (buffer.byteLength > RECORDING_IMPORT_MAX_BYTES) continue;
+        if (buffer.byteLength > RECORDING_IMPORT_MAX_BYTES) {
+          failed += 1;
+          continue;
+        }
         artifacts.push(artifactsFromText(item.group, buffer.toString('utf8')));
       }
-      if (artifacts.length === 0) {
+      if (failed > 0 || artifacts.length === 0) {
         throw new MeetingGatewayError(
           'SOURCE_NOT_IMPORTABLE',
-          'No importable recording text was downloaded.',
+          'No complete importable recording text was downloaded.',
           'FAILED_PRECONDITION',
         );
       }

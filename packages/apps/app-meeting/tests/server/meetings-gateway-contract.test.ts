@@ -149,9 +149,11 @@ test('retries only retryable gateway reads', async () => {
   expect(attempts).toBe(3);
 });
 
-test('skips failed recording downloads and does not store error HTML', async () => {
+test('does not persist partial recording text when a listed download fails', async () => {
+  const fetched: string[] = [];
   const fetchImpl = async (input: RequestInfo | URL) => {
     const url = String(input);
+    fetched.push(url);
     if (url.includes('/record-files/rec-1') && !url.includes('myqcloud')) {
       return new Response(
         JSON.stringify({
@@ -159,6 +161,7 @@ test('skips failed recording downloads and does not store error HTML', async () 
           error_code: 0,
           data: {
             meeting_summary: [
+              { download_address: 'https://evil.example/a.txt' },
               {
                 download_address:
                   'https://cos.ap-guangzhou.myqcloud.com/fail.txt',
@@ -185,13 +188,57 @@ test('skips failed recording downloads and does not store error HTML', async () 
     config,
     fetchImpl: fetchImpl as unknown as typeof fetch,
   });
+  await expect(
+    adapter.importRecordingContent!({
+      accessToken: 'mt_x',
+      connectionRef: 'conn-1',
+      recordFileId: 'rec-1',
+    }),
+  ).rejects.toMatchObject({ reason: 'SOURCE_NOT_IMPORTABLE' });
+  expect(fetched.some((url) => url.endsWith('/ok.txt'))).toBe(true);
+  expect(fetched.some((url) => url.includes('evil.example'))).toBe(false);
+});
+
+test('imports txt when a group also lists pdf and does not store error HTML', async () => {
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/record-files/rec-2') && !url.includes('myqcloud')) {
+      return new Response(
+        JSON.stringify({
+          code: 0,
+          error_code: 0,
+          data: {
+            meeting_summary: [
+              {
+                download_address:
+                  'https://cos.ap-guangzhou.myqcloud.com/skip.pdf',
+                file_type: 'pdf',
+              },
+              {
+                download_address:
+                  'https://cos.ap-guangzhou.myqcloud.com/ok.txt',
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (url.endsWith('/ok.txt')) {
+      return new Response('ORIGINAL_ONLY isolation dialogue', { status: 200 });
+    }
+    return new Response('<html>denied</html>', { status: 403 });
+  };
+  const adapter = createHttpMeetingGatewayAdapter({
+    config,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
   const imported = await adapter.importRecordingContent!({
     accessToken: 'mt_x',
     connectionRef: 'conn-1',
-    recordFileId: 'rec-1',
+    recordFileId: 'rec-2',
   });
   expect(imported.map((item) => item.text)).toEqual([
     'ORIGINAL_ONLY isolation dialogue',
   ]);
-  expect(imported.some((item) => item.text.includes('denied'))).toBe(false);
 });
