@@ -89,13 +89,12 @@ export default function MeetingDetailPage(): ReactElement {
         <BackButton />
         <PageHeader
           title={row?.title?.trim() || t('meetings.untitled')}
-          description={t('meetings.detailDescription')}
+          description={
+            row?.meetingCode
+              ? t('meetings.meetingCodeLabel', { code: row.meetingCode })
+              : t('meetings.detailDescription')
+          }
         />
-        {row?.meetingCode ? (
-          <p className='text-sm text-muted-foreground'>
-            {t('meetings.meetingCodeLabel', { code: row.meetingCode })}
-          </p>
-        ) : null}
         {meeting.error ? (
           <Alert variant='destructive'>
             <AlertDescription>{t('meetings.unavailable')}</AlertDescription>

@@ -73,3 +73,34 @@ export function dateInputToDue(value: string): string | null {
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   return beijingWallToIso(trimmed);
 }
+
+export function parseWallDate(value: string): Date | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (!match) return undefined;
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+export function parseWallTime(value: string): string {
+  const match = /[T ](\d{2}:\d{2})/.exec(value.trim());
+  return match?.[1] ?? '';
+}
+
+export function formatWallDate(date: Date | undefined): string {
+  if (!date || Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export function formatWallDateTime(
+  date: Date | undefined,
+  time: string,
+): string {
+  const day = formatWallDate(date);
+  if (!day) return '';
+  const clock = /^\d{2}:\d{2}$/.test(time) ? time : '00:00';
+  return `${day}T${clock}`;
+}

@@ -1,15 +1,17 @@
-import { Badge } from '#components/ui/badge';
-import { Button } from '#components/ui/button';
-import { Input } from '#components/ui/input';
-import { useTranslation } from '@nocobase/i18n/client';
 import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactElement,
-} from 'react';
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxValue,
+  useComboboxAnchor,
+} from '#components/ui/combobox';
+import { useTranslation } from '@nocobase/i18n/client';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 
 export interface OaPersonChip {
   fd_no: string;
@@ -33,16 +35,14 @@ export function PersonChips({
   readonly onSearch: (query: string) => Promise<OaPersonChip[]>;
 }): ReactElement {
   const { t } = useTranslation();
-  const listId = useId();
+  const anchor = useComboboxAnchor();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<OaPersonChip[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const generationRef = useRef(0);
-  const selected = new Set(value.map((row) => row.fd_no));
-  const singleLocked = mode === 'single' && value.length > 0;
   const trimmed = query.trim();
-  const canSearch = !disabled && !singleLocked && trimmed.length >= 2;
+  const canSearch = !disabled && trimmed.length >= 2;
 
   useEffect(() => {
     if (!canSearch) return;
@@ -68,103 +68,86 @@ export function PersonChips({
     return () => window.clearTimeout(timer);
   }, [canSearch, onSearch, trimmed]);
 
-  const add = (person: OaPersonChip) => {
-    if (!person.fd_no.trim() || selected.has(person.fd_no)) return;
-    onChange(mode === 'single' ? [person] : [...value, person]);
-    setQuery('');
-    setResults([]);
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Backspace' && !query && value.length) {
-      onChange(value.slice(0, -1));
+  const peopleByNo = useMemo(() => {
+    const next = new Map<string, OaPersonChip>();
+    for (const person of value) next.set(person.fd_no, person);
+    if (canSearch) {
+      for (const person of results) next.set(person.fd_no, person);
     }
+    return next;
+  }, [canSearch, results, value]);
+  const items = [...peopleByNo.keys()];
+  const selected = value.map((person) => person.fd_no);
+  const labelOf = (item: string): string => {
+    const person = peopleByNo.get(item);
+    if (!person) return item;
+    return person.fd_department
+      ? `${person.fd_name} (${person.fd_no}) ${person.fd_department}`
+      : `${person.fd_name} (${person.fd_no})`;
   };
+  const emptyText = error
+    ? t('meetingOa.peopleErrorKept')
+    : canSearch && loading
+      ? t('meetingOa.peopleLoading')
+      : trimmed.length > 0 && trimmed.length < 2
+        ? t('meetingOa.peopleNeedChars')
+        : t('meetingOa.peopleEmpty');
 
-  const shownResults = canSearch ? results : [];
+  const apply = (nextIds: readonly string[]) => {
+    const next = nextIds
+      .map((id) => peopleByNo.get(id))
+      .filter((person): person is OaPersonChip =>
+        Boolean(person?.fd_no.trim()),
+      );
+    onChange(mode === 'single' ? next.slice(0, 1) : next);
+    setQuery('');
+  };
 
   return (
-    <div className='flex flex-col gap-2'>
-      <div className='flex flex-wrap gap-1'>
-        {value.map((person) => (
-          <Badge
-            key={person.fd_no}
-            variant='secondary'
-            title={`${person.fd_department} / ${person.fd_no}`}
-          >
-            {person.fd_name}
-            {disabled ? null : (
-              <button
-                type='button'
-                className='ml-1'
-                aria-label={t('meetingOa.clearPerson')}
-                onClick={() =>
-                  onChange(value.filter((row) => row.fd_no !== person.fd_no))
-                }
-              >
-                ×
-              </button>
-            )}
-          </Badge>
-        ))}
-      </div>
-      <Input
-        id={id}
-        value={query}
-        disabled={disabled || singleLocked}
-        autoComplete='off'
-        aria-controls={listId}
-        onChange={(event) => setQuery(event.target.value)}
-        onKeyDown={onKeyDown}
-      />
-      {singleLocked ? (
-        <Button
-          type='button'
-          variant='ghost'
-          size='sm'
+    <Combobox
+      autoHighlight
+      multiple={mode === 'multi'}
+      items={items}
+      value={mode === 'multi' ? selected : (selected[0] ?? null)}
+      disabled={disabled}
+      itemToStringLabel={labelOf}
+      inputValue={query}
+      onInputValueChange={setQuery}
+      onValueChange={(next) => {
+        if (mode === 'multi') {
+          apply(Array.isArray(next) ? next : []);
+          return;
+        }
+        apply(next ? [String(next)] : []);
+      }}
+    >
+      <ComboboxChips ref={anchor} className='min-h-8'>
+        <ComboboxValue>
+          {value.map((person) => (
+            <ComboboxChip key={person.fd_no} showRemove={!disabled}>
+              {person.fd_name}
+            </ComboboxChip>
+          ))}
+        </ComboboxValue>
+        <ComboboxChipsInput
+          id={id}
           disabled={disabled}
-          onClick={() => onChange([])}
-        >
-          {t('meetingOa.clearPerson')}
-        </Button>
-      ) : null}
-      {canSearch && loading ? (
-        <p className='text-sm text-muted-foreground'>
-          {t('meetingOa.peopleLoading')}
-        </p>
-      ) : null}
-      {canSearch && error ? (
-        <p className='text-sm text-destructive'>
-          {t('meetingOa.peopleErrorKept')}
-        </p>
-      ) : null}
-      {!disabled &&
-      !singleLocked &&
-      trimmed.length > 0 &&
-      trimmed.length < 2 ? (
-        <p className='text-sm text-muted-foreground'>
-          {t('meetingOa.peopleNeedChars')}
-        </p>
-      ) : null}
-      {canSearch && !loading && !error && shownResults.length === 0 ? (
-        <p className='text-sm text-muted-foreground'>
-          {t('meetingOa.peopleEmpty')}
-        </p>
-      ) : null}
-      <ul id={listId} className='flex flex-col gap-1'>
-        {shownResults.map((person) => (
-          <li key={person.fd_no}>
-            <button
-              type='button'
-              className='w-full rounded border px-2 py-1 text-left text-sm'
-              disabled={disabled || selected.has(person.fd_no)}
-              onClick={() => add(person)}
-            >
-              {person.fd_name} ({person.fd_no}) {person.fd_department}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
+          aria-label={t('meetingOa.peopleSearch')}
+          placeholder={
+            value.length === 0 ? t('meetingOa.peopleSearch') : undefined
+          }
+        />
+      </ComboboxChips>
+      <ComboboxContent anchor={anchor}>
+        <ComboboxEmpty>{emptyText}</ComboboxEmpty>
+        <ComboboxList>
+          {(item: string) => (
+            <ComboboxItem key={item} value={item}>
+              {labelOf(item)}
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   );
 }

@@ -1,10 +1,20 @@
 import { Alert, AlertDescription } from '#components/ui/alert';
-import { Button } from '#components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+} from '#components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '#components/ui/tabs';
 import { useListData } from '#hooks/use-list-data';
 import { useTranslation } from '@nocobase/i18n/client';
 import { type ReactElement } from 'react';
-import { Link, useParams } from 'react-router';
+import { useParams } from 'react-router';
+import {
+  MeetingEmptyState,
+  MeetingLoading,
+  MeetingUnavailable,
+} from './meeting-feedback.js';
 
 interface Content {
   tencentMinutes?: {
@@ -35,10 +45,10 @@ function SourcePanel({
 }): ReactElement {
   const { t } = useTranslation();
   if (!text.trim()) {
-    return <p className='text-sm text-muted-foreground'>{t(emptyKey)}</p>;
+    return <MeetingEmptyState title={t(emptyKey)} />;
   }
   return (
-    <pre className='max-h-[min(70vh,36rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg border bg-muted/30 p-3 text-sm'>
+    <pre className='max-h-[min(70vh,36rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-muted/30 p-3 text-sm ring-1 ring-foreground/10'>
       {text}
     </pre>
   );
@@ -56,95 +66,82 @@ export default function MeetingSummaryPage(): ReactElement {
   const dialogues = content?.tencentDialogues;
 
   if (contentRequest.error) {
-    return (
-      <div className='flex flex-col gap-3'>
-        <Alert variant='destructive'>
-          <AlertDescription>{t('meetings.unavailable')}</AlertDescription>
-        </Alert>
-        <Button
-          type='button'
-          variant='outline'
-          onClick={() => contentRequest.reload()}
-        >
-          {t('meetings.retry')}
-        </Button>
-        <Link className='text-sm underline' to={`/meetings/${meetingId}/oa`}>
-          {t('meetings.tabs.oa')}
-        </Link>
-      </div>
-    );
+    return <MeetingUnavailable onRetry={() => contentRequest.reload()} />;
   }
 
   if (contentRequest.loading && !content) {
-    return (
-      <p className='text-sm text-muted-foreground'>{t('meetings.loading')}</p>
-    );
+    return <MeetingLoading />;
   }
 
   return (
-    <section className='flex max-w-4xl flex-col gap-6'>
-      <div>
-        <h2 className='text-base font-medium'>{t('meetings.summaryTitle')}</h2>
-        <p className='text-sm text-muted-foreground'>
-          {t('meetings.summaryDescription')}
-        </p>
-        <p className='text-sm text-muted-foreground'>
-          {t('meetings.summaryReadOnly')}
-        </p>
-      </div>
-      <Tabs defaultValue='ai_ds_minutes'>
-        <TabsList
-          aria-label={t('meetings.summaryTitle')}
-          className='h-auto max-w-full flex-wrap justify-start overflow-x-auto'
-        >
-          {MINUTES_TABS.map(([value, label]) => (
-            <TabsTrigger key={value} value={value}>
-              {t(label)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {MINUTES_TABS.map(([value]) => (
-          <TabsContent key={value} value={value}>
-            <SourcePanel
-              text={minutes?.[value] ?? ''}
-              emptyKey='meetings.summaryEmptyMinutes'
-            />
-          </TabsContent>
-        ))}
-      </Tabs>
-      <section className='flex flex-col gap-2'>
-        <h3 className='text-sm font-medium'>
-          {t('meetings.summary.dialogues')}
-        </h3>
-        <Tabs defaultValue='original'>
-          <TabsList
-            aria-label={t('meetings.summary.dialogues')}
-            className='h-auto max-w-full flex-wrap justify-start overflow-x-auto'
-          >
-            <TabsTrigger value='original'>
-              {t('meetings.summary.original')}
-            </TabsTrigger>
-            <TabsTrigger value='optimized'>
-              {t('meetings.summary.optimized')}
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value='original'>
-            <SourcePanel
-              text={dialogues?.original ?? ''}
-              emptyKey='meetings.summaryEmptyDialogue'
-            />
-          </TabsContent>
-          <TabsContent value='optimized'>
-            <SourcePanel
-              text={dialogues?.optimized ?? ''}
-              emptyKey='meetings.summaryEmptyDialogue'
-            />
-          </TabsContent>
-        </Tabs>
-      </section>
-      <Link className='text-sm underline' to={`/meetings/${meetingId}/oa`}>
-        {t('meetings.tabs.oa')}
-      </Link>
-    </section>
+    <div className='flex flex-col gap-6'>
+      <Alert>
+        <AlertDescription>{t('meetings.summaryReadOnly')}</AlertDescription>
+      </Alert>
+      <Card>
+        <CardHeader>
+          <h2 className='font-heading text-base font-medium'>
+            {t('meetings.summaryTitle')}
+          </h2>
+          <CardDescription>{t('meetings.summaryDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue='ai_ds_minutes'>
+            <TabsList
+              aria-label={t('meetings.summaryTitle')}
+              className='h-auto max-w-full flex-wrap justify-start overflow-x-auto'
+            >
+              {MINUTES_TABS.map(([value, label]) => (
+                <TabsTrigger key={value} value={value}>
+                  {t(label)}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            {MINUTES_TABS.map(([value]) => (
+              <TabsContent key={value} value={value} className='pt-4'>
+                <SourcePanel
+                  text={minutes?.[value] ?? ''}
+                  emptyKey='meetings.summaryEmptyMinutes'
+                />
+              </TabsContent>
+            ))}
+          </Tabs>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <h2 className='font-heading text-base font-medium'>
+            {t('meetings.summary.dialogues')}
+          </h2>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue='original'>
+            <TabsList
+              aria-label={t('meetings.summary.dialogues')}
+              className='h-auto max-w-full flex-wrap justify-start overflow-x-auto'
+            >
+              <TabsTrigger value='original'>
+                {t('meetings.summary.original')}
+              </TabsTrigger>
+              <TabsTrigger value='optimized'>
+                {t('meetings.summary.optimized')}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value='original' className='pt-4'>
+              <SourcePanel
+                text={dialogues?.original ?? ''}
+                emptyKey='meetings.summaryEmptyDialogue'
+              />
+            </TabsContent>
+            <TabsContent value='optimized' className='pt-4'>
+              <SourcePanel
+                text={dialogues?.optimized ?? ''}
+                emptyKey='meetings.summaryEmptyDialogue'
+              />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

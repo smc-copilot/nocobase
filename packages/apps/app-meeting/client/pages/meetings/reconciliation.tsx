@@ -1,13 +1,17 @@
 import { ApiClientError, useApiClient, useToaster } from '@nocobase/app-client';
 import { useTranslation } from '@nocobase/i18n/client';
 import { type ReactElement, useState } from 'react';
-import { Link } from 'react-router';
 import { PageContainer } from '#components/page-container';
 import { PageHeader } from '#components/page-header';
+import { RecordLink } from '#components/record-link';
+import { StatusBadge } from '#components/status-badge';
 import { Alert, AlertDescription } from '#components/ui/alert';
 import { Button } from '#components/ui/button';
+import { Card, CardContent, CardFooter, CardHeader } from '#components/ui/card';
+import { Field, FieldLabel } from '#components/ui/field';
 import { Textarea } from '#components/ui/textarea';
 import { useListData } from '#hooks/use-list-data';
+import { MeetingEmptyState, MeetingLoading } from './meeting-feedback.js';
 
 interface Operation {
   id: string;
@@ -15,6 +19,15 @@ interface Operation {
   status: string;
   requestId: string;
   isolationAdapter: boolean;
+}
+
+function statusTone(
+  status: string,
+): 'success' | 'warning' | 'info' | 'neutral' {
+  if (status === 'succeeded') return 'success';
+  if (status === 'failed') return 'warning';
+  if (status === 'unknown' || status === 'partial') return 'info';
+  return 'neutral';
 }
 
 export default function MeetingReconciliationPage(): ReactElement {
@@ -67,26 +80,46 @@ export default function MeetingReconciliationPage(): ReactElement {
             : t('meetingOa.liveWriteBlocked')}
         </AlertDescription>
       </Alert>
-      <Textarea
-        value={evidence}
-        onChange={(event) => setEvidence(event.target.value)}
-        placeholder={t('meetingOa.evidencePlaceholder')}
-      />
-      {rows.length === 0 ? (
-        <p className='text-sm text-muted-foreground'>
-          {t('meetingOa.reconcileEmpty')}
-        </p>
+      <Card>
+        <CardHeader>
+          <h2 className='font-heading text-base font-medium'>
+            {t('meetingOa.evidenceTitle')}
+          </h2>
+        </CardHeader>
+        <CardContent>
+          <Field>
+            <FieldLabel htmlFor='oa-evidence'>
+              {t('meetingOa.evidencePlaceholder')}
+            </FieldLabel>
+            <Textarea
+              id='oa-evidence'
+              value={evidence}
+              onChange={(event) => setEvidence(event.target.value)}
+              placeholder={t('meetingOa.evidencePlaceholder')}
+            />
+          </Field>
+        </CardContent>
+      </Card>
+      {request.loading && !rows.length ? (
+        <MeetingLoading />
+      ) : rows.length === 0 ? (
+        <MeetingEmptyState title={t('meetingOa.reconcileEmpty')} />
       ) : (
-        <ul className='flex max-w-xl flex-col gap-3'>
+        <div className='flex flex-col gap-4'>
           {rows.map((row) => (
-            <li key={row.id} className='rounded-lg border p-3 text-sm'>
-              <p>
-                {row.status} · {row.requestId}
-              </p>
-              <Link to={`/meeting-operations/${row.id}`}>
-                {t('meetingOa.operationTitle')}
-              </Link>
-              <div className='mt-2 flex flex-wrap gap-2'>
+            <Card key={row.id}>
+              <CardHeader className='flex flex-row flex-wrap items-center justify-between gap-2'>
+                <div className='min-w-0'>
+                  <p className='font-medium break-all'>{row.requestId}</p>
+                  <RecordLink to={`/meeting-operations/${row.id}`}>
+                    {t('meetingOa.operationTitle')}
+                  </RecordLink>
+                </div>
+                <StatusBadge tone={statusTone(row.status)}>
+                  {row.status}
+                </StatusBadge>
+              </CardHeader>
+              <CardFooter className='flex flex-wrap gap-2'>
                 <Button
                   type='button'
                   size='sm'
@@ -104,10 +137,10 @@ export default function MeetingReconciliationPage(): ReactElement {
                 >
                   {t('meetingOa.markUnknown')}
                 </Button>
-              </div>
-            </li>
+              </CardFooter>
+            </Card>
           ))}
-        </ul>
+        </div>
       )}
     </PageContainer>
   );

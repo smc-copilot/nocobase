@@ -5,10 +5,19 @@ import { PageContainer } from '#components/page-container';
 import { PageHeader } from '#components/page-header';
 import { Alert, AlertDescription } from '#components/ui/alert';
 import { Button } from '#components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+} from '#components/ui/card';
+import { Field, FieldGroup, FieldLabel } from '#components/ui/field';
 import { Input } from '#components/ui/input';
-import { Label } from '#components/ui/label';
+import { StatusBadge } from '#components/status-badge';
 import { useSettingsData } from './hooks.js';
 import { SettingsError, SettingsLoading } from './shared.js';
+import { MeetingEmptyState } from '../meetings/meeting-feedback.js';
 
 interface Settings {
   tokenUrl: string | null;
@@ -70,23 +79,23 @@ export default function MeetingIntegrationsPage(): ReactElement {
           {row?.isolationNote ?? t('meetingOa.liveWriteBlocked')}
         </AlertDescription>
       </Alert>
-      <p className='text-sm text-muted-foreground'>
-        {t('meetingOa.writeContract', {
-          value: row?.writeContract ?? 'unavailable',
-        })}
-      </p>
-      <p className='text-sm text-muted-foreground'>
-        {t('meetingOa.hasSecret', {
-          value: row?.hasSecret
-            ? t('meetingOa.secretSealed')
-            : t('meetingOa.secretMissing'),
-        })}
-      </p>
-      <p className='text-sm text-muted-foreground'>
-        {t('meetingOa.liveVerified')}
-      </p>
+      <div className='flex flex-wrap gap-2'>
+        <StatusBadge tone='neutral'>{t('meetingOa.liveVerified')}</StatusBadge>
+        <StatusBadge tone={row?.hasSecret ? 'success' : 'warning'}>
+          {t('meetingOa.hasSecret', {
+            value: row?.hasSecret
+              ? t('meetingOa.secretSealed')
+              : t('meetingOa.secretMissing'),
+          })}
+        </StatusBadge>
+        <StatusBadge tone='info'>
+          {t('meetingOa.writeContract', {
+            value: row?.writeContract ?? 'unavailable',
+          })}
+        </StatusBadge>
+      </div>
       <form
-        className='mt-4 flex max-w-xl flex-col gap-3'
+        className='flex flex-col gap-4'
         onSubmit={(event) => {
           event.preventDefault();
           setBusy(true);
@@ -150,58 +159,102 @@ export default function MeetingIntegrationsPage(): ReactElement {
             .finally(() => setBusy(false));
         }}
       >
-        <Label htmlFor='oa-token'>{t('meetingOa.fields.tokenUrl')}</Label>
-        <Input
-          id='oa-token'
-          value={shownTokenUrl}
-          onChange={(event) => setTokenUrl(event.target.value)}
-        />
-        <Label htmlFor='oa-people-url'>{t('meetingOa.fields.peopleUrl')}</Label>
-        <Input
-          id='oa-people-url'
-          value={shownPeopleUrl}
-          onChange={(event) => setPeopleUrl(event.target.value)}
-        />
-        <Label htmlFor='oa-meeting-url'>
-          {t('meetingOa.fields.meetingUrl')}
-        </Label>
-        <Input
-          id='oa-meeting-url'
-          value={shownMeetingUrl}
-          onChange={(event) => setMeetingUrl(event.target.value)}
-        />
-        <Label htmlFor='oa-view-url'>{t('meetingOa.fields.viewUrl')}</Label>
-        <Input
-          id='oa-view-url'
-          value={shownViewUrl}
-          onChange={(event) => setViewUrl(event.target.value)}
-        />
-        <Label htmlFor='oa-scope'>{t('meetingOa.fields.scope')}</Label>
-        <Input
-          id='oa-scope'
-          value={shownScope}
-          onChange={(event) => setScope(event.target.value)}
-        />
-        <Label htmlFor='oa-client'>{t('meetingOa.fields.clientId')}</Label>
-        <Input
-          id='oa-client'
-          value={shownClientId}
-          onChange={(event) => setClientId(event.target.value)}
-        />
-        <Label htmlFor='oa-secret'>{t('meetingOa.fields.clientSecret')}</Label>
-        <Input
-          id='oa-secret'
-          type='password'
-          value={clientSecret}
-          autoComplete='new-password'
-          onChange={(event) => setClientSecret(event.target.value)}
-        />
-        <Button type='submit' disabled={busy}>
-          {t('meetingOa.saveSettings')}
-        </Button>
+        <Card>
+          <CardHeader>
+            <h2 className='font-heading text-base font-medium'>
+              {t('meetingOa.integrationsTitle')}
+            </h2>
+            <CardDescription>
+              {t('meetingOa.integrationsDescription')}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
+                <Field>
+                  <FieldLabel htmlFor='oa-token'>
+                    {t('meetingOa.fields.tokenUrl')}
+                  </FieldLabel>
+                  <Input
+                    id='oa-token'
+                    value={shownTokenUrl}
+                    onChange={(event) => setTokenUrl(event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor='oa-people-url'>
+                    {t('meetingOa.fields.peopleUrl')}
+                  </FieldLabel>
+                  <Input
+                    id='oa-people-url'
+                    value={shownPeopleUrl}
+                    onChange={(event) => setPeopleUrl(event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor='oa-meeting-url'>
+                    {t('meetingOa.fields.meetingUrl')}
+                  </FieldLabel>
+                  <Input
+                    id='oa-meeting-url'
+                    value={shownMeetingUrl}
+                    onChange={(event) => setMeetingUrl(event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor='oa-view-url'>
+                    {t('meetingOa.fields.viewUrl')}
+                  </FieldLabel>
+                  <Input
+                    id='oa-view-url'
+                    value={shownViewUrl}
+                    onChange={(event) => setViewUrl(event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor='oa-scope'>
+                    {t('meetingOa.fields.scope')}
+                  </FieldLabel>
+                  <Input
+                    id='oa-scope'
+                    value={shownScope}
+                    onChange={(event) => setScope(event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor='oa-client'>
+                    {t('meetingOa.fields.clientId')}
+                  </FieldLabel>
+                  <Input
+                    id='oa-client'
+                    value={shownClientId}
+                    onChange={(event) => setClientId(event.target.value)}
+                  />
+                </Field>
+                <Field className='md:col-span-2'>
+                  <FieldLabel htmlFor='oa-secret'>
+                    {t('meetingOa.fields.clientSecret')}
+                  </FieldLabel>
+                  <Input
+                    id='oa-secret'
+                    type='password'
+                    value={clientSecret}
+                    autoComplete='new-password'
+                    onChange={(event) => setClientSecret(event.target.value)}
+                  />
+                </Field>
+              </div>
+            </FieldGroup>
+          </CardContent>
+          <CardFooter>
+            <Button type='submit' disabled={busy}>
+              {t('meetingOa.saveSettings')}
+            </Button>
+          </CardFooter>
+        </Card>
       </form>
       <form
-        className='mt-8 flex max-w-xl flex-col gap-3'
+        className='flex flex-col gap-4'
         onSubmit={(event) => {
           event.preventDefault();
           setBusy(true);
@@ -227,33 +280,72 @@ export default function MeetingIntegrationsPage(): ReactElement {
             .finally(() => setBusy(false));
         }}
       >
-        <h2 className='text-base font-medium'>{t('meetingOa.mappingTitle')}</h2>
-        <p className='text-sm text-muted-foreground'>
-          {t('meetingOa.mappingHint')}
-        </p>
-        <Label htmlFor='oa-map-user'>{t('meetingOa.fields.userId')}</Label>
-        <Input
-          id='oa-map-user'
-          value={mapUserId}
-          onChange={(event) => setMapUserId(event.target.value)}
-        />
-        <Label htmlFor='oa-map-emp'>{t('meetingOa.fields.employeeNo')}</Label>
-        <Input
-          id='oa-map-emp'
-          value={employeeNo}
-          onChange={(event) => setEmployeeNo(event.target.value)}
-        />
-        <Button type='submit' disabled={busy}>
-          {t('meetingOa.saveMap')}
-        </Button>
+        <Card>
+          <CardHeader>
+            <h2 className='font-heading text-base font-medium'>
+              {t('meetingOa.mappingTitle')}
+            </h2>
+            <CardDescription>{t('meetingOa.mappingHint')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
+                <Field>
+                  <FieldLabel htmlFor='oa-map-user'>
+                    {t('meetingOa.fields.userId')}
+                  </FieldLabel>
+                  <Input
+                    id='oa-map-user'
+                    value={mapUserId}
+                    onChange={(event) => setMapUserId(event.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor='oa-map-emp'>
+                    {t('meetingOa.fields.employeeNo')}
+                  </FieldLabel>
+                  <Input
+                    id='oa-map-emp'
+                    value={employeeNo}
+                    onChange={(event) => setEmployeeNo(event.target.value)}
+                  />
+                </Field>
+              </div>
+            </FieldGroup>
+          </CardContent>
+          <CardFooter>
+            <Button type='submit' disabled={busy}>
+              {t('meetingOa.saveMap')}
+            </Button>
+          </CardFooter>
+        </Card>
       </form>
-      <ul className='mt-4 text-sm'>
-        {(maps.data?.data ?? []).map((item) => (
-          <li key={item.userId}>
-            {item.userId} → {item.employeeNo}
-          </li>
-        ))}
-      </ul>
+      {(maps.data?.data ?? []).length ? (
+        <Card>
+          <CardHeader>
+            <h2 className='font-heading text-base font-medium'>
+              {t('meetingOa.mappingTitle')}
+            </h2>
+          </CardHeader>
+          <CardContent>
+            <ul className='flex flex-col gap-2 text-sm'>
+              {(maps.data?.data ?? []).map((item) => (
+                <li
+                  key={item.userId}
+                  className='flex flex-wrap items-center justify-between gap-2 rounded-lg border border-input px-3 py-2'
+                >
+                  <span className='break-all'>{item.userId}</span>
+                  <StatusBadge tone='success' size='sm'>
+                    {item.employeeNo}
+                  </StatusBadge>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : (
+        <MeetingEmptyState title={t('meetingOa.mappingEmpty')} />
+      )}
     </PageContainer>
   );
 }

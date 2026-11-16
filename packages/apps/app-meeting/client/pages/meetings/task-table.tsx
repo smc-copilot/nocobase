@@ -1,3 +1,4 @@
+import { DatePicker } from '#components/date-picker';
 import { Button } from '#components/ui/button';
 import {
   Dialog,
@@ -6,9 +7,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '#components/ui/dialog';
+import { Field, FieldGroup, FieldLabel } from '#components/ui/field';
 import { Input } from '#components/ui/input';
-import { Label } from '#components/ui/label';
-import { Textarea } from '#components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -17,8 +17,11 @@ import {
   TableHeader,
   TableRow,
 } from '#components/ui/table';
+import { Textarea } from '#components/ui/textarea';
 import { useTranslation } from '@nocobase/i18n/client';
+import { PlusIcon, Trash2Icon } from 'lucide-react';
 import { useState, type ReactElement } from 'react';
+import { formatWallDate, parseWallDate } from './oa-time.js';
 import { PersonChips, type OaPersonChip } from './person-chips.js';
 
 export interface DraftTaskRow {
@@ -77,159 +80,171 @@ export function TaskTable({
   };
 
   return (
-    <div className='flex flex-col gap-3'>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('meetingOa.fields.taskIndex')}</TableHead>
-            <TableHead>{t('meetingOa.fields.taskTitle')}</TableHead>
-            <TableHead>{t('meetingOa.fields.taskContent')}</TableHead>
-            <TableHead>{t('meetingOa.fields.assignee')}</TableHead>
-            <TableHead>{t('meetingOa.fields.dueAt')}</TableHead>
-            <TableHead>{t('meetingOa.fields.appoint')}</TableHead>
-            <TableHead>{t('meetingOa.fields.attention')}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tasks.map((task, index) => (
-            <TableRow key={task.clientTaskId}>
-              <TableCell>{index + 1}</TableCell>
-              <TableCell className='min-w-40'>
-                <Input
-                  value={task.title}
-                  disabled={disabled}
-                  className='max-h-20 whitespace-pre-wrap'
-                  onChange={(event) =>
-                    patch(task.clientTaskId, { title: event.target.value })
-                  }
-                />
-              </TableCell>
-              <TableCell className='min-w-40'>
-                <button
-                  type='button'
-                  className='line-clamp-3 max-w-48 text-left text-sm underline'
-                  onClick={() => {
-                    setEditingId(task.clientTaskId);
-                    setDraftContent(task.description ?? '');
-                  }}
-                >
-                  {task.description?.trim() || t('meetings.notProvided')}
-                </button>
-              </TableCell>
-              <TableCell className='min-w-48'>
-                <PersonChips
-                  id={`task-assignee-${task.clientTaskId}`}
-                  mode='single'
-                  disabled={disabled}
-                  value={
-                    personFrom(task.assigneeEmployeeNo, task.assigneeName)
-                      ? [
-                          personFrom(
-                            task.assigneeEmployeeNo,
-                            task.assigneeName,
-                          ) as OaPersonChip,
-                        ]
-                      : []
-                  }
-                  onSearch={onSearch}
-                  onChange={(people) => {
-                    const person = people[0];
-                    patch(task.clientTaskId, {
-                      assigneeEmployeeNo: person?.fd_no ?? null,
-                      assigneeName: person?.fd_name ?? null,
-                    });
-                  }}
-                />
-              </TableCell>
-              <TableCell>
-                <Input
-                  type='date'
-                  disabled={disabled}
-                  value={task.dueAt?.slice(0, 10) ?? ''}
-                  onChange={(event) =>
-                    patch(task.clientTaskId, {
-                      dueAt: event.target.value || null,
-                    })
-                  }
-                />
-              </TableCell>
-              <TableCell className='min-w-48'>
-                <PersonChips
-                  id={`task-appoint-${task.clientTaskId}`}
-                  mode='single'
-                  disabled={disabled}
-                  value={
-                    personFrom(task.appointEmployeeNo, task.appointName)
-                      ? [
-                          personFrom(
-                            task.appointEmployeeNo,
-                            task.appointName,
-                          ) as OaPersonChip,
-                        ]
-                      : []
-                  }
-                  onSearch={onSearch}
-                  onChange={(people) => {
-                    const person = people[0];
-                    patch(task.clientTaskId, {
-                      appointEmployeeNo: person?.fd_no ?? null,
-                      appointName: person?.fd_name ?? null,
-                    });
-                  }}
-                />
-              </TableCell>
-              <TableCell className='min-w-48'>
-                <PersonChips
-                  id={`task-attention-${task.clientTaskId}`}
-                  mode='multi'
-                  disabled={disabled}
-                  value={[...task.attentionSnapshots]}
-                  onSearch={onSearch}
-                  onChange={(people) =>
-                    patch(task.clientTaskId, {
-                      attentionSnapshots: people,
-                      attentionEmployeeNos: people.map((row) => row.fd_no),
-                    })
-                  }
-                />
-                {disabled ? null : (
+    <div className='flex flex-col gap-4'>
+      <div className='overflow-x-auto rounded-xl ring-1 ring-foreground/10'>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('meetingOa.fields.taskIndex')}</TableHead>
+              <TableHead>{t('meetingOa.fields.taskTitle')}</TableHead>
+              <TableHead>{t('meetingOa.fields.taskContent')}</TableHead>
+              <TableHead>{t('meetingOa.fields.assignee')}</TableHead>
+              <TableHead>{t('meetingOa.fields.dueAt')}</TableHead>
+              <TableHead>{t('meetingOa.fields.appoint')}</TableHead>
+              <TableHead>{t('meetingOa.fields.attention')}</TableHead>
+              <TableHead className='w-24'>
+                <span className='sr-only'>{t('meetingOa.deleteTask')}</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {tasks.map((task, index) => (
+              <TableRow key={task.clientTaskId}>
+                <TableCell className='tabular-nums'>{index + 1}</TableCell>
+                <TableCell className='min-w-40'>
+                  <Input
+                    value={task.title}
+                    disabled={disabled}
+                    aria-label={t('meetingOa.fields.taskTitle')}
+                    onChange={(event) =>
+                      patch(task.clientTaskId, { title: event.target.value })
+                    }
+                  />
+                </TableCell>
+                <TableCell className='min-w-40'>
                   <Button
                     type='button'
-                    variant='ghost'
-                    size='sm'
-                    onClick={() =>
-                      onChange(
-                        tasks.filter(
-                          (row) => row.clientTaskId !== task.clientTaskId,
-                        ),
-                      )
-                    }
+                    variant='link'
+                    className='h-auto max-w-56 justify-start px-0 text-left whitespace-normal'
+                    onClick={() => {
+                      setEditingId(task.clientTaskId);
+                      setDraftContent(task.description ?? '');
+                    }}
                   >
-                    {t('meetingOa.deleteTask')}
+                    {task.description?.trim() || t('meetings.notProvided')}
                   </Button>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      <div className='flex flex-col gap-1'>
-        <Label htmlFor='oa-task'>{t('meetingOa.fields.taskTitle')}</Label>
-        <Input
-          id='oa-task'
-          value={taskTitle}
-          disabled={disabled || busy}
-          onChange={(event) => onTaskTitle(event.target.value)}
-        />
-        <Button
-          type='button'
-          variant='outline'
-          disabled={disabled || busy}
-          onClick={onAdd}
-        >
-          {t('meetingOa.addTask')}
-        </Button>
+                </TableCell>
+                <TableCell className='min-w-52'>
+                  <PersonChips
+                    id={`task-assignee-${task.clientTaskId}`}
+                    mode='single'
+                    disabled={disabled}
+                    value={
+                      personFrom(task.assigneeEmployeeNo, task.assigneeName)
+                        ? [
+                            personFrom(
+                              task.assigneeEmployeeNo,
+                              task.assigneeName,
+                            ) as OaPersonChip,
+                          ]
+                        : []
+                    }
+                    onSearch={onSearch}
+                    onChange={(people) => {
+                      const person = people[0];
+                      patch(task.clientTaskId, {
+                        assigneeEmployeeNo: person?.fd_no ?? null,
+                        assigneeName: person?.fd_name ?? null,
+                      });
+                    }}
+                  />
+                </TableCell>
+                <TableCell className='min-w-44'>
+                  <DatePicker
+                    id={`task-due-${task.clientTaskId}`}
+                    value={parseWallDate(task.dueAt ?? '')}
+                    disabled={disabled}
+                    clearable={!disabled}
+                    onChange={(date) =>
+                      patch(task.clientTaskId, {
+                        dueAt: formatWallDate(date) || null,
+                      })
+                    }
+                  />
+                </TableCell>
+                <TableCell className='min-w-52'>
+                  <PersonChips
+                    id={`task-appoint-${task.clientTaskId}`}
+                    mode='single'
+                    disabled={disabled}
+                    value={
+                      personFrom(task.appointEmployeeNo, task.appointName)
+                        ? [
+                            personFrom(
+                              task.appointEmployeeNo,
+                              task.appointName,
+                            ) as OaPersonChip,
+                          ]
+                        : []
+                    }
+                    onSearch={onSearch}
+                    onChange={(people) => {
+                      const person = people[0];
+                      patch(task.clientTaskId, {
+                        appointEmployeeNo: person?.fd_no ?? null,
+                        appointName: person?.fd_name ?? null,
+                      });
+                    }}
+                  />
+                </TableCell>
+                <TableCell className='min-w-52'>
+                  <PersonChips
+                    id={`task-attention-${task.clientTaskId}`}
+                    mode='multi'
+                    disabled={disabled}
+                    value={[...task.attentionSnapshots]}
+                    onSearch={onSearch}
+                    onChange={(people) =>
+                      patch(task.clientTaskId, {
+                        attentionSnapshots: people,
+                        attentionEmployeeNos: people.map((row) => row.fd_no),
+                      })
+                    }
+                  />
+                </TableCell>
+                <TableCell>
+                  {disabled ? null : (
+                    <Button
+                      type='button'
+                      variant='ghost'
+                      size='icon-sm'
+                      aria-label={t('meetingOa.deleteTask')}
+                      onClick={() =>
+                        onChange(
+                          tasks.filter(
+                            (row) => row.clientTaskId !== task.clientTaskId,
+                          ),
+                        )
+                      }
+                    >
+                      <Trash2Icon />
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
+      <FieldGroup className='max-w-xl'>
+        <Field>
+          <FieldLabel htmlFor='oa-task'>
+            {t('meetingOa.fields.taskTitle')}
+          </FieldLabel>
+          <div className='flex flex-col gap-2 sm:flex-row'>
+            <Input
+              id='oa-task'
+              value={taskTitle}
+              disabled={disabled || busy}
+              onChange={(event) => onTaskTitle(event.target.value)}
+            />
+            <Button type='button' disabled={disabled || busy} onClick={onAdd}>
+              <PlusIcon />
+              {t('meetingOa.addTask')}
+            </Button>
+          </div>
+        </Field>
+      </FieldGroup>
       <Dialog
         open={editingId != null}
         onOpenChange={(open) => {

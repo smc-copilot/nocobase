@@ -4,14 +4,15 @@ import { useCan } from '@nocobase/app-plugin-authorization/client';
 import { useTranslation } from '@nocobase/i18n/client';
 import { useMemo, useState, type ReactElement } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
+import { DatePicker } from '#components/date-picker';
 import { DataTable, DataTableColumnHeader } from '#components/data-table';
 import { PageContainer } from '#components/page-container';
 import { PageHeader } from '#components/page-header';
 import { RecordLink } from '#components/record-link';
+import { StatusBadge } from '#components/status-badge';
 import { Alert, AlertDescription } from '#components/ui/alert';
 import { Button } from '#components/ui/button';
-import { Input } from '#components/ui/input';
-import { Label } from '#components/ui/label';
+import { Field, FieldError, FieldLabel } from '#components/ui/field';
 import { ListFeedback } from '#components/list-feedback';
 import { useListData } from '#hooks/use-list-data';
 import { useListLocation } from '#hooks/use-list-location';
@@ -20,6 +21,17 @@ import {
   readTableUrlState,
   useTableUrlState,
 } from '#hooks/use-table-url-state';
+import { SearchIcon } from 'lucide-react';
+import { formatWallDate, parseWallDate } from './oa-time.js';
+
+function fetchTone(
+  status?: string,
+): 'success' | 'warning' | 'info' | 'neutral' {
+  if (status === 'fetched') return 'success';
+  if (status === 'failed') return 'warning';
+  if (status === 'empty') return 'neutral';
+  return 'info';
+}
 
 export interface MeetingRow {
   id: string;
@@ -146,6 +158,36 @@ export default function MeetingsPage(): ReactElement {
             timeStyle: 'short',
           }).format(new Date(row.original.createdAt)),
       },
+      {
+        id: 'participants',
+        header: t('meetings.columns.participants'),
+        enableSorting: false,
+        cell: ({ row }) => (
+          <StatusBadge
+            tone={fetchTone(row.original.participantFetchStatus)}
+            size='sm'
+          >
+            {t(
+              `meetings.fetchStatus.${row.original.participantFetchStatus ?? 'not_provided'}`,
+            )}
+          </StatusBadge>
+        ),
+      },
+      {
+        id: 'recordings',
+        header: t('meetings.columns.recordings'),
+        enableSorting: false,
+        cell: ({ row }) => (
+          <StatusBadge
+            tone={fetchTone(row.original.recordingFetchStatus)}
+            size='sm'
+          >
+            {t(
+              `meetings.fetchStatus.${row.original.recordingFetchStatus ?? 'not_provided'}`,
+            )}
+          </StatusBadge>
+        ),
+      },
     ],
     [i18n.language, t],
   );
@@ -179,46 +221,48 @@ export default function MeetingsPage(): ReactElement {
   return (
     <>
       <PageContainer>
-        <PageHeader title={t('meetings.title')} />
+        <PageHeader
+          title={t('meetings.title')}
+          description={t('meetings.listDescription')}
+        />
         <Alert>
           <AlertDescription>{t('meetings.queryNotConnected')}</AlertDescription>
         </Alert>
         {canQuery ? (
           <form
-            className='flex flex-wrap items-end gap-3'
+            className='flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end'
             onSubmit={(event) => {
               event.preventDefault();
               void runQuery();
             }}
           >
-            <div className='flex flex-col gap-1'>
-              <Label htmlFor='meeting-query-start'>
+            <Field className='sm:max-w-56'>
+              <FieldLabel htmlFor='meeting-query-start'>
                 {t('meetings.queryStart')}
-              </Label>
-              <Input
+              </FieldLabel>
+              <DatePicker
                 id='meeting-query-start'
-                type='date'
-                value={startedAt}
-                onChange={(event) => setStartedAt(event.target.value)}
+                value={parseWallDate(startedAt)}
+                onChange={(date) =>
+                  setStartedAt(formatWallDate(date) || startedAt)
+                }
               />
-            </div>
-            <div className='flex flex-col gap-1'>
-              <Label htmlFor='meeting-query-end'>
+            </Field>
+            <Field className='sm:max-w-56'>
+              <FieldLabel htmlFor='meeting-query-end'>
                 {t('meetings.queryEnd')}
-              </Label>
-              <Input
+              </FieldLabel>
+              <DatePicker
                 id='meeting-query-end'
-                type='date'
-                value={endedAt}
-                onChange={(event) => setEndedAt(event.target.value)}
+                value={parseWallDate(endedAt)}
+                onChange={(date) => setEndedAt(formatWallDate(date) || endedAt)}
               />
-            </div>
+            </Field>
             <Button type='submit' disabled={queryBusy}>
+              <SearchIcon />
               {t('meetings.query')}
             </Button>
-            {queryError ? (
-              <p className='text-sm text-destructive'>{queryError}</p>
-            ) : null}
+            {queryError ? <FieldError>{queryError}</FieldError> : null}
           </form>
         ) : null}
         <ListFeedback

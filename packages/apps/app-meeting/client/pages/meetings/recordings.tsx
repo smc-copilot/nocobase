@@ -1,7 +1,15 @@
+import { DataTable, DataTableColumnHeader } from '#components/data-table';
+import { StatusBadge } from '#components/status-badge';
 import { useListData } from '#hooks/use-list-data';
 import { useTranslation } from '@nocobase/i18n/client';
-import { type ReactElement } from 'react';
+import type { ColumnDef } from '@tanstack/react-table';
+import { useMemo, type ReactElement } from 'react';
 import { useParams } from 'react-router';
+import {
+  MeetingEmptyState,
+  MeetingLoading,
+  MeetingUnavailable,
+} from './meeting-feedback.js';
 
 interface RecordingRow {
   id: string;
@@ -18,39 +26,60 @@ export default function MeetingRecordingsPage(): ReactElement {
     meta: { total: number };
   }>(`meetings/${meetingId}/recordings`, { scopes: ['meetings'] });
   const rows = recordings.data?.data ?? [];
-
-  if (recordings.error) {
-    return (
-      <p className='text-sm text-destructive'>{t('meetings.unavailable')}</p>
-    );
-  }
-  if (recordings.loading && !rows.length) {
-    return (
-      <p className='text-sm text-muted-foreground'>{t('meetings.loading')}</p>
-    );
-  }
-  if (!rows.length) {
-    return (
-      <p className='text-sm text-muted-foreground'>
-        {t('meetings.recordingsEmpty')}
-      </p>
-    );
-  }
-  return (
-    <ul className='flex max-w-xl flex-col gap-2'>
-      {rows.map((row) => (
-        <li key={row.id} className='rounded-lg border p-3'>
-          <p className='font-medium'>
-            {row.available
+  const columns = useMemo<ColumnDef<RecordingRow>[]>(
+    () => [
+      {
+        accessorKey: 'available',
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('meetings.columns.recordings')}
+          />
+        ),
+        cell: ({ row }) => (
+          <StatusBadge tone={row.original.available ? 'success' : 'neutral'}>
+            {row.original.available
               ? t('meetings.recordingAvailable')
               : t('meetings.recordingUnavailable')}
-          </p>
-          <p className='text-sm text-muted-foreground'>
-            {row.format ?? t('meetings.notProvided')}
-            {row.unavailableReason ? ` · ${row.unavailableReason}` : ''}
-          </p>
-        </li>
-      ))}
-    </ul>
+          </StatusBadge>
+        ),
+      },
+      {
+        accessorKey: 'format',
+        header: t('meetings.recordingFormat'),
+        enableSorting: false,
+        cell: ({ row }) => row.original.format ?? t('meetings.notProvided'),
+      },
+      {
+        accessorKey: 'unavailableReason',
+        header: t('meetings.recordingReason'),
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.unavailableReason ?? t('meetings.notProvided'),
+      },
+    ],
+    [t],
+  );
+
+  if (recordings.error) {
+    return <MeetingUnavailable onRetry={() => recordings.reload()} />;
+  }
+  if (recordings.loading && !rows.length) {
+    return <MeetingLoading />;
+  }
+  if (!rows.length) {
+    return <MeetingEmptyState title={t('meetings.recordingsEmpty')} />;
+  }
+  return (
+    <div className='overflow-x-auto'>
+      <DataTable
+        columns={columns}
+        data={rows}
+        getRowId={(row) => row.id}
+        showSelectedCount={false}
+        emptyMessage={t('meetings.recordingsEmpty')}
+        pagination={rows.length > 20}
+      />
+    </div>
   );
 }
