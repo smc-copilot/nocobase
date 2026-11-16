@@ -12,7 +12,12 @@ import {
   CardFooter,
   CardHeader,
 } from '#components/ui/card';
-import { Field, FieldGroup, FieldLabel } from '#components/ui/field';
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from '#components/ui/field';
 import { Input } from '#components/ui/input';
 import { StatusBadge } from '#components/status-badge';
 import { useSettingsData } from './hooks.js';
@@ -34,6 +39,7 @@ interface Settings {
   writeContract: string;
   tokenContract: string;
   peopleContract: string;
+  peopleUrlSource: 'settings' | 'env' | 'test' | 'none';
   testAdapter: boolean;
   isolationNote: string | null;
   liveVerified: false;
@@ -190,6 +196,18 @@ export default function MeetingIntegrationsPage(): ReactElement {
                     value={shownPeopleUrl}
                     onChange={(event) => setPeopleUrl(event.target.value)}
                   />
+                  <FieldDescription>
+                    {t('meetingOa.peopleUrlHint')}
+                  </FieldDescription>
+                  <FieldDescription>
+                    {row?.peopleUrlSource === 'settings'
+                      ? t('meetingOa.peopleUrlSourceSettings')
+                      : row?.peopleUrlSource === 'env'
+                        ? t('meetingOa.peopleUrlSourceEnv')
+                        : row?.peopleUrlSource === 'test'
+                          ? t('meetingOa.peopleUrlSourceTest')
+                          : t('meetingOa.peopleUrlSourceNone')}
+                  </FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor='oa-meeting-url'>

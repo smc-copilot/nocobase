@@ -350,6 +350,7 @@ export const OaSettingsSchema = z
     writeContract: z.enum(['unavailable', 'test', 'configured']),
     tokenContract: z.enum(['unavailable', 'test', 'configured']),
     peopleContract: z.enum(['oaPeople.js', 'test']),
+    peopleUrlSource: z.enum(['settings', 'env', 'test', 'none']),
     testAdapter: z.boolean(),
     isolationNote: z.string().nullable(),
     liveVerified: z.literal(false),

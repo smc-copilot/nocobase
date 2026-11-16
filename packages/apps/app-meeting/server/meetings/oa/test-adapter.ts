@@ -17,7 +17,18 @@ export class TestMeetingOaAdapter implements MeetingOaAdapter {
   readonly kind = 'test' as const;
   readonly writeContract = 'test' as const;
   readonly tokenContract = 'test' as const;
-  people: OaPerson[] = [];
+  people: OaPerson[] = [
+    {
+      fd_no: 'E1001',
+      fd_name: 'Alice',
+      fd_department: 'Meeting',
+    },
+    {
+      fd_no: 'E2002',
+      fd_name: 'Wang Wu',
+      fd_department: 'Ops',
+    },
+  ];
   tokenTtlMs = 60_000;
   createMeetingError: MeetingOaError | undefined;
   uploadSummaryError: MeetingOaError | undefined;
@@ -40,6 +51,11 @@ export class TestMeetingOaAdapter implements MeetingOaAdapter {
         fd_no: 'E1001',
         fd_name: 'Alice',
         fd_department: 'Meeting',
+      },
+      {
+        fd_no: 'E2002',
+        fd_name: 'Wang Wu',
+        fd_department: 'Ops',
       },
     ];
     this.tokenTtlMs = 60_000;

@@ -26,6 +26,7 @@ export interface OaSettingsPublic {
   writeContract: OaContractMode;
   tokenContract: OaContractMode;
   peopleContract: 'oaPeople.js' | 'test';
+  peopleUrlSource: 'settings' | 'env' | 'test' | 'none';
   testAdapter: boolean;
   isolationNote: string | null;
   liveVerified: false;
@@ -37,9 +38,20 @@ function keep(
   existing: string | null | undefined,
 ): string | null {
   if (incoming === undefined) return existing ?? null;
-  const trimmed = incoming?.trim() ?? '';
-  if (!trimmed) return existing ?? null;
-  return trimmed;
+  if (incoming === null) return null;
+  const trimmed = incoming.trim();
+  return trimmed || null;
+}
+
+function peopleUrlSource(
+  row: MeetingOaSettings | undefined,
+  config: MeetingOaConfig,
+  adapterKind: string,
+): 'settings' | 'env' | 'test' | 'none' {
+  if (adapterKind === 'test') return 'test';
+  if (row?.peopleUrl?.trim()) return 'settings';
+  if (config.peopleUrl?.trim()) return 'env';
+  return 'none';
 }
 
 export class MeetingOaSettingsService {
@@ -158,6 +170,7 @@ export class MeetingOaSettingsService {
       writeContract,
       tokenContract,
       peopleContract: this.adapter.kind === 'test' ? 'test' : 'oaPeople.js',
+      peopleUrlSource: peopleUrlSource(row, this.config, this.adapter.kind),
       testAdapter: this.config.testAdapter === true,
       isolationNote: this.config.testAdapter
         ? '本地测试数据，未调用真实OA'

@@ -22,7 +22,8 @@ import { useTranslation } from '@nocobase/i18n/client';
 import { PlusIcon, Trash2Icon } from 'lucide-react';
 import { useState, type ReactElement } from 'react';
 import { formatWallDate, parseWallDate } from './oa-time.js';
-import { PersonChips, type OaPersonChip } from './person-chips.js';
+import { oaPersonFrom, type OaPersonChip } from './oa-person.js';
+import { OaPersonMultiSelect, OaPersonSelect } from './oa-person-pickers.js';
 
 export interface DraftTaskRow {
   clientTaskId: string;
@@ -37,14 +38,6 @@ export interface DraftTaskRow {
   dueAt: string | null;
   description: string | null;
   fromSourceTodo: boolean;
-}
-
-function personFrom(
-  no: string | null,
-  name: string | null,
-): OaPersonChip | null {
-  if (!no) return null;
-  return { fd_no: no, fd_name: name || no, fd_department: '' };
 }
 
 export function TaskTable({
@@ -125,28 +118,21 @@ export function TaskTable({
                   </Button>
                 </TableCell>
                 <TableCell className='min-w-52'>
-                  <PersonChips
+                  <OaPersonSelect
                     id={`task-assignee-${task.clientTaskId}`}
-                    mode='single'
+                    label={t('meetingOa.fields.assignee')}
                     disabled={disabled}
-                    value={
-                      personFrom(task.assigneeEmployeeNo, task.assigneeName)
-                        ? [
-                            personFrom(
-                              task.assigneeEmployeeNo,
-                              task.assigneeName,
-                            ) as OaPersonChip,
-                          ]
-                        : []
-                    }
+                    value={oaPersonFrom(
+                      task.assigneeEmployeeNo,
+                      task.assigneeName,
+                    )}
                     onSearch={onSearch}
-                    onChange={(people) => {
-                      const person = people[0];
+                    onChange={(person) =>
                       patch(task.clientTaskId, {
                         assigneeEmployeeNo: person?.fd_no ?? null,
                         assigneeName: person?.fd_name ?? null,
-                      });
-                    }}
+                      })
+                    }
                   />
                 </TableCell>
                 <TableCell className='min-w-44'>
@@ -163,34 +149,27 @@ export function TaskTable({
                   />
                 </TableCell>
                 <TableCell className='min-w-52'>
-                  <PersonChips
+                  <OaPersonSelect
                     id={`task-appoint-${task.clientTaskId}`}
-                    mode='single'
+                    label={t('meetingOa.fields.appoint')}
                     disabled={disabled}
-                    value={
-                      personFrom(task.appointEmployeeNo, task.appointName)
-                        ? [
-                            personFrom(
-                              task.appointEmployeeNo,
-                              task.appointName,
-                            ) as OaPersonChip,
-                          ]
-                        : []
-                    }
+                    value={oaPersonFrom(
+                      task.appointEmployeeNo,
+                      task.appointName,
+                    )}
                     onSearch={onSearch}
-                    onChange={(people) => {
-                      const person = people[0];
+                    onChange={(person) =>
                       patch(task.clientTaskId, {
                         appointEmployeeNo: person?.fd_no ?? null,
                         appointName: person?.fd_name ?? null,
-                      });
-                    }}
+                      })
+                    }
                   />
                 </TableCell>
                 <TableCell className='min-w-52'>
-                  <PersonChips
+                  <OaPersonMultiSelect
                     id={`task-attention-${task.clientTaskId}`}
-                    mode='multi'
+                    label={t('meetingOa.fields.attention')}
                     disabled={disabled}
                     value={[...task.attentionSnapshots]}
                     onSearch={onSearch}

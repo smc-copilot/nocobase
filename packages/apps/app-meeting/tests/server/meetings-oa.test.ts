@@ -1216,3 +1216,141 @@ test('caches isolation OA tokens until near expiry', async ({ app }) => {
   const refreshed = await adapter.getToken('E1001');
   expect(refreshed.expiresAt).not.toBe(first.expiresAt);
 });
+
+test('proxies OA people search, keeps snapshots, and rejects unauthorized enumeration', async ({
+  app,
+  testApp,
+  connection,
+}) => {
+  const alice = await createUser(testApp, 'alice');
+  const bob = await createUser(testApp, 'bob');
+  await grant(testApp, alice.user.id, 'meeting-operator');
+  await grant(testApp, alice.user.id, 'meeting-oa-operator');
+  await insertMeeting(
+    connection,
+    { id: 'meet-people', title: 'People' },
+    alice.user.id,
+  );
+  const adapter = oaAdapter(app);
+  adapter.people = [
+    { fd_no: 'E1001', fd_name: 'Alice', fd_department: 'Meeting' },
+    { fd_no: 'E2002', fd_name: 'Wang Wu', fd_department: 'Ops' },
+  ];
+  const people = (await expectOk(
+    await alice.fetch('/meetingOa/people?q=Alice'),
+  )) as {
+    data: { fd_no: string; fd_name: string; fd_department: string }[];
+  };
+  expect(people.data).toEqual([
+    { fd_no: 'E1001', fd_name: 'Alice', fd_department: 'Meeting' },
+  ]);
+  expect(adapter.searchCalls).toEqual(['Alice']);
+  const denied = await bob.fetch('/meetingOa/people?q=Alice');
+  expect(denied.status).toBe(403);
+  const draft = (await expectOk(
+    await alice.fetch('/meetings/meet-people/oa-draft'),
+  )) as { data: { version: number } };
+  const saved = (await expectOk(
+    await alice.fetch(
+      '/meetings/meet-people/oa-draft',
+      put(
+        readyDraft(draft.data.version, {
+          emceeSnapshot: {
+            fd_no: 'E1001',
+            fd_name: 'Alice',
+            fd_department: 'Meeting',
+          },
+          hostSnapshot: {
+            fd_no: 'E2002',
+            fd_name: 'Wang Wu',
+            fd_department: 'Ops',
+          },
+          copyToSnapshots: [
+            { fd_no: 'E2002', fd_name: 'Wang Wu', fd_department: 'Ops' },
+          ],
+          tasks: [
+            {
+              clientTaskId: 'task-ready',
+              title: 'Assigned follow-up',
+              assigneeEmployeeNo: 'E1001',
+              appointEmployeeNo: 'E2002',
+              appointName: 'Wang Wu',
+              attentionEmployeeNos: ['E2002'],
+              attentionSnapshots: [
+                { fd_no: 'E2002', fd_name: 'Wang Wu', fd_department: 'Ops' },
+              ],
+              dueAt: '2026-11-20',
+            },
+          ],
+        }),
+      ),
+    ),
+  )) as {
+    data: {
+      version: number;
+      emceeSnapshot: { fd_no: string };
+      hostSnapshot: { fd_no: string };
+      attendeeSnapshots: { fd_no: string }[];
+      copyToSnapshots: { fd_no: string }[];
+      tasks: {
+        assigneeEmployeeNo: string;
+        appointEmployeeNo: string;
+        attentionEmployeeNos: string[];
+        attentionSnapshots: { fd_no: string }[];
+      }[];
+    };
+  };
+  expect(saved.data.emceeSnapshot.fd_no).toBe('E1001');
+  expect(saved.data.hostSnapshot.fd_no).toBe('E2002');
+  expect(saved.data.attendeeSnapshots.map((row) => row.fd_no)).toEqual([
+    'E1001',
+  ]);
+  expect(saved.data.copyToSnapshots.map((row) => row.fd_no)).toEqual(['E2002']);
+  expect(saved.data.tasks[0]?.attentionSnapshots[0]?.fd_no).toBe('E2002');
+  await expectOk(
+    await alice.fetch(
+      '/meetingOa/identities',
+      put({ userId: alice.user.id, employeeNo: 'E1001', displayName: 'Alice' }),
+    ),
+  );
+  await expectOk(
+    await alice.fetch(
+      '/meetingOa/operations',
+      write({
+        meetingId: 'meet-people',
+        requestId: 'req-people-freeze',
+        expectedDraftVersion: saved.data.version,
+      }),
+    ),
+  );
+  expect(adapter.createMeetingCalls[0]?.meeting.emceeEmployeeNo).toBe('E1001');
+  expect(adapter.createMeetingCalls[0]?.meeting.hostEmployeeNo).toBe('E2002');
+  expect(adapter.createMeetingCalls[0]?.meeting.attendeeEmployeeNos).toEqual([
+    'E1001',
+  ]);
+  expect(adapter.createMeetingCalls[0]?.copyToEmployeeNos).toEqual(['E2002']);
+  const frozen = (await expectOk(
+    await alice.fetch('/meetings/meet-people/oa-draft'),
+  )) as { data: { frozen: boolean; emceeSnapshot: { fd_no: string } } };
+  expect(frozen.data.frozen).toBe(true);
+  expect(frozen.data.emceeSnapshot.fd_no).toBe('E1001');
+});
+
+test('clears a saved peopleUrl instead of keeping the previous value', async ({
+  testApp,
+}) => {
+  const alice = await createUser(testApp, 'alice');
+  await grant(testApp, alice.user.id, 'meeting-oa-operator');
+  const saved = (await expectOk(
+    await alice.fetch(
+      '/meetingOa/settings',
+      put({ peopleUrl: 'https://oa.example.test/people' }),
+    ),
+  )) as { data: { peopleUrl: string | null; peopleUrlSource: string } };
+  expect(saved.data.peopleUrl).toBe('https://oa.example.test/people');
+  expect(saved.data.peopleUrlSource).toBe('test');
+  const cleared = (await expectOk(
+    await alice.fetch('/meetingOa/settings', put({ peopleUrl: null })),
+  )) as { data: { peopleUrl: string | null } };
+  expect(cleared.data.peopleUrl).toBeNull();
+});

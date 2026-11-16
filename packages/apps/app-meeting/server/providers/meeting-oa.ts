@@ -30,7 +30,7 @@ export default class MeetingOaProvider extends ServiceProvider<Application> {
             config,
             resolvePeopleUrl: async () => {
               const row = await this.settingsRow();
-              return row?.peopleUrl ?? config.peopleUrl;
+              return row?.peopleUrl?.trim() || undefined;
             },
             resolveCredentials: async () => {
               const row = await this.settingsRow();
@@ -53,7 +53,7 @@ export default class MeetingOaProvider extends ServiceProvider<Application> {
               return {
                 tokenUrl: row?.tokenUrl ?? config.tokenUrl,
                 meetingUrl: row?.meetingUrl ?? config.meetingUrl,
-                peopleUrl: row?.peopleUrl ?? config.peopleUrl,
+                peopleUrl: row?.peopleUrl?.trim() || undefined,
                 clientId: row?.clientId ?? config.clientId,
                 clientSecret,
                 scope: row?.scope ?? config.scope,

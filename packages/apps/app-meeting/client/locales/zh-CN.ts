@@ -133,6 +133,17 @@ const zhCN: AppResource = {
     peopleEmpty: '没有匹配的人员。',
     peopleNeedChars: '请至少输入两个字符。',
     peopleErrorKept: '搜索失败，已选人员保持不变。',
+    peopleNotConfigured: '未配置 OA 人员搜索接口。不会改用本地用户数据。',
+    peopleSourceHttp:
+      '组织人、主持人为单选；参会人、实际与会、抄送、关注人为多选。候选来自 OA 配置页保存的人员搜索 URL，经本应用已授权代理查询。本页不直连 OA。',
+    peopleSourceTest:
+      '组织人、主持人为单选；参会人、实际与会、抄送、关注人为多选。候选来自本地测试 OA 人员适配器，不是真实 OA 人员目录。',
+    peopleUrlHint:
+      '每次搜索读取当前已保存的人员搜索 URL。仅在未保存该字段时使用环境变量，并在下方标明来源。环境变量不会覆盖已保存配置。',
+    peopleUrlSourceSettings: '当前来源：已保存的 OA 配置',
+    peopleUrlSourceEnv: '当前来源：环境变量（未保存人员搜索 URL）',
+    peopleUrlSourceTest: '当前来源：本地测试适配器（不是真实 OA）',
+    peopleUrlSourceNone: '未配置人员搜索接口',
     clearPerson: '清除',
     addTask: '添加分派任务',
     deleteTask: '删除任务',

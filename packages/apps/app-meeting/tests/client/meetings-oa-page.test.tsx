@@ -756,7 +756,9 @@ describe('OA workspace page', () => {
         name: enUS.meetingOa.workspaceTitle,
       }),
     ).toBeInTheDocument();
-    const search = screen.getAllByLabelText(enUS.meetingOa.peopleSearch)[0];
+    const search = screen.getByLabelText(
+      `${enUS.meetingOa.fields.attendees}. ${enUS.meetingOa.peopleSearch}`,
+    );
     await userEvent.type(search!, 'Zh');
     expect(
       await screen.findByRole('option', {

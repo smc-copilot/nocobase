@@ -145,6 +145,19 @@ const enUS = {
     peopleEmpty: 'No matching people.',
     peopleNeedChars: 'Type at least two characters.',
     peopleErrorKept: 'Search failed. Selected people were kept.',
+    peopleNotConfigured:
+      'OA people search is not configured. Local users are not used instead.',
+    peopleSourceHttp:
+      'Organizer and host are single-select; attendees, actual attendees, copy-to and followers are multi-select. Candidates come from the OA people search URL saved in Meeting OA settings, through this app’s authorized proxy. This page does not call OA directly.',
+    peopleSourceTest:
+      'Organizer and host are single-select; attendees, actual attendees, copy-to and followers are multi-select. Candidates come from the local test OA people adapter. This is not a live OA people directory.',
+    peopleUrlHint:
+      'Each search reads the current saved people URL. An environment variable is used only when nothing is saved, and is labeled below. It never overrides a saved URL.',
+    peopleUrlSourceSettings: 'Active source: saved OA settings',
+    peopleUrlSourceEnv:
+      'Active source: environment variable (no saved people URL)',
+    peopleUrlSourceTest: 'Active source: local test adapter (not live OA)',
+    peopleUrlSourceNone: 'People search is not configured',
     clearPerson: 'Clear',
     addTask: 'Add assigned task',
     deleteTask: 'Delete task',

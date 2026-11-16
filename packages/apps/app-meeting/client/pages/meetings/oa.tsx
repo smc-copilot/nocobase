@@ -5,13 +5,7 @@ import {
   useToaster,
 } from '@nocobase/app-client';
 import { useTranslation } from '@nocobase/i18n/client';
-import {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-} from 'react';
+import { useMemo, useRef, useState, type ReactElement } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { RecordLink } from '#components/record-link';
 import { Alert, AlertDescription } from '#components/ui/alert';
@@ -34,8 +28,10 @@ import { Textarea } from '#components/ui/textarea';
 import { useListData } from '#hooks/use-list-data';
 import { DateTimeField } from './date-time-field.js';
 import { MeetingLoading, MeetingUnavailable } from './meeting-feedback.js';
+import { createOaPeopleSearch } from './oa-people-source.js';
+import { type OaPersonChip } from './oa-person.js';
+import { OaPersonMultiSelect, OaPersonSelect } from './oa-person-pickers.js';
 import { beijingWallToIso, isoToBeijingInput } from './oa-time.js';
-import { PersonChips, type OaPersonChip } from './person-chips.js';
 import { SupplementalFilesPanel } from './supplemental-files.js';
 import { TaskTable, type DraftTaskRow } from './task-table.js';
 
@@ -133,8 +129,10 @@ export default function MeetingOaPage(): ReactElement {
     null,
   );
   const [attendees, setAttendees] = useState<OaPersonChip[] | null>(null);
-  const [emcee, setEmcee] = useState<OaPersonChip[] | null>(null);
-  const [host, setHost] = useState<OaPersonChip[] | null>(null);
+  const [emcee, setEmcee] = useState<OaPersonChip | null | undefined>(
+    undefined,
+  );
+  const [host, setHost] = useState<OaPersonChip | null | undefined>(undefined);
   const [actualAttend, setActualAttend] = useState<OaPersonChip[] | null>(null);
   const [copyTo, setCopyTo] = useState<OaPersonChip[] | null>(null);
   const [taskTitle, setTaskTitle] = useState('');
@@ -164,19 +162,9 @@ export default function MeetingOaPage(): ReactElement {
       }
     : null;
   const shownEmcee =
-    emcee ??
-    (draft?.emceeSnapshot
-      ? [draft.emceeSnapshot]
-      : creatorPerson
-        ? [creatorPerson]
-        : []);
+    emcee === undefined ? (draft?.emceeSnapshot ?? creatorPerson) : emcee;
   const shownHost =
-    host ??
-    (draft?.hostSnapshot
-      ? [draft.hostSnapshot]
-      : creatorPerson
-        ? [creatorPerson]
-        : []);
+    host === undefined ? (draft?.hostSnapshot ?? creatorPerson) : host;
   const shownActual = actualAttend ?? [...(draft?.actualAttendSnapshots ?? [])];
   const shownCopyTo = copyTo ?? [...(draft?.copyToSnapshots ?? [])];
   const shownTasks = tasks ?? asTasks(draft?.tasks);
@@ -184,16 +172,7 @@ export default function MeetingOaPage(): ReactElement {
   const frozen = Boolean(draft?.frozen);
   const isolation = useMemo(() => t('meetingOa.isolationBanner'), [t]);
 
-  const searchPeople = useCallback(
-    async (query: string) => {
-      const result = await api.request<{ data: OaPersonChip[] }>({
-        path: 'meetingOa/people',
-        query: { q: query },
-      });
-      return result.data;
-    },
-    [api],
-  );
+  const searchPeople = useMemo(() => createOaPeopleSearch(api), [api]);
 
   const persistDraft = async (
     nextTasks: DraftTaskRow[] = shownTasks,
@@ -215,8 +194,8 @@ export default function MeetingOaPage(): ReactElement {
         otherAttendPerson: shownOther,
         attendeeEmployeeNos: shownAttendees.map((row) => row.fd_no),
         attendeeSnapshots: shownAttendees,
-        emceeSnapshot: shownEmcee[0] ?? null,
-        hostSnapshot: shownHost[0] ?? null,
+        emceeSnapshot: shownEmcee,
+        hostSnapshot: shownHost,
         actualAttendSnapshots: shownActual,
         copyToSnapshots: shownCopyTo,
         summaryTitle: shownSummaryTitle,
@@ -444,12 +423,19 @@ export default function MeetingOaPage(): ReactElement {
                     />
                   </Field>
                   <Field className='md:col-span-2'>
+                    <FieldDescription>
+                      {draft?.isolationAdapter
+                        ? t('meetingOa.peopleSourceTest')
+                        : t('meetingOa.peopleSourceHttp')}
+                    </FieldDescription>
+                  </Field>
+                  <Field className='md:col-span-2'>
                     <FieldLabel htmlFor='oa-attendees'>
                       {t('meetingOa.fields.attendees')}
                     </FieldLabel>
-                    <PersonChips
+                    <OaPersonMultiSelect
                       id='oa-attendees'
-                      mode='multi'
+                      label={t('meetingOa.fields.attendees')}
                       value={shownAttendees}
                       disabled={frozen}
                       onSearch={searchPeople}
@@ -460,9 +446,9 @@ export default function MeetingOaPage(): ReactElement {
                     <FieldLabel htmlFor='oa-emcee'>
                       {t('meetingOa.fields.emcee')}
                     </FieldLabel>
-                    <PersonChips
+                    <OaPersonSelect
                       id='oa-emcee'
-                      mode='single'
+                      label={t('meetingOa.fields.emcee')}
                       value={shownEmcee}
                       disabled={frozen}
                       onSearch={searchPeople}
@@ -473,9 +459,9 @@ export default function MeetingOaPage(): ReactElement {
                     <FieldLabel htmlFor='oa-host'>
                       {t('meetingOa.fields.host')}
                     </FieldLabel>
-                    <PersonChips
+                    <OaPersonSelect
                       id='oa-host'
-                      mode='single'
+                      label={t('meetingOa.fields.host')}
                       value={shownHost}
                       disabled={frozen}
                       onSearch={searchPeople}
@@ -562,9 +548,9 @@ export default function MeetingOaPage(): ReactElement {
                     <FieldLabel htmlFor='oa-actual'>
                       {t('meetingOa.fields.actualAttend')}
                     </FieldLabel>
-                    <PersonChips
+                    <OaPersonMultiSelect
                       id='oa-actual'
-                      mode='multi'
+                      label={t('meetingOa.fields.actualAttend')}
                       value={shownActual}
                       disabled={frozen}
                       onSearch={searchPeople}
@@ -575,9 +561,9 @@ export default function MeetingOaPage(): ReactElement {
                     <FieldLabel htmlFor='oa-copy'>
                       {t('meetingOa.fields.copyTo')}
                     </FieldLabel>
-                    <PersonChips
+                    <OaPersonMultiSelect
                       id='oa-copy'
-                      mode='multi'
+                      label={t('meetingOa.fields.copyTo')}
                       value={shownCopyTo}
                       disabled={frozen}
                       onSearch={searchPeople}
