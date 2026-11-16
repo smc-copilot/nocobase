@@ -29,6 +29,8 @@ import {
   GatewayCompleteBody,
   GatewayConfigSchema,
   GatewaySelectBody,
+  GatewaySettingsBody,
+  GatewaySettingsSchema,
   GatewayStartSchema,
   OauthCallbackQuery,
 } from './schemas.js';
@@ -58,6 +60,24 @@ export const meetingGatewayRoutes = defineApiRoutes((app: Application) => {
     app.container.resolve(authorizationToken).middleware(),
     requireManage,
   ] as const;
+  const requireIdentityManage = createMiddleware<AuthorizationEnv>(
+    async (context, next) => {
+      const decision = await context.get('authz').authorize({
+        resource: { type: 'composite', id: MEETING_RESOURCE },
+        action: 'identityManage',
+      });
+      if (decision.effect === 'deny') {
+        throw new AuthorizationDeniedError(decision);
+      }
+      await next();
+    },
+  );
+  const protectSettings = [
+    app.container.resolve(authenticationToken).required({ scopedKeys: false }),
+    app.container.resolve(authorizationToken).middleware(),
+    requireIdentityManage,
+  ] as const;
+  router.use('/meetingGateway/settings', ...protectSettings);
   router.use('/meetingGateway/config', ...protect);
   router.use('/meetingGateway/bindings', ...protect);
   router.use('/meetingGateway/bindings/start', ...protect);
@@ -84,8 +104,58 @@ export const meetingGatewayRoutes = defineApiRoutes((app: Application) => {
       describeRoute({ hide: true }),
       unavailable,
     );
+    router.get(
+      '/meetingGateway/settings',
+      describeRoute({ hide: true }),
+      unavailable,
+    );
+    router.put(
+      '/meetingGateway/settings',
+      describeRoute({ hide: true }),
+      unavailable,
+    );
     return new Hono().route('/', router);
   }
+  router.get(
+    '/meetingGateway/settings',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'getMeetingGatewaySettings',
+      summary: 'Read meeting gateway server settings without secrets',
+      description:
+        'Requires identityManage. Returns saved fields, source priority and deployment constraints. Never returns the client secret plaintext. Saving this resource does not bind a user, query meetings or write OA.',
+      responses: {
+        200: dataResponse(GatewaySettingsSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    async (c) =>
+      c.json({
+        data: await createMeetingServices(app, c).gatewaySettings.get(),
+      }),
+  );
+  router.put(
+    '/meetingGateway/settings',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'saveMeetingGatewaySettings',
+      summary:
+        'Save meeting gateway server settings and seal the client secret',
+      description:
+        'Requires identityManage. Blank clientSecret keeps the current sealed secret; null clears it. Origin must already be in the deployment originAllowlist. The adapter reads saved fields at call time. This does not start OAuth, query meetings or write OA, and does not verify connectivity.',
+      responses: {
+        200: dataResponse(GatewaySettingsSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('json', GatewaySettingsBody),
+    async (c) =>
+      c.json({
+        data: await createMeetingServices(app, c).gatewaySettings.save(
+          c.req.valid('json'),
+        ),
+      }),
+  );
   router.get(
     '/meetingGateway/config',
     describeRoute({
@@ -100,7 +170,9 @@ export const meetingGatewayRoutes = defineApiRoutes((app: Application) => {
       },
     }),
     async (c) =>
-      c.json({ data: createMeetingServices(app, c).gateway.configStatus() }),
+      c.json({
+        data: await createMeetingServices(app, c).gateway.configStatus(),
+      }),
   );
   router.get(
     '/meetingGateway/bindings',

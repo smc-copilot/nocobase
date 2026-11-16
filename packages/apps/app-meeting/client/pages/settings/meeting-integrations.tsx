@@ -1,10 +1,13 @@
 import { ApiClientError, useApiClient, useToaster } from '@nocobase/app-client';
 import { useTranslation } from '@nocobase/i18n/client';
 import { type ReactElement, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { PageContainer } from '#components/page-container';
 import { PageHeader } from '#components/page-header';
 import { Alert, AlertDescription } from '#components/ui/alert';
 import { Button } from '#components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '#components/ui/tabs';
+import { MeetingGatewaySettingsPanel } from './meeting-gateway-settings-panel.js';
 import {
   Card,
   CardContent,
@@ -47,6 +50,44 @@ interface Settings {
 
 export default function MeetingIntegrationsPage(): ReactElement {
   const { t } = useTranslation();
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'gateway' ? 'gateway' : 'oa';
+
+  return (
+    <PageContainer>
+      <PageHeader
+        title={t('meetingOa.integrationsTitle')}
+        description={t('meetingOa.integrationsDescription')}
+      />
+      <Tabs
+        value={tab}
+        onValueChange={(next) => {
+          const nextParams = new URLSearchParams(params);
+          if (next === 'gateway') nextParams.set('tab', 'gateway');
+          else nextParams.delete('tab');
+          setParams(nextParams, { replace: true });
+        }}
+      >
+        <TabsList
+          aria-label={t('meetingOa.integrationsTitle')}
+          className='h-auto max-w-full flex-wrap justify-start overflow-x-auto'
+        >
+          <TabsTrigger value='oa'>{t('meetingOa.tabOa')}</TabsTrigger>
+          <TabsTrigger value='gateway'>{t('meetingOa.tabGateway')}</TabsTrigger>
+        </TabsList>
+        <TabsContent value='oa' className='flex flex-col gap-4 pt-4'>
+          <MeetingOaIntegrationsPanel />
+        </TabsContent>
+        <TabsContent value='gateway' className='flex flex-col gap-4 pt-4'>
+          <MeetingGatewaySettingsPanel />
+        </TabsContent>
+      </Tabs>
+    </PageContainer>
+  );
+}
+
+function MeetingOaIntegrationsPanel(): ReactElement {
+  const { t } = useTranslation();
   const api = useApiClient();
   const toaster = useToaster();
   const request = useSettingsData<{ data: Settings }>('meetingOa/settings');
@@ -75,11 +116,7 @@ export default function MeetingIntegrationsPage(): ReactElement {
   if (request.error) return <SettingsError error={request.error} />;
 
   return (
-    <PageContainer>
-      <PageHeader
-        title={t('meetingOa.integrationsTitle')}
-        description={t('meetingOa.integrationsDescription')}
-      />
+    <>
       <Alert>
         <AlertDescription>
           {row?.isolationNote ?? t('meetingOa.liveWriteBlocked')}
@@ -364,6 +401,6 @@ export default function MeetingIntegrationsPage(): ReactElement {
       ) : (
         <MeetingEmptyState title={t('meetingOa.mappingEmpty')} />
       )}
-    </PageContainer>
+    </>
   );
 }

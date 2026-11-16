@@ -106,9 +106,12 @@ const enUS = {
     noConnection: 'No connection is selected yet.',
     currentConnection: 'Selected connection: {{name}}',
     notConfigured:
-      'The meeting gateway origin and application are not configured. This app is not connected.',
+      'The meeting gateway origin and application are not configured. This app is not connected. Maintain the gateway server on Meeting integrations.',
     identityUnavailable:
       'The first gateway access token comes from account-login and token exchange in the published gateway client. This app does not collect a gateway password or a pasted token, so live OAuth start stays blocked until that contract is confirmed.',
+    serverConfigLink: 'Maintain the meeting-gateway server',
+    serverConfigHint:
+      'User binding is separate from the gateway server settings. Saving server settings does not start OAuth.',
     rootUnrestricted:
       'A platform root (unrestricted) user can read every stored meeting. Ordinary administrators and members do not receive that bypass.',
     completing: 'Finishing gateway authorization…',
@@ -225,9 +228,11 @@ const enUS = {
     reconcileSaved: 'Evidence recorded. OA was not written.',
     reconcileFailed: 'Evidence could not be recorded.',
     recoverFailed: 'Recovery could not continue.',
-    integrationsTitle: 'Meeting OA',
+    integrationsTitle: 'Meeting integrations',
     integrationsDescription:
-      'Seal OA credentials with native secrets. Root is never a default employee. Secrets are never echoed.',
+      'Maintain the OA server and the meeting-gateway server. User binding stays on Meeting gateway. Saving settings does not bind, query meetings or write OA.',
+    tabOa: 'OA server',
+    tabGateway: 'meeting-gateway server',
     writeContract: 'Write contract: {{value}}',
     hasSecret: 'Client secret: {{value}}',
     secretSealed: 'sealed',
@@ -288,6 +293,81 @@ const enUS = {
       clientSecret: 'Client secret (write-only)',
       userId: 'Local user id',
       employeeNo: 'OA employee number',
+    },
+  },
+  meetingGatewaySettings: {
+    title: 'meeting-gateway server',
+    description:
+      'Persist the gateway origin, application id, client identity and public callback origin. This is not user OAuth binding. Saving does not verify the connection.',
+    savedNotVerified: 'Settings saved is not a live connection check.',
+    localFormatOnly:
+      'The page only checks HTTPS origin format locally. It does not call the gateway.',
+    identityUnavailable:
+      'Gateway identity token issuance is unavailable (GATEWAY_IDENTITY_TOKEN_UNAVAILABLE). clientId, client secret, resource and scopes are stored for that issuance and are not sent on save.',
+    queryUnavailable:
+      'HTTP queryMeetings and listParticipants are not implemented (upstream contract missing). Saving settings does not query meetings.',
+    testAdapter:
+      'Isolation test adapter is on for this process. It is a deployment switch, not a production-write control, and changing it here is not supported. Restart the process after changing MEETING_GATEWAY_TEST_ADAPTER.',
+    httpAdapter:
+      'This process uses the HTTP gateway adapter. Origin, application id and related fields are read at call time from saved settings, then env, then defaults.',
+    originAllowlist:
+      'Deployment origin allowlist (read-only). An admin-saved origin must already be in this list. Saving does not expand it.',
+    authorizationPaths:
+      'Deployment authorization path allowlist (read-only). Used when validating Tencent authorization URLs.',
+    allowlistEmpty:
+      'The deployment origin allowlist is empty, so a saved origin cannot be used until MEETING_GATEWAY_ORIGIN_ALLOWLIST (or config.yml) lists it.',
+    sourceSettings: 'Currently used from saved settings',
+    sourceEnv: 'Currently used from environment / config.yml (field not saved)',
+    sourceNone: 'Not configured',
+    runtimeOrigin: 'Origin in use: {{value}}',
+    runtimeApplication: 'Application id in use: {{value}}',
+    runtimeInstance: 'Instance id in use: {{value}}',
+    runtimeConfigured: 'Runtime configured: {{value}}',
+    yes: 'yes',
+    no: 'no',
+    hasSecret: 'Client secret: {{value}}',
+    secretSealed: 'sealed (not echoed)',
+    secretMissing: 'not stored',
+    clearSecret: 'Clear the stored client secret',
+    clearSecretHint:
+      'Leave the secret blank to keep the current value. Check this box to remove it. Changing the secret does not request a token.',
+    credentialVersion: 'Credential version {{value}}',
+    bindPage: 'User binding and OAuth',
+    saveSettings: 'Save gateway server',
+    settingsSaved:
+      'Gateway server settings saved. The secret is not returned. The connection was not verified.',
+    settingsFailed: 'Gateway server settings could not be saved.',
+    originHint:
+      'HTTPS origin of meeting-gateway. Must already be in the deployment allowlist. http, credentials, paths and unsafe hosts are rejected.',
+    applicationHint:
+      'Gateway application_id used when starting authorization. Not the Tencent corp/sdk id.',
+    clientIdHint:
+      'Gateway OAuth client_id for identity-token issuance. Distinct from applicationId and from Tencent corp_id / sdk_id. Issuance is currently unavailable.',
+    expectedHint:
+      'Expected application_id on listed connections. Must equal applicationId when both are set.',
+    resourceHint:
+      'Token resource the unpublished identity exchange must return unchanged. Stored only; not sent on save.',
+    scopesHint:
+      'Space-separated gateway OAuth scopes for unpublished identity issuance. Stored only.',
+    publicBaseHint:
+      'Public origin of this App for the OAuth return path. This is not the gateway origin and does not change the deployment allowlist.',
+    tencentHint:
+      'Tencent corp_id, sdk_id and callback ref are used only to validate authorization URLs. They are not the gateway client identity.',
+    instanceHint:
+      'Stable instance id stored on meeting source keys and bindings. Changing it isolates old bindings; they are kept for history and are not reused.',
+    fields: {
+      origin: 'Gateway origin',
+      applicationId: 'Application id',
+      expectedApplicationId: 'Expected application id',
+      clientId: 'Gateway client id',
+      clientSecret: 'Gateway client secret (write-only)',
+      resource: 'Token resource',
+      scopes: 'Scopes',
+      publicBaseUrl: 'Public callback origin',
+      tencentCorpId: 'Tencent corp_id',
+      tencentSdkId: 'Tencent sdk_id',
+      callbackRef: 'Gateway callback ref',
+      instanceId: 'Gateway instance id',
     },
   },
 };

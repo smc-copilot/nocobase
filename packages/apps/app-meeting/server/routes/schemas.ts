@@ -4,6 +4,7 @@ import type {
   GatewayConfigPublic,
   GatewayStartResult,
 } from '../meetings/gateway-service.js';
+import type { GatewaySettingsPublic } from '../meetings/gateway/settings-service.js';
 import type {
   MeetingParticipantPublic,
   MeetingPublic,
@@ -114,6 +115,79 @@ export const GatewayStartSchema: z.ZodType<GatewayStartResult> = z
     expiresAt: z.string(),
   })
   .meta({ ref: 'MeetingGatewayStart' });
+
+const GatewayFieldSourceSchema = z.enum(['settings', 'env', 'none']);
+
+export const GatewaySettingsSchema: z.ZodType<GatewaySettingsPublic> = z
+  .object({
+    origin: z.string().nullable(),
+    applicationId: z.string().nullable(),
+    expectedApplicationId: z.string().nullable(),
+    clientId: z.string().nullable(),
+    resource: z.string().nullable(),
+    scopes: z.array(z.string()),
+    publicBaseUrl: z.string().nullable(),
+    tencentCorpId: z.string().nullable(),
+    tencentSdkId: z.string().nullable(),
+    callbackRef: z.string().nullable(),
+    instanceId: z.string().nullable(),
+    hasSecret: z.boolean(),
+    credentialVersion: z.number(),
+    sources: z.object({
+      origin: GatewayFieldSourceSchema,
+      applicationId: GatewayFieldSourceSchema,
+      expectedApplicationId: GatewayFieldSourceSchema,
+      clientId: GatewayFieldSourceSchema,
+      resource: GatewayFieldSourceSchema,
+      scopes: GatewayFieldSourceSchema,
+      publicBaseUrl: GatewayFieldSourceSchema,
+      tencentCorpId: GatewayFieldSourceSchema,
+      tencentSdkId: GatewayFieldSourceSchema,
+      callbackRef: GatewayFieldSourceSchema,
+      instanceId: GatewayFieldSourceSchema,
+      clientSecret: GatewayFieldSourceSchema,
+    }),
+    runtime: z.object({
+      origin: z.string().nullable(),
+      applicationId: z.string().nullable(),
+      clientId: z.string().nullable(),
+      instanceId: z.string(),
+      configured: z.boolean(),
+    }),
+    deployment: z.object({
+      originAllowlist: z.array(z.string()),
+      authorizationPathAllowlist: z.array(z.string()),
+      testAdapter: z.boolean(),
+      adapterKind: z.enum(['http', 'test']),
+      identityIssuance: z.enum(['unavailable', 'test-adapter']),
+      queryHttpContract: z.literal('unavailable'),
+      liveVerified: z.literal(false),
+      testAdapterRequiresRestart: z.literal(true),
+      originHotReload: z.literal(true),
+    }),
+    savedDoesNotVerify: z.literal(true),
+    saveDoesNotBind: z.literal(true),
+    updatedAt: z.string().nullable(),
+  })
+  .meta({ ref: 'MeetingGatewaySettings' });
+
+export const GatewaySettingsBody = z.strictObject({
+  origin: z.string().max(500).nullable().optional(),
+  applicationId: z.string().max(128).nullable().optional(),
+  expectedApplicationId: z.string().max(128).nullable().optional(),
+  clientId: z.string().max(128).nullable().optional(),
+  clientSecret: z.string().max(500).nullable().optional(),
+  resource: z.string().max(255).nullable().optional(),
+  scopes: z
+    .union([z.array(z.string().max(128)).max(32), z.string().max(2000)])
+    .nullable()
+    .optional(),
+  publicBaseUrl: z.string().max(500).nullable().optional(),
+  tencentCorpId: z.string().max(128).nullable().optional(),
+  tencentSdkId: z.string().max(128).nullable().optional(),
+  callbackRef: z.string().max(128).nullable().optional(),
+  instanceId: z.string().max(64).nullable().optional(),
+});
 
 export const GatewayCompleteBody = z.strictObject({
   state: z.string().min(1).max(64),

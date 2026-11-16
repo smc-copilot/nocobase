@@ -96,9 +96,13 @@ const zhCN: AppResource = {
       '断开只阻止本应用后续远程访问，并不撤销上游腾讯或网关授权；本版不支持上游撤权接口。',
     noConnection: '尚未选择连接。',
     currentConnection: '已选连接：{{name}}',
-    notConfigured: '会议网关来源地址和应用未配置，当前并未接通。',
+    notConfigured:
+      '会议网关来源地址和应用未配置，当前并未接通。请到会议集成页维护网关服务器。',
     identityUnavailable:
       '首个网关访问令牌在已发布客户端中来自 account-login 与 token exchange。本应用不收集网关密码或粘贴 token，因此在该契约确认前无法发起真实 OAuth。',
+    serverConfigLink: '维护 meeting-gateway 服务器',
+    serverConfigHint:
+      '用户绑定与网关服务器配置分开。保存服务器配置不会发起授权。',
     rootUnrestricted:
       '平台 root（unrestricted）可以读取全部已入库会议。普通管理员和成员不会因此获得他人会议的读取权。',
     completing: '正在完成网关授权…',
@@ -207,9 +211,11 @@ const zhCN: AppResource = {
     reconcileSaved: '证据已登记，未写入 OA。',
     reconcileFailed: '证据未能登记。',
     recoverFailed: '恢复未能继续。',
-    integrationsTitle: '会议 OA',
+    integrationsTitle: '会议集成',
     integrationsDescription:
-      '用原生密钥封存 OA 凭据。root 不会成为默认可代办员工。密钥不会回显。',
+      '在此维护 OA 服务器与 meeting-gateway 服务器。用户绑定仍在「会议网关」。保存配置不会绑定、拉会或向 OA 发单。',
+    tabOa: 'OA 服务器',
+    tabGateway: 'meeting-gateway 服务器',
     writeContract: '写契约：{{value}}',
     hasSecret: '客户端密钥：{{value}}',
     secretSealed: '已封存',
@@ -270,6 +276,78 @@ const zhCN: AppResource = {
       clientSecret: '客户端密钥（只写）',
       userId: '本地用户 ID',
       employeeNo: 'OA 工号',
+    },
+  },
+  meetingGatewaySettings: {
+    title: 'meeting-gateway 服务器',
+    description:
+      '持久化网关 origin、application id、客户端身份和公开回调 origin。这不是用户 OAuth 绑定。保存不等于已验证连接。',
+    savedNotVerified: '「配置已保存」不是真实连通验证。',
+    localFormatOnly: '本页只做 HTTPS origin 格式检查，不会请求网关。',
+    identityUnavailable:
+      '网关身份令牌签发不可用（GATEWAY_IDENTITY_TOKEN_UNAVAILABLE）。clientId、client secret、resource 和 scopes 仅为该签发存档，保存时不会向外请求。',
+    queryUnavailable:
+      'HTTP queryMeetings / listParticipants 尚未实现（上游契约缺口）。保存配置不会拉会。',
+    testAdapter:
+      '当前进程启用了隔离测试适配器。这是部署开关，不是生产写入开关，本页不能改。更改 MEETING_GATEWAY_TEST_ADAPTER 后需要重启进程。',
+    httpAdapter:
+      '当前进程使用 HTTP 网关适配器。origin、application id 等字段在每次操作时按「已保存 → 环境变量/config.yml → 默认」读取。',
+    originAllowlist:
+      '部署层 origin 白名单（只读）。管理员保存的 origin 必须已在名单中。保存不会扩大该名单。',
+    authorizationPaths:
+      '部署层授权路径白名单（只读），用于校验腾讯 authorization URL。',
+    allowlistEmpty:
+      '部署层 origin 白名单为空，因此在 MEETING_GATEWAY_ORIGIN_ALLOWLIST（或 config.yml）列入之前，已保存 origin 无法使用。',
+    sourceSettings: '当前来源：已保存配置',
+    sourceEnv: '当前来源：环境变量 / config.yml（该字段未保存）',
+    sourceNone: '未配置',
+    runtimeOrigin: '实际使用 origin：{{value}}',
+    runtimeApplication: '实际使用 application id：{{value}}',
+    runtimeInstance: '实际使用 instance id：{{value}}',
+    runtimeConfigured: '运行时已配置：{{value}}',
+    yes: '是',
+    no: '否',
+    hasSecret: '客户端密钥：{{value}}',
+    secretSealed: '已封存（不回显）',
+    secretMissing: '未保存',
+    clearSecret: '清空已保存的客户端密钥',
+    clearSecretHint:
+      '密钥留空表示保留现值。勾选此项才会清空。更改密钥不会请求 token。',
+    credentialVersion: '凭据版本 {{value}}',
+    bindPage: '用户绑定与 OAuth',
+    saveSettings: '保存网关服务器',
+    settingsSaved: '网关服务器配置已保存。密钥不会返回。连接未被验证。',
+    settingsFailed: '网关服务器配置未能保存。',
+    originHint:
+      'meeting-gateway 的 HTTPS origin。必须已在部署白名单中。http、凭据、路径和不安全主机都会被拒绝。',
+    applicationHint:
+      '发起授权时使用的网关 application_id。不是腾讯 corp/sdk id。',
+    clientIdHint:
+      '用于身份令牌签发的网关 OAuth client_id。与 applicationId 以及腾讯 corp_id / sdk_id 不同。签发目前不可用。',
+    expectedHint:
+      '列出连接时期望的 application_id。与 applicationId 同时填写时必须相同。',
+    resourceHint:
+      '未发布身份交换必须原样返回的 token resource。仅存档，保存时不外发。',
+    scopesHint: '未发布身份签发使用的空格分隔 OAuth scopes。仅存档。',
+    publicBaseHint:
+      '本应用用于 OAuth 回跳的公开 origin。不是网关 origin，也不会改部署白名单。',
+    tencentHint:
+      '腾讯 corp_id、sdk_id 和 callback ref 仅用于校验授权 URL，不是网关客户端身份。',
+    instanceHint:
+      '写入会议来源键和绑定时的稳定实例 id。更改后旧绑定被隔离，历史保留且不会套用到新目标。',
+    fields: {
+      origin: '网关 origin',
+      applicationId: 'Application id',
+      expectedApplicationId: '期望 application id',
+      clientId: '网关 client id',
+      clientSecret: '网关客户端密钥（只写）',
+      resource: 'Token resource',
+      scopes: 'Scopes',
+      publicBaseUrl: '公开回调 origin',
+      tencentCorpId: '腾讯 corp_id',
+      tencentSdkId: '腾讯 sdk_id',
+      callbackRef: '网关 callback ref',
+      instanceId: '网关 instance id',
     },
   },
 };

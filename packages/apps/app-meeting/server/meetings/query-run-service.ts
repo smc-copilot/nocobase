@@ -130,6 +130,9 @@ export class MeetingQueryRunService {
     private readonly config: MeetingGatewayConfig,
     private readonly userId: string | undefined,
     private readonly sleep?: (ms: number) => Promise<void>,
+    private readonly resolveRuntime?: () => Promise<
+      Pick<MeetingGatewayConfig, 'instanceId'>
+    >,
   ) {}
 
   private async requireQuery(): Promise<void> {
@@ -315,8 +318,11 @@ export class MeetingQueryRunService {
     binding: { connectionRef: string | null; gatewayMemberId: string | null },
   ): Promise<void> {
     const now = new Date();
+    const runtime = this.resolveRuntime
+      ? await this.resolveRuntime()
+      : this.config;
     const source = {
-      sourceGatewayInstance: this.config.instanceId || 'default',
+      sourceGatewayInstance: runtime.instanceId || 'default',
       sourceOrganization: record.organizationId,
       sourceConnectionRef: record.connectionRef,
       sourceUpstreamMeetingId: record.upstreamMeetingId,

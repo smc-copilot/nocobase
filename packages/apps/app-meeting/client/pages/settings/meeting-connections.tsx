@@ -1,7 +1,7 @@
 import { ApiClientError, useApiClient, useToaster } from '@nocobase/app-client';
 import { useTranslation } from '@nocobase/i18n/client';
 import { useEffect, useState, type ReactElement } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { PageContainer } from '#components/page-container';
 import { PageHeader } from '#components/page-header';
 import { Alert, AlertDescription } from '#components/ui/alert';
@@ -190,6 +190,15 @@ export default function MeetingConnectionsPage(): ReactElement {
               </p>
               <p className='text-sm text-muted-foreground'>
                 {t('meetingConnections.rootUnrestricted')}
+              </p>
+              <p className='text-sm text-muted-foreground'>
+                {t('meetingConnections.serverConfigHint')}{' '}
+                <Link
+                  className='underline'
+                  to='/settings/meeting-integrations?tab=gateway'
+                >
+                  {t('meetingConnections.serverConfigLink')}
+                </Link>
               </p>
               <div className='flex flex-wrap gap-2'>
                 <Button

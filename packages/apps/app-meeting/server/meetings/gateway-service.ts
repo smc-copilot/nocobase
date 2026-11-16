@@ -4,13 +4,13 @@ import type { SecretsService } from '@nocobase/app-server/secrets';
 import { ApiError } from '@nocobase/app-server/router';
 import type { DatabaseConnection } from '@nocobase/db';
 import { buildFilter } from '@nocobase/repository-input';
-import type { MeetingGatewayConfig } from '../config/meeting-gateway.js';
 import type {
   GatewayConnection,
   MeetingGatewayAdapter,
 } from './gateway/adapter.js';
 import { MeetingGatewayError } from './gateway/errors.js';
 import { oauthStateAad } from './gateway/secrets.js';
+import type { ResolvedMeetingGatewayConfig } from './gateway/settings-service.js';
 import {
   GATEWAY_SECRET_PURPOSE,
   MEETING_GATEWAY_BINDINGS,
@@ -79,9 +79,11 @@ export class MeetingGatewayService {
     private readonly authz: AuthorizationContext,
     private readonly secrets: SecretsService,
     private readonly adapter: MeetingGatewayAdapter,
-    private readonly config: MeetingGatewayConfig,
+    private readonly resolveRuntime: () => Promise<ResolvedMeetingGatewayConfig>,
     private readonly userId: string | undefined,
-    private readonly publicReturnTo: string,
+    private readonly resolveReturnTo: (
+      runtime: ResolvedMeetingGatewayConfig,
+    ) => string,
   ) {}
 
   private async requireAction(
@@ -101,18 +103,17 @@ export class MeetingGatewayService {
     }
   }
 
-  configStatus(): GatewayConfigPublic {
+  async configStatus(): Promise<GatewayConfigPublic> {
+    const runtime = await this.resolveRuntime();
     const originConfigured = Boolean(
-      this.config.origin && this.config.originAllowlist.length,
+      runtime.origin && runtime.originAllowlist.length,
     );
     return {
-      configured: originConfigured && Boolean(this.config.applicationId),
+      configured: originConfigured && Boolean(runtime.applicationId),
       originConfigured,
-      applicationConfigured: Boolean(this.config.applicationId),
-      identityIssuance: this.config.testAdapter
-        ? 'test-adapter'
-        : 'unavailable',
-      testAdapter: this.config.testAdapter === true,
+      applicationConfigured: Boolean(runtime.applicationId),
+      identityIssuance: runtime.testAdapter ? 'test-adapter' : 'unavailable',
+      testAdapter: runtime.testAdapter === true,
       queryHttpContract: 'unavailable',
       disconnectRevokesUpstream: false,
       rootUnrestrictedReadsAllMeetings: true,
@@ -131,13 +132,14 @@ export class MeetingGatewayService {
 
   private async ownBinding(): Promise<MeetingGatewayBinding | undefined> {
     const userId = requireUser(this.userId);
+    const runtime = await this.resolveRuntime();
     return await this.bindings().findOne({
       filter: buildFilter((filter) =>
         filter.and([
           filter.string('userId').eq(userId),
           filter
             .string('gatewayInstanceId')
-            .eq(this.config.instanceId || 'default'),
+            .eq(runtime.instanceId || 'default'),
         ]),
       ),
     });
@@ -145,10 +147,11 @@ export class MeetingGatewayService {
 
   private allowedConnections(
     connections: readonly GatewayConnection[],
+    runtime: ResolvedMeetingGatewayConfig,
   ): GatewayConnection[] {
     const expectedApplicationId =
-      this.config.expectedApplicationId ||
-      this.config.applicationId ||
+      runtime.expectedApplicationId ||
+      runtime.applicationId ||
       'test-application';
     return connections.filter(
       (item) =>
@@ -181,8 +184,9 @@ export class MeetingGatewayService {
 
   async getBinding(): Promise<GatewayBindingPublic> {
     await this.requireAction('manageConnections');
-    const status = this.configStatus();
-    if (!status.configured && !this.config.testAdapter) {
+    const status = await this.configStatus();
+    const runtime = await this.resolveRuntime();
+    if (!status.configured && !runtime.testAdapter) {
       return this.publicBinding(undefined);
     }
     const row = await this.ownBinding();
@@ -205,7 +209,10 @@ export class MeetingGatewayService {
         const connections = await this.adapter.listConnections({
           accessToken,
         });
-        return this.publicBinding(row, this.allowedConnections(connections));
+        return this.publicBinding(
+          row,
+          this.allowedConnections(connections, runtime),
+        );
       } catch {
         return this.publicBinding(row);
       }
@@ -225,7 +232,8 @@ export class MeetingGatewayService {
   async start(): Promise<GatewayStartResult> {
     await this.requireAction('manageConnections');
     const userId = requireUser(this.userId);
-    if (!this.config.testAdapter && !this.configStatus().configured) {
+    const runtime = await this.resolveRuntime();
+    if (!runtime.testAdapter && !(await this.configStatus()).configured) {
       throw new MeetingGatewayError(
         'GATEWAY_NOT_CONFIGURED',
         'The meeting gateway origin and application id are not configured.',
@@ -253,12 +261,12 @@ export class MeetingGatewayService {
     const accessToken = this.accessTokenForStart();
     const stateId = randomUUID();
     const ttl = Math.min(
-      Math.max(this.config.oauthStateTtlMs || 300_000, 60_000),
+      Math.max(runtime.oauthStateTtlMs || 300_000, 60_000),
       300_000,
     );
     const expiresAt = new Date(Date.now() + ttl);
-    const applicationId = this.config.applicationId || 'test-application';
-    const returnTo = new URL(this.publicReturnTo);
+    const applicationId = runtime.applicationId || 'test-application';
+    const returnTo = new URL(this.resolveReturnTo(runtime));
     returnTo.searchParams.set('localState', stateId);
     const started = await this.adapter.startAuthorization({
       accessToken,
@@ -311,7 +319,8 @@ export class MeetingGatewayService {
   async complete(state: string): Promise<GatewayBindingPublic> {
     await this.requireAction('manageConnections');
     const userId = requireUser(this.userId);
-    return this.connection.transaction(async (trx) => {
+    const runtime = await this.resolveRuntime();
+    const accessToken = await this.connection.transaction(async (trx) => {
       const states = trx.repository<MeetingOauthState>(MEETING_OAUTH_STATES);
       const row = await states.findOne({
         filter: buildFilter((filter) => filter.string('id').eq(state)),
@@ -363,9 +372,8 @@ export class MeetingGatewayService {
           'FAILED_PRECONDITION',
         );
       }
-      let accessToken: string;
       try {
-        accessToken = this.secrets.open(row.sealedAccessToken, {
+        return this.secrets.open(row.sealedAccessToken, {
           purpose: GATEWAY_SECRET_PURPOSE,
           aad: oauthStateAad({ id: row.id, userId: row.userId }),
         });
@@ -376,8 +384,10 @@ export class MeetingGatewayService {
           'FAILED_PRECONDITION',
         );
       }
-      const connections = await this.adapter.listConnections({ accessToken });
-      const owned = this.allowedConnections(connections);
+    });
+    const connections = await this.adapter.listConnections({ accessToken });
+    const owned = this.allowedConnections(connections, runtime);
+    return this.connection.transaction(async (trx) => {
       const now = new Date();
       const bindings = trx.repository<MeetingGatewayBinding>(
         MEETING_GATEWAY_BINDINGS,
@@ -388,7 +398,7 @@ export class MeetingGatewayService {
             filter.string('userId').eq(userId),
             filter
               .string('gatewayInstanceId')
-              .eq(this.config.instanceId || 'default'),
+              .eq(runtime.instanceId || 'default'),
           ]),
         ),
       });
@@ -401,7 +411,7 @@ export class MeetingGatewayService {
       });
       const values: Partial<MeetingGatewayBinding> = {
         status: single ? 'active' : 'awaiting_connection',
-        gatewayInstanceId: this.config.instanceId || 'default',
+        gatewayInstanceId: runtime.instanceId || 'default',
         organizationId: existing?.organizationId ?? null,
         gatewayMemberId: single?.memberId ?? owned[0]?.memberId ?? null,
         connectionRef: single?.connectionId ?? null,
@@ -447,8 +457,10 @@ export class MeetingGatewayService {
     }
     const row = await this.requireActiveOrAwaiting();
     const accessToken = this.openBindingToken(row);
+    const runtime = await this.resolveRuntime();
     const connections = this.allowedConnections(
       await this.adapter.listConnections({ accessToken }),
+      runtime,
     );
     const match = connections.find(
       (item) =>
@@ -518,7 +530,8 @@ export class MeetingGatewayService {
   }
 
   async requireActiveBinding(): Promise<MeetingGatewayBinding> {
-    if (!this.config.testAdapter && !this.configStatus().configured) {
+    const runtime = await this.resolveRuntime();
+    if (!runtime.testAdapter && !(await this.configStatus()).configured) {
       throw new MeetingGatewayError(
         'GATEWAY_NOT_CONFIGURED',
         'The meeting gateway origin and application id are not configured.',

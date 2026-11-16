@@ -232,11 +232,14 @@ logging:
 
 # Meeting gateway origin is an allowlisted HTTPS URL. The application never accepts an arbitrary request URL.
 # Tokens and client secrets stay on the server. MEETING_GATEWAY_TEST_ADAPTER is isolation tests only.
+# Saved settings on Meeting integrations take precedence over these values when a field is stored.
+# originAllowlist and authorizationPathAllowlist stay deployment-only; the admin form cannot expand them.
 # meetingGateway:
 #   origin: https://gateway.example.test
 #   originAllowlist:
 #     - https://gateway.example.test
 #   applicationId: replace-with-the-application-id
+#   clientId: replace-with-the-client-id
 #   instanceId: replace-with-a-stable-instance-id
 #   tencentCorpId: replace-with-the-corp-id
 #   tencentSdkId: replace-with-the-sdk-id

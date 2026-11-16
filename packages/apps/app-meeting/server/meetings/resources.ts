@@ -13,6 +13,7 @@ export const MEETING_PARTICIPANTS = 'meetingParticipants';
 export const MEETING_RECORDINGS = 'meetingRecordings';
 export const MEETING_CONTENTS = 'meetingContents';
 export const MEETING_IMPORT_RUNS = 'meetingImportRuns';
+export const MEETING_GATEWAY_SETTINGS = 'meetingGatewaySettings';
 export const MEETING_OA_SETTINGS = 'meetingOaSettings';
 export const MEETING_OA_EMPLOYEE_MAPS = 'meetingOaEmployeeMaps';
 export const MEETING_OA_DELEGATIONS = 'meetingOaDelegations';
@@ -38,6 +39,7 @@ export const MEETING_RECONCILIATION_PAGE = 'meeting-reconciliation';
 export const MEETING_OPERATIONS_PAGE = 'meeting-operations';
 
 export const GATEWAY_SECRET_PURPOSE = 'app-meeting.gateway-access';
+export const GATEWAY_CLIENT_SECRET_PURPOSE = 'app-meeting.gateway-client';
 export const OA_SECRET_PURPOSE = 'app-meeting.oa-client';
 
 export type FetchStatus =
@@ -249,6 +251,26 @@ export interface MeetingImportRun {
   errorCode: string | null;
   sourceHash: string | null;
   requestedBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MeetingGatewaySettings {
+  id: string;
+  origin: string | null;
+  applicationId: string | null;
+  expectedApplicationId: string | null;
+  clientId: string | null;
+  sealedClientSecret: string | null;
+  credentialVersion: number;
+  resource: string | null;
+  scopes: string[] | null;
+  publicBaseUrl: string | null;
+  tencentCorpId: string | null;
+  tencentSdkId: string | null;
+  callbackRef: string | null;
+  instanceId: string | null;
+  updatedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -534,6 +556,66 @@ const transcriptRepairData = defineDatabasePermission((permission) =>
     .create(['id', 'meetingId', 'contentId', 'action', 'reason']),
 );
 
+const oaSettingsData = defineDatabasePermission((permission) =>
+  permission
+    .collection<MeetingOaSettings>(MEETING_OA_SETTINGS)
+    .read([
+      'id',
+      'tokenUrl',
+      'peopleUrl',
+      'meetingUrl',
+      'viewUrl',
+      'scope',
+      'clientId',
+      'credentialVersion',
+      'updatedAt',
+    ])
+    .create(['id', 'tokenUrl', 'peopleUrl', 'clientId'])
+    .update([
+      'tokenUrl',
+      'peopleUrl',
+      'meetingUrl',
+      'viewUrl',
+      'scope',
+      'clientId',
+    ]),
+);
+
+const gatewaySettingsData = defineDatabasePermission((permission) =>
+  permission
+    .collection<MeetingGatewaySettings>(MEETING_GATEWAY_SETTINGS)
+    .read([
+      'id',
+      'origin',
+      'applicationId',
+      'expectedApplicationId',
+      'clientId',
+      'resource',
+      'scopes',
+      'publicBaseUrl',
+      'tencentCorpId',
+      'tencentSdkId',
+      'callbackRef',
+      'instanceId',
+      'credentialVersion',
+      'updatedAt',
+    ])
+    .create(['id', 'origin', 'applicationId', 'clientId', 'instanceId'])
+    .update([
+      'origin',
+      'applicationId',
+      'expectedApplicationId',
+      'clientId',
+      'resource',
+      'scopes',
+      'publicBaseUrl',
+      'tencentCorpId',
+      'tencentSdkId',
+      'callbackRef',
+      'instanceId',
+    ]),
+);
+
 export const meetingResource = defineCompositeResource(MEETING_RESOURCE, (r) =>
   r
     .title('Meetings')
@@ -587,8 +669,10 @@ export const meetingResource = defineCompositeResource(MEETING_RESOURCE, (r) =>
     )
     .action('identityManage', (action) =>
       action
-        .title('Manage trusted OA employee mappings')
-        .grant('meetingOaEmployeeMaps', identityData),
+        .title('Manage Meeting integration settings and OA identity mappings')
+        .grant('meetingOaEmployeeMaps', identityData)
+        .grant('meetingGatewaySettings', gatewaySettingsData)
+        .grant('meetingOaSettings', oaSettingsData),
     )
     .action('supplement', (action) =>
       action

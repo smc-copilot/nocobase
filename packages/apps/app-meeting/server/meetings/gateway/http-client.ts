@@ -85,21 +85,30 @@ function mapConnection(item: unknown): GatewayConnection {
 }
 
 export function createHttpMeetingGatewayAdapter(options: {
-  config: MeetingGatewayConfig;
+  config?: MeetingGatewayConfig;
+  resolveConfig?: () => MeetingGatewayConfig | Promise<MeetingGatewayConfig>;
   fetchImpl?: typeof fetch;
 }): MeetingGatewayAdapter {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
-  const timeoutMs = Math.min(
-    Math.max(options.config.timeoutMs || 15_000, 1),
-    30_000,
-  );
 
-  function origin(): string {
+  async function current(): Promise<MeetingGatewayConfig> {
+    if (options.resolveConfig) return await options.resolveConfig();
+    if (options.config) return options.config;
+    throw new MeetingGatewayError(
+      'GATEWAY_NOT_CONFIGURED',
+      'The meeting gateway origin and application id are not configured.',
+      'FAILED_PRECONDITION',
+    );
+  }
+
+  function timeoutOf(config: MeetingGatewayConfig): number {
+    return Math.min(Math.max(config.timeoutMs || 15_000, 1), 30_000);
+  }
+
+  async function origin(): Promise<string> {
+    const config = await current();
     try {
-      return resolveConfiguredOrigin(
-        options.config.origin,
-        options.config.originAllowlist,
-      );
+      return resolveConfiguredOrigin(config.origin, config.originAllowlist);
     } catch {
       throw new MeetingGatewayError(
         'GATEWAY_NOT_CONFIGURED',
@@ -125,10 +134,11 @@ export function createHttpMeetingGatewayAdapter(options: {
         'FAILED_PRECONDITION',
       );
     }
+    const config = await current();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutOf(config));
     try {
-      const response = await fetchImpl(new URL(input.path, origin()), {
+      const response = await fetchImpl(new URL(input.path, await origin()), {
         method: input.method,
         redirect: 'error',
         signal: controller.signal,
@@ -187,10 +197,8 @@ export function createHttpMeetingGatewayAdapter(options: {
   return {
     kind: 'http',
     async startAuthorization(input) {
-      const tencent = resolveTencentAuthorizationConfig(
-        options.config,
-        input.returnTo,
-      );
+      const config = await current();
+      const tencent = resolveTencentAuthorizationConfig(config, input.returnTo);
       const data = await requestJson({
         path: '/api/v1/oauth/authorizations',
         method: 'POST',
@@ -214,7 +222,7 @@ export function createHttpMeetingGatewayAdapter(options: {
       const authorizationUrl = validateAuthorizationUrl(
         data.authorization_url,
         {
-          allowedPaths: options.config.authorizationPathAllowlist,
+          allowedPaths: config.authorizationPathAllowlist,
           config: tencent,
         },
       );
@@ -333,7 +341,10 @@ export function createHttpMeetingGatewayAdapter(options: {
           continue;
         }
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        const timeoutId = setTimeout(
+          () => controller.abort(),
+          timeoutOf(await current()),
+        );
         let response: Response;
         try {
           response = await fetchImpl(url, {

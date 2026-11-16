@@ -43,6 +43,48 @@ test('rejects a non-allowlisted origin', () => {
   );
 });
 
+test('HTTP adapter reads resolveConfig origin at call time and never fetches a non-allowlisted origin', async () => {
+  const fetched: string[] = [];
+  let origin = 'https://gateway.example.test';
+  const adapter = createHttpMeetingGatewayAdapter({
+    resolveConfig: () => ({
+      ...config,
+      origin,
+      originAllowlist: [
+        'https://gateway.example.test',
+        'https://gateway-b.example.test',
+      ],
+    }),
+    fetchImpl: async (input) => {
+      fetched.push(String(input));
+      return new Response(
+        JSON.stringify({
+          code: 0,
+          error_code: 0,
+          data: { items: [] },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    },
+  });
+  await adapter.listConnections({ accessToken: 'mt_x' });
+  expect(fetched[0]).toContain(
+    'https://gateway.example.test/api/v1/me/connections',
+  );
+  origin = 'https://gateway-b.example.test';
+  fetched.length = 0;
+  await adapter.listConnections({ accessToken: 'mt_x' });
+  expect(fetched[0]).toContain(
+    'https://gateway-b.example.test/api/v1/me/connections',
+  );
+  origin = 'https://evil.example.test';
+  fetched.length = 0;
+  await expect(
+    adapter.listConnections({ accessToken: 'mt_x' }),
+  ).rejects.toMatchObject({ reason: 'GATEWAY_NOT_CONFIGURED' });
+  expect(fetched).toEqual([]);
+});
+
 test('HTTP query methods stay blocked without a published client.js contract', async () => {
   const adapter = createHttpMeetingGatewayAdapter({ config });
   await expect(
