@@ -106,6 +106,7 @@ export function PersonChips({
   return (
     <Combobox
       autoHighlight
+      filter={null}
       multiple={mode === 'multi'}
       items={items}
       value={mode === 'multi' ? selected : (selected[0] ?? null)}

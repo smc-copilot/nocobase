@@ -181,11 +181,16 @@ export function SupplementalFilesPanel({
           frozen
             ? undefined
             : async (file) => {
-                await api.request({
-                  path: `meetings/${meetingId}/supplementalFiles/${file.id}`,
-                  method: 'DELETE',
-                });
-                void request.reload();
+                try {
+                  await api.request({
+                    path: `meetings/${meetingId}/supplementalFiles/${file.id}`,
+                    method: 'DELETE',
+                  });
+                  void request.reload();
+                } catch (error) {
+                  fail(error);
+                  throw error;
+                }
               }
         }
       />

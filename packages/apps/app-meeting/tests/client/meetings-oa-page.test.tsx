@@ -34,10 +34,11 @@ describe('OA workspace page', () => {
     vi.stubGlobal(
       'ResizeObserver',
       class {
-        constructor(private readonly callback: () => void) {}
+        constructor(private readonly callback: ResizeObserverCallback) {}
         observe(): void {
-          this.callback();
+          this.callback([], this as unknown as ResizeObserver);
         }
+        unobserve(): void {}
         disconnect(): void {}
       },
     );
@@ -674,5 +675,202 @@ describe('OA workspace page', () => {
     expect(
       screen.queryByRole('button', { name: enUS.meetingOa.recover }),
     ).not.toBeInTheDocument();
+  });
+
+  it('keeps remote people matches whose employee number does not contain the query', async () => {
+    await renderWithApp(
+      <Routes>
+        <Route path='/meetings/:meetingId/oa' element={<MeetingOaPage />} />
+      </Routes>,
+      {
+        namespace: packageMetadata.name,
+        namespaces: { [packageMetadata.name]: enUS },
+        route: '/meetings/meet-1/oa',
+        fetch: answerApi(async ({ path, method }) => {
+          if (path === 'authorization/permissions') return grantPages();
+          if (path === 'meetingOa/identity') {
+            return {
+              data: {
+                userId: 'u1',
+                employeeNo: 'E1001',
+                canSync: true,
+                denyReason: null,
+              },
+            };
+          }
+          if (path === 'meetings/meet-1/oa-draft' && method !== 'PUT') {
+            return {
+              data: {
+                meetingId: 'meet-1',
+                version: 1,
+                title: 'Draft meeting',
+                startAt: null,
+                endAt: null,
+                location: null,
+                summary: 'Minutes',
+                tasks: [],
+                writesOa: false,
+                isolationAdapter: true,
+              },
+            };
+          }
+          if (path === 'meetingOa/people') {
+            return {
+              data: [
+                {
+                  fd_no: 'E1001',
+                  fd_name: 'Zhang San',
+                  fd_department: 'R&D',
+                },
+              ],
+            };
+          }
+          if (path === 'meetings/meet-1/content') {
+            return {
+              data: {
+                minutes: { text: 'Minutes', source: 'local' },
+                sourceTodos: [],
+                localMinutesEdited: false,
+                importStatus: 'empty',
+                lastImportError: null,
+                liveGatewayImport: 'unavailable',
+              },
+            };
+          }
+          if (path.includes('supplementalFiles')) {
+            return { data: [], meta: { total: 0, totalBytes: 0 } };
+          }
+          return new Response(null, { status: 404 });
+        }),
+        services: (app) => {
+          app.container.singleton(
+            authorizationClientToken,
+            (resolver) =>
+              new AuthorizationClient(resolver.resolve(apiClientToken)),
+          );
+        },
+      },
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: enUS.meetingOa.workspaceTitle,
+      }),
+    ).toBeInTheDocument();
+    const search = screen.getAllByLabelText(enUS.meetingOa.peopleSearch)[0];
+    await userEvent.type(search!, 'Zh');
+    expect(
+      await screen.findByRole('option', {
+        name: 'Zhang San (E1001) R&D',
+      }),
+    ).toBeVisible();
+  });
+
+  it('toasts when supplemental file delete fails', async () => {
+    await renderWithApp(
+      <Routes>
+        <Route path='/meetings/:meetingId/oa' element={<MeetingOaPage />} />
+      </Routes>,
+      {
+        namespace: packageMetadata.name,
+        namespaces: { [packageMetadata.name]: enUS },
+        route: '/meetings/meet-1/oa',
+        fetch: answerApi(async ({ path, method }) => {
+          if (path === 'authorization/permissions') return grantPages();
+          if (path === 'meetingOa/identity') {
+            return {
+              data: {
+                userId: 'u1',
+                employeeNo: null,
+                canSync: false,
+                denyReason: 'OA_MAPPING_MISSING',
+              },
+            };
+          }
+          if (path === 'meetings/meet-1/oa-draft' && method !== 'PUT') {
+            return {
+              data: {
+                meetingId: 'meet-1',
+                version: 1,
+                title: 'Draft meeting',
+                startAt: null,
+                endAt: null,
+                location: null,
+                summary: 'Minutes',
+                tasks: [],
+                writesOa: false,
+                isolationAdapter: true,
+              },
+            };
+          }
+          if (path === 'meetings/meet-1/content') {
+            return {
+              data: {
+                minutes: { text: 'Minutes', source: 'local' },
+                sourceTodos: [],
+                localMinutesEdited: false,
+                importStatus: 'empty',
+                lastImportError: null,
+                liveGatewayImport: 'unavailable',
+              },
+            };
+          }
+          if (
+            path === 'meetings/meet-1/supplementalFiles/file-1' &&
+            method === 'DELETE'
+          ) {
+            return new Response(
+              JSON.stringify({
+                error: {
+                  reason: 'FORBIDDEN',
+                  message: 'Cannot delete this supplemental file.',
+                },
+              }),
+              { status: 403, headers: { 'content-type': 'application/json' } },
+            );
+          }
+          if (path.includes('supplementalFiles')) {
+            return {
+              data: [
+                {
+                  id: 'file-1',
+                  fileName: 'note.txt',
+                  mimeType: 'text/plain',
+                  sizeBytes: 18,
+                  parseStatus: 'succeeded',
+                  parseError: null,
+                  tencentSource: false,
+                },
+              ],
+              meta: { total: 1, totalBytes: 18 },
+            };
+          }
+          return new Response(null, { status: 404 });
+        }),
+        services: (app) => {
+          app.container.singleton(
+            authorizationClientToken,
+            (resolver) =>
+              new AuthorizationClient(resolver.resolve(apiClientToken)),
+          );
+        },
+      },
+    );
+    expect(
+      await screen.findByRole('button', {
+        name: enUS.meetingOa.filesRemoveNamed.replace('{name}', 'note.txt'),
+      }),
+    ).toBeVisible();
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: enUS.meetingOa.filesRemoveNamed.replace('{name}', 'note.txt'),
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: enUS.meetingOa.filesDelete }),
+    );
+    expect(
+      await screen.findByText('Cannot delete this supplemental file.'),
+    ).toBeVisible();
+    expect(screen.getByText(enUS.meetingOa.filesDeleteConfirm)).toBeVisible();
   });
 });
