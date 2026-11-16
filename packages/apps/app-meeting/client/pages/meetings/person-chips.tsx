@@ -38,6 +38,7 @@ export function PersonChips({
   const anchor = useComboboxAnchor();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<OaPersonChip[]>([]);
+  const [resultsFor, setResultsFor] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const generationRef = useRef(0);
@@ -54,12 +55,14 @@ export function PersonChips({
         .then((rows) => {
           if (current !== generationRef.current) return;
           setResults(rows.filter((row) => row.fd_no.trim()));
+          setResultsFor(trimmed);
           setError(false);
         })
         .catch(() => {
           if (current !== generationRef.current) return;
-          setError(true);
           setResults([]);
+          setResultsFor(trimmed);
+          setError(true);
         })
         .finally(() => {
           if (current === generationRef.current) setLoading(false);
@@ -68,15 +71,19 @@ export function PersonChips({
     return () => window.clearTimeout(timer);
   }, [canSearch, onSearch, trimmed]);
 
+  const shownResults = useMemo(
+    () => (canSearch && resultsFor === trimmed ? results : []),
+    [canSearch, results, resultsFor, trimmed],
+  );
+  const waiting = canSearch && (loading || resultsFor !== trimmed);
+  const searchFailed = Boolean(error && resultsFor === trimmed && !waiting);
   const peopleByNo = useMemo(() => {
     const next = new Map<string, OaPersonChip>();
     for (const person of value) next.set(person.fd_no, person);
-    if (canSearch) {
-      for (const person of results) next.set(person.fd_no, person);
-    }
+    for (const person of shownResults) next.set(person.fd_no, person);
     return next;
-  }, [canSearch, results, value]);
-  const items = [...peopleByNo.keys()];
+  }, [shownResults, value]);
+  const items = shownResults.map((person) => person.fd_no);
   const selected = value.map((person) => person.fd_no);
   const labelOf = (item: string): string => {
     const person = peopleByNo.get(item);
@@ -85,9 +92,9 @@ export function PersonChips({
       ? `${person.fd_name} (${person.fd_no}) ${person.fd_department}`
       : `${person.fd_name} (${person.fd_no})`;
   };
-  const emptyText = error
+  const emptyText = searchFailed
     ? t('meetingOa.peopleErrorKept')
-    : canSearch && loading
+    : waiting
       ? t('meetingOa.peopleLoading')
       : trimmed.length > 0 && trimmed.length < 2
         ? t('meetingOa.peopleNeedChars')
