@@ -320,74 +320,13 @@ export class MeetingGatewayService {
     await this.requireAction('manageConnections');
     const userId = requireUser(this.userId);
     const runtime = await this.resolveRuntime();
-    const accessToken = await this.connection.transaction(async (trx) => {
-      const states = trx.repository<MeetingOauthState>(MEETING_OAUTH_STATES);
-      const row = await states.findOne({
-        filter: buildFilter((filter) => filter.string('id').eq(state)),
-      });
-      if (!row || row.userId !== userId) {
-        throw new MeetingGatewayError(
-          'OAUTH_STATE_INVALID',
-          'The OAuth state is invalid.',
-          'FAILED_PRECONDITION',
-        );
-      }
-      if (row.consumedAt) {
-        throw new MeetingGatewayError(
-          'OAUTH_STATE_REPLAYED',
-          'The OAuth state was already consumed.',
-          'FAILED_PRECONDITION',
-        );
-      }
-      if (new Date(row.expiresAt).getTime() <= Date.now()) {
-        await states.updateOne({
-          filter: buildFilter((filter) =>
-            filter.and([
-              filter.string('id').eq(row.id),
-              filter.string('userId').eq(userId),
-            ]),
-          ),
-          values: { consumedAt: new Date() },
-        });
-        throw new MeetingGatewayError(
-          'OAUTH_STATE_EXPIRED',
-          'The OAuth state has expired.',
-          'FAILED_PRECONDITION',
-        );
-      }
-      await states.updateOne({
-        filter: buildFilter((filter) =>
-          filter.and([
-            filter.string('id').eq(row.id),
-            filter.string('userId').eq(userId),
-            filter.date('consumedAt').empty(),
-          ]),
-        ),
-        values: { consumedAt: new Date() },
-      });
-      if (!row.sealedAccessToken || !this.secrets.ready) {
-        throw new MeetingGatewayError(
-          'GATEWAY_IDENTITY_TOKEN_UNAVAILABLE',
-          'The stored gateway credential is no longer valid.',
-          'FAILED_PRECONDITION',
-        );
-      }
-      try {
-        return this.secrets.open(row.sealedAccessToken, {
-          purpose: GATEWAY_SECRET_PURPOSE,
-          aad: oauthStateAad({ id: row.id, userId: row.userId }),
-        });
-      } catch {
-        throw new MeetingGatewayError(
-          'GATEWAY_IDENTITY_TOKEN_UNAVAILABLE',
-          'The stored gateway credential is no longer valid.',
-          'FAILED_PRECONDITION',
-        );
-      }
-    });
+    const accessToken = await this.connection.transaction(async (trx) =>
+      this.openPendingOauthToken(trx, state, userId, { consume: false }),
+    );
     const connections = await this.adapter.listConnections({ accessToken });
     const owned = this.allowedConnections(connections, runtime);
     return this.connection.transaction(async (trx) => {
+      await this.openPendingOauthToken(trx, state, userId, { consume: true });
       const now = new Date();
       const bindings = trx.repository<MeetingGatewayBinding>(
         MEETING_GATEWAY_BINDINGS,
@@ -547,6 +486,82 @@ export class MeetingGatewayService {
       );
     }
     return row;
+  }
+
+  private async openPendingOauthToken(
+    connection: DatabaseConnection,
+    state: string,
+    userId: string,
+    options: { consume: boolean },
+  ): Promise<string> {
+    const states =
+      connection.repository<MeetingOauthState>(MEETING_OAUTH_STATES);
+    const row = await states.findOne({
+      filter: buildFilter((filter) => filter.string('id').eq(state)),
+    });
+    if (!row || row.userId !== userId) {
+      throw new MeetingGatewayError(
+        'OAUTH_STATE_INVALID',
+        'The OAuth state is invalid.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    if (row.consumedAt) {
+      throw new MeetingGatewayError(
+        'OAUTH_STATE_REPLAYED',
+        'The OAuth state was already consumed.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    if (new Date(row.expiresAt).getTime() <= Date.now()) {
+      await states.updateOne({
+        filter: buildFilter((filter) =>
+          filter.and([
+            filter.string('id').eq(row.id),
+            filter.string('userId').eq(userId),
+          ]),
+        ),
+        values: { consumedAt: new Date() },
+      });
+      throw new MeetingGatewayError(
+        'OAUTH_STATE_EXPIRED',
+        'The OAuth state has expired.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    if (!row.sealedAccessToken || !this.secrets.ready) {
+      throw new MeetingGatewayError(
+        'GATEWAY_IDENTITY_TOKEN_UNAVAILABLE',
+        'The stored gateway credential is no longer valid.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    let accessToken: string;
+    try {
+      accessToken = this.secrets.open(row.sealedAccessToken, {
+        purpose: GATEWAY_SECRET_PURPOSE,
+        aad: oauthStateAad({ id: row.id, userId: row.userId }),
+      });
+    } catch {
+      throw new MeetingGatewayError(
+        'GATEWAY_IDENTITY_TOKEN_UNAVAILABLE',
+        'The stored gateway credential is no longer valid.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    if (options.consume) {
+      await states.updateOne({
+        filter: buildFilter((filter) =>
+          filter.and([
+            filter.string('id').eq(row.id),
+            filter.string('userId').eq(userId),
+            filter.date('consumedAt').empty(),
+          ]),
+        ),
+        values: { consumedAt: new Date() },
+      });
+    }
+    return accessToken;
   }
 
   openBindingToken(row: MeetingGatewayBinding): string {

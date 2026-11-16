@@ -1,4 +1,5 @@
 import { ApiClientError, useApiClient, useToaster } from '@nocobase/app-client';
+import { useAuthorizationClient } from '@nocobase/app-plugin-authorization/client';
 import { useTranslation } from '@nocobase/i18n/client';
 import { useEffect, useState, type ReactElement } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
@@ -47,6 +48,8 @@ export default function MeetingConnectionsPage(): ReactElement {
   const { t } = useTranslation();
   const api = useApiClient();
   const toaster = useToaster();
+  const authz = useAuthorizationClient();
+  const [canManageServer, setCanManageServer] = useState(false);
   const configRequest = useSettingsData<{ data: GatewayConfig }>(
     'meetingGateway/config',
   );
@@ -60,6 +63,24 @@ export default function MeetingConnectionsPage(): ReactElement {
   const [busy, setBusy] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [actionError, setActionError] = useState<unknown>();
+
+  useEffect(() => {
+    let active = true;
+    void authz
+      .can({
+        resource: { type: 'page', id: 'meeting-integrations' },
+        action: 'access',
+      })
+      .then((allowed) => {
+        if (active) setCanManageServer(allowed);
+      })
+      .catch(() => {
+        if (active) setCanManageServer(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authz]);
 
   const refresh = () => {
     configRequest.reload();
@@ -192,13 +213,19 @@ export default function MeetingConnectionsPage(): ReactElement {
                 {t('meetingConnections.rootUnrestricted')}
               </p>
               <p className='text-sm text-muted-foreground'>
-                {t('meetingConnections.serverConfigHint')}{' '}
-                <Link
-                  className='underline'
-                  to='/settings/meeting-integrations?tab=gateway'
-                >
-                  {t('meetingConnections.serverConfigLink')}
-                </Link>
+                {canManageServer ? (
+                  <>
+                    {t('meetingConnections.serverConfigHint')}{' '}
+                    <Link
+                      className='underline'
+                      to='/settings/meeting-integrations?tab=gateway'
+                    >
+                      {t('meetingConnections.serverConfigLink')}
+                    </Link>
+                  </>
+                ) : (
+                  t('meetingConnections.serverConfigAdminOnly')
+                )}
               </p>
               <div className='flex flex-wrap gap-2'>
                 <Button

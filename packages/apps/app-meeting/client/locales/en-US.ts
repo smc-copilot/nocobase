@@ -112,6 +112,8 @@ const enUS = {
     serverConfigLink: 'Maintain the meeting-gateway server',
     serverConfigHint:
       'User binding is separate from the gateway server settings. Saving server settings does not start OAuth.',
+    serverConfigAdminOnly:
+      'An administrator with Meeting integrations access maintains the gateway server. This page does not grant that permission.',
     rootUnrestricted:
       'A platform root (unrestricted) user can read every stored meeting. Ordinary administrators and members do not receive that bypass.',
     completing: 'Finishing gateway authorization…',

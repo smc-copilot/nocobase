@@ -594,3 +594,38 @@ test('pages meetings from the stored total after a query', async ({
   expect(page.meta).toEqual({ page: 2, pageSize: 2, total: 3 });
   expect(page.data).toHaveLength(1);
 });
+
+test('OAuth complete can retry after listConnections fails', async ({
+  app,
+  testApp,
+  connection,
+}) => {
+  const alice = await createUser(testApp, 'alice');
+  await grantOperator(testApp, alice.user.id);
+  const gateway = adapter(app);
+  const started = (await expectOk(
+    await alice.fetch('/meetingGateway/bindings/start', write({})),
+  )) as { data: { state: string } };
+  gateway.listConnectionsError = new MeetingGatewayError(
+    'UPSTREAM_CONTRACT_ERROR',
+    'Isolation listConnections failure.',
+    'UNAVAILABLE',
+  );
+  const failed = await alice.fetch(
+    '/meetingGateway/bindings/complete',
+    write({ state: started.data.state }),
+  );
+  expect(failed.status).toBe(503);
+  const pending = await connection
+    .repository('meetingOauthStates')
+    .findOne({ filter: { id: started.data.state } });
+  expect((pending as { consumedAt?: Date | null }).consumedAt).toBeNull();
+  gateway.listConnectionsError = undefined;
+  const retried = (await expectOk(
+    await alice.fetch(
+      '/meetingGateway/bindings/complete',
+      write({ state: started.data.state }),
+    ),
+  )) as { data: { status: string } };
+  expect(retried.data.status).toBe('active');
+});

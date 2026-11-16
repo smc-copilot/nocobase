@@ -329,18 +329,44 @@ export async function loadMeetingGatewayRuntime(input: {
   });
 }
 
-function identityFingerprint(input: {
-  origin: string | null;
-  applicationId: string | null;
-  expectedApplicationId: string | null;
-  clientId: string | null;
-  instanceId: string | null;
-  tencentCorpId: string | null;
-  tencentSdkId: string | null;
-  callbackRef: string | null;
-  hasSecret: boolean;
-}): string {
-  return JSON.stringify(input);
+function runtimeIdentity(runtime: ResolvedMeetingGatewayConfig): string {
+  return JSON.stringify({
+    origin: runtime.origin ?? null,
+    applicationId: runtime.applicationId ?? null,
+    expectedApplicationId: runtime.expectedApplicationId ?? null,
+    clientId: runtime.clientId ?? null,
+    instanceId: runtime.instanceId || 'default',
+  });
+}
+
+function previewSettingsRow(
+  existing: MeetingGatewaySettings | undefined,
+  values: Partial<MeetingGatewaySettings>,
+): MeetingGatewaySettings {
+  const now = values.updatedAt ?? existing?.updatedAt ?? new Date();
+  return {
+    id: existing?.id ?? SETTINGS_ID,
+    origin: values.origin ?? null,
+    applicationId: values.applicationId ?? null,
+    expectedApplicationId: values.expectedApplicationId ?? null,
+    clientId: values.clientId ?? null,
+    sealedClientSecret:
+      values.sealedClientSecret === undefined
+        ? (existing?.sealedClientSecret ?? null)
+        : values.sealedClientSecret,
+    credentialVersion:
+      values.credentialVersion ?? existing?.credentialVersion ?? 1,
+    resource: values.resource ?? null,
+    scopes: values.scopes ?? null,
+    publicBaseUrl: values.publicBaseUrl ?? null,
+    tencentCorpId: values.tencentCorpId ?? null,
+    tencentSdkId: values.tencentSdkId ?? null,
+    callbackRef: values.callbackRef ?? null,
+    instanceId: values.instanceId ?? null,
+    updatedBy: values.updatedBy ?? existing?.updatedBy ?? null,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  };
 }
 
 export class MeetingGatewaySettingsService {
@@ -430,44 +456,12 @@ export class MeetingGatewaySettingsService {
     const nextSecret =
       typeof secretIncoming === 'string' ? secretIncoming.trim() : '';
     const replaceSecret = nextSecret.length > 0;
-    const previousSecretConfigured = Boolean(existing?.sealedClientSecret);
-    const nextHasSecret = replaceSecret
-      ? true
-      : clearSecret
-        ? false
-        : previousSecretConfigured;
-    const identityChanged =
-      identityFingerprint({
-        origin: existing?.origin ?? null,
-        applicationId: existing?.applicationId ?? null,
-        expectedApplicationId: existing?.expectedApplicationId ?? null,
-        clientId: existing?.clientId ?? null,
-        instanceId: existing?.instanceId ?? null,
-        tencentCorpId: existing?.tencentCorpId ?? null,
-        tencentSdkId: existing?.tencentSdkId ?? null,
-        callbackRef: existing?.callbackRef ?? null,
-        hasSecret: previousSecretConfigured,
-      }) !==
-      identityFingerprint({
-        origin,
-        applicationId,
-        expectedApplicationId,
-        clientId,
-        instanceId,
-        tencentCorpId,
-        tencentSdkId,
-        callbackRef,
-        hasSecret: nextHasSecret,
-      });
-
-    const bumpVersion = replaceSecret || clearSecret || identityChanged;
-    const nextVersion = bumpVersion
-      ? (existing?.credentialVersion ?? 0) + 1
-      : (existing?.credentialVersion ?? 1);
-
+    const secretMutated = replaceSecret || clearSecret;
+    let nextVersion = existing?.credentialVersion ?? 1;
     let sealedClientSecret = existing?.sealedClientSecret ?? null;
     if (clearSecret) {
       sealedClientSecret = null;
+      nextVersion = (existing?.credentialVersion ?? 0) + 1;
     } else if (replaceSecret) {
       if (!this.secrets.ready) {
         throw new ApiError({
@@ -478,6 +472,7 @@ export class MeetingGatewaySettingsService {
             'Secrets are not configured, so the gateway client secret cannot be sealed.',
         });
       }
+      nextVersion = (existing?.credentialVersion ?? 0) + 1;
       sealedClientSecret = this.secrets.seal(nextSecret, {
         purpose: GATEWAY_CLIENT_SECRET_PURPOSE,
         aad: gatewaySettingsAad({
@@ -485,30 +480,35 @@ export class MeetingGatewaySettingsService {
           credentialVersion: nextVersion,
         }),
       });
-    } else if (
-      bumpVersion &&
-      existing?.sealedClientSecret &&
-      this.secrets.ready
-    ) {
-      try {
-        const current = this.secrets.open(existing.sealedClientSecret, {
-          purpose: GATEWAY_CLIENT_SECRET_PURPOSE,
-          aad: gatewaySettingsAad({
-            id: existing.id,
-            credentialVersion: existing.credentialVersion,
-          }),
-        });
-        sealedClientSecret = this.secrets.seal(current, {
-          purpose: GATEWAY_CLIENT_SECRET_PURPOSE,
-          aad: gatewaySettingsAad({
-            id: SETTINGS_ID,
-            credentialVersion: nextVersion,
-          }),
-        });
-      } catch {
-        sealedClientSecret = existing.sealedClientSecret;
-      }
     }
+
+    const previousRuntime = resolveMeetingGatewayRuntime({
+      row: existing,
+      secrets: this.secrets,
+      deployment: this.deployment,
+    });
+    const nextRuntime = resolveMeetingGatewayRuntime({
+      row: previewSettingsRow(existing, {
+        origin,
+        applicationId,
+        expectedApplicationId,
+        clientId,
+        resource,
+        scopes,
+        publicBaseUrl,
+        tencentCorpId,
+        tencentSdkId,
+        callbackRef,
+        instanceId,
+        sealedClientSecret,
+        credentialVersion: nextVersion,
+      }),
+      secrets: this.secrets,
+      deployment: this.deployment,
+    });
+    const identityChanged =
+      runtimeIdentity(previousRuntime) !== runtimeIdentity(nextRuntime);
+    const isolate = identityChanged || secretMutated;
 
     const values: Partial<MeetingGatewaySettings> = {
       origin,
@@ -560,11 +560,11 @@ export class MeetingGatewaySettingsService {
           },
         });
       }
-      if (identityChanged) {
+      if (isolate) {
         await this.isolateBindings(
           trx,
-          existing?.instanceId || this.deployment.instanceId || 'default',
-          instanceId || this.deployment.instanceId || 'default',
+          previousRuntime.instanceId || 'default',
+          nextRuntime.instanceId || 'default',
           now,
         );
       }

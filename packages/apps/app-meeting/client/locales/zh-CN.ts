@@ -103,6 +103,8 @@ const zhCN: AppResource = {
     serverConfigLink: '维护 meeting-gateway 服务器',
     serverConfigHint:
       '用户绑定与网关服务器配置分开。保存服务器配置不会发起授权。',
+    serverConfigAdminOnly:
+      '网关服务器由拥有会议集成权限的管理员维护。本页不授予该权限。',
     rootUnrestricted:
       '平台 root（unrestricted）可以读取全部已入库会议。普通管理员和成员不会因此获得他人会议的读取权。',
     completing: '正在完成网关授权…',

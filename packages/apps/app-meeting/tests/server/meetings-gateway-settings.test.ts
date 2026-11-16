@@ -367,3 +367,91 @@ test('switching instance id isolates old bindings without reusing tokens', async
   )) as { data: { status: string } };
   expect(current.data.status).toBe('disconnected');
 });
+
+test('copying env identity into saved settings does not isolate bindings', async ({
+  app,
+  testApp,
+  connection,
+}) => {
+  const admin = await createUser(testApp, 'admin');
+  const operator = await createUser(testApp, 'operator');
+  await grant(testApp, admin.user.id, 'meeting-oa-operator');
+  await grant(testApp, operator.user.id, 'meeting-operator');
+  adapter(app);
+  const started = (await expectOk(
+    await operator.fetch('/meetingGateway/bindings/start', write({})),
+  )) as { data: { state: string } };
+  const bound = (await expectOk(
+    await operator.fetch(
+      '/meetingGateway/bindings/complete',
+      write({ state: started.data.state }),
+    ),
+  )) as { data: { id: string; status: string } };
+  expect(bound.data.status).toBe('active');
+  const saved = (await expectOk(
+    await admin.fetch(
+      '/meetingGateway/settings',
+      put({
+        origin: 'https://gateway.example.test',
+        applicationId: 'app-meeting',
+        clientId: 'env-client',
+        instanceId: 'gw-test',
+        tencentCorpId: 'corp-saved',
+      }),
+    ),
+  )) as { data: { credentialVersion: number; sources: { origin: string } } };
+  expect(saved.data.sources.origin).toBe('settings');
+  const current = (await expectOk(
+    await operator.fetch('/meetingGateway/bindings'),
+  )) as { data: { id: string; status: string } };
+  expect(current.data).toMatchObject({
+    id: bound.data.id,
+    status: 'active',
+  });
+  const historical = await connection
+    .repository('meetingGatewayBindings')
+    .findOne({ filter: { id: bound.data.id } });
+  expect(historical).toMatchObject({
+    gatewayInstanceId: 'gw-test',
+    status: 'active',
+  });
+  expect(
+    (historical as { sealedAccessToken?: string | null }).sealedAccessToken,
+  ).toBeTruthy();
+});
+
+test('identity-only save keeps the sealed secret openable', async ({
+  app,
+  testApp,
+  connection,
+}) => {
+  const admin = await createUser(testApp, 'admin');
+  await grant(testApp, admin.user.id, 'meeting-oa-operator');
+  const first = (await expectOk(
+    await admin.fetch(
+      '/meetingGateway/settings',
+      put({
+        origin: 'https://gateway.example.test',
+        clientSecret: 'keep-me-sealed',
+      }),
+    ),
+  )) as { data: { credentialVersion: number; hasSecret: boolean } };
+  expect(first.data.hasSecret).toBe(true);
+  const version = first.data.credentialVersion;
+  const second = (await expectOk(
+    await admin.fetch(
+      '/meetingGateway/settings',
+      put({ applicationId: 'app-other' }),
+    ),
+  )) as { data: { credentialVersion: number; hasSecret: boolean } };
+  expect(second.data.hasSecret).toBe(true);
+  expect(second.data.credentialVersion).toBe(version);
+  const runtime = await loadMeetingGatewayRuntime({
+    connection,
+    secrets: app.container.resolve(secretsServiceToken),
+    deployment: app.config.get('meetingGateway') as MeetingGatewayConfig,
+  });
+  expect(runtime.clientSecret).toBe('keep-me-sealed');
+  expect(runtime.applicationId).toBe('app-other');
+  expect(runtime.sources.clientSecret).toBe('settings');
+});
