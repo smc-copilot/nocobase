@@ -44,7 +44,12 @@ export function isoToBeijingDateTime(iso: string): string {
 
 export function isoToBeijingInput(iso: string | null | undefined): string {
   if (!iso) return '';
-  return isoToBeijingDateTime(iso).slice(0, 16).replace(' ', 'T');
+  const trimmed = iso.trim();
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed.slice(0, 16).replace(' ', 'T');
+  }
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+  return isoToBeijingDateTime(trimmed).slice(0, 16).replace(' ', 'T');
 }
 
 export function beijingWallToIso(value: string): string | null {

@@ -335,40 +335,30 @@ export function createHttpMeetingGatewayAdapter(options: {
             signal: controller.signal,
           });
         } catch {
-          throw new MeetingGatewayError(
-            'SOURCE_NOT_IMPORTABLE',
-            'The recording download failed before a usable body.',
-            'UNAVAILABLE',
-            true,
-          );
+          continue;
         } finally {
           clearTimeout(timeoutId);
         }
-        if (response.url) assertDownloadUrl(response.url);
+        if (!response.ok) continue;
+        if (response.url) {
+          try {
+            assertDownloadUrl(response.url);
+          } catch {
+            continue;
+          }
+        }
         const length = Number(response.headers.get('content-length') ?? '0');
-        if (length > RECORDING_IMPORT_MAX_BYTES) {
-          throw new MeetingGatewayError(
-            'SOURCE_NOT_IMPORTABLE',
-            'The recording file exceeded the import size limit.',
-            'FAILED_PRECONDITION',
-          );
-        }
+        if (length > RECORDING_IMPORT_MAX_BYTES) continue;
         const buffer = Buffer.from(await response.arrayBuffer());
-        if (buffer.byteLength > RECORDING_IMPORT_MAX_BYTES) {
-          throw new MeetingGatewayError(
-            'SOURCE_NOT_IMPORTABLE',
-            'The recording file exceeded the import size limit.',
-            'FAILED_PRECONDITION',
-          );
-        }
-        if (item.extension !== 'txt' && item.extension !== 'md') {
-          throw new MeetingGatewayError(
-            'SOURCE_NOT_IMPORTABLE',
-            'This recording format is not importable in this period.',
-            'FAILED_PRECONDITION',
-          );
-        }
+        if (buffer.byteLength > RECORDING_IMPORT_MAX_BYTES) continue;
         artifacts.push(artifactsFromText(item.group, buffer.toString('utf8')));
+      }
+      if (artifacts.length === 0) {
+        throw new MeetingGatewayError(
+          'SOURCE_NOT_IMPORTABLE',
+          'No importable recording text was downloaded.',
+          'FAILED_PRECONDITION',
+        );
       }
       return artifacts;
     },

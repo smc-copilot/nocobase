@@ -463,28 +463,7 @@ export function createHttpMeetingOaAdapter(options: {
           'OA task assignment outcome is unknown; check OA before retrying',
       });
       const list = Array.isArray(result?.list) ? result.list : [];
-      const byName = new Map(payload.tasks.map((task) => [task.title, task]));
-      const mapped: OaTaskWriteResult[] = [];
-      const used = new Set<string>();
-      for (const item of list) {
-        if (!item || typeof item !== 'object') continue;
-        const row = item as Record<string, unknown>;
-        const taskName = asText(row.task_name);
-        const taskId = asText(row.task_id);
-        const success = row.success === true;
-        const match =
-          payload.tasks.find(
-            (task) => task.title === taskName && !used.has(task.clientTaskId),
-          ) ?? byName.get(taskName);
-        if (!match) continue;
-        used.add(match.clientTaskId);
-        mapped.push({
-          clientTaskId: match.clientTaskId,
-          status: success && taskId ? 'succeeded' : 'unknown',
-          externalTaskId: taskId || null,
-          errorCode: success && taskId ? null : 'OA_TASKS_UNKNOWN',
-        });
-      }
+      const mapped = associateTaskResults(payload.tasks, list);
       const allSucceeded =
         response.ok &&
         String(result?.X_RETURN_CODE) === '200' &&
@@ -506,6 +485,42 @@ export function createHttpMeetingOaAdapter(options: {
       );
     },
   };
+}
+
+export function associateTaskResults(
+  tasks: FrozenOaPayload['tasks'],
+  list: unknown[],
+): OaTaskWriteResult[] {
+  const mapped: OaTaskWriteResult[] = [];
+  const used = new Set<string>();
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const clientTaskId = asText(row.client_task_id || row.clientTaskId);
+    const taskName = asText(row.task_name || row.taskName);
+    const taskId = asText(row.task_id || row.taskId);
+    const success = row.success === true;
+    const match =
+      (clientTaskId
+        ? tasks.find(
+            (task) =>
+              task.clientTaskId === clientTaskId &&
+              !used.has(task.clientTaskId),
+          )
+        : undefined) ??
+      tasks.find(
+        (task) => task.title === taskName && !used.has(task.clientTaskId),
+      );
+    if (!match) continue;
+    used.add(match.clientTaskId);
+    mapped.push({
+      clientTaskId: match.clientTaskId,
+      status: success && taskId ? 'succeeded' : 'unknown',
+      externalTaskId: taskId || null,
+      errorCode: success && taskId ? null : 'OA_TASKS_UNKNOWN',
+    });
+  }
+  return mapped;
 }
 
 export const OA_WRITE_CONTRACT_MESSAGE =

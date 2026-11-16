@@ -1,5 +1,5 @@
 import type { FrozenOaPayload } from './adapter.js';
-import { isoToBeijingDateTime } from './beijing-time.js';
+import { isoToBeijingDateTime, toOaDateTime } from './beijing-time.js';
 
 function person(no: string): { PersonNo: string } {
   return { PersonNo: no };
@@ -53,7 +53,8 @@ export function buildUploadSummaryBody(
     summaryContent: summaryHtml(payload.summary),
     inputPerson: person(payload.creatorEmployeeNo),
     actualAttendPersons: payload.actualAttendEmployeeNos.map(person),
-    summaryCompleteTime: payload.summaryCompleteTime,
+    summaryCompleteTime:
+      toOaDateTime(payload.summaryCompleteTime) ?? payload.summaryCompleteTime,
   };
   if (payload.copyToEmployeeNos.length) {
     body.copyToPersons = payload.copyToEmployeeNos.map(person);

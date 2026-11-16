@@ -23,6 +23,7 @@ import {
   dueAtToOa,
   isoToBeijingDateTime,
   startAtToOa,
+  toOaDateTime,
 } from './beijing-time.js';
 import { MeetingOaError } from './errors.js';
 
@@ -230,6 +231,8 @@ export class MeetingOaDraftService {
           summaryCompleteTime:
             input.summaryCompleteTime !== undefined
               ? input.summaryCompleteTime
+                ? toOaDateTime(input.summaryCompleteTime)
+                : null
               : current.summaryCompleteTime,
           updatedBy: userId,
           updatedAt: now,
@@ -359,12 +362,24 @@ export class MeetingOaDraftService {
         'INVALID_ARGUMENT',
       );
     }
-    const completeTasks = tasks.filter(
-      (task) =>
+    const blankTask = (task: MeetingOaDraftTask) =>
+      !task.title.trim() &&
+      !task.assigneeEmployeeNo?.trim() &&
+      !task.dueAt?.trim();
+    const completeTask = (task: MeetingOaDraftTask) =>
+      Boolean(
         task.title.trim() &&
         task.assigneeEmployeeNo?.trim() &&
         task.dueAt?.trim(),
-    );
+      );
+    if (tasks.some((task) => !blankTask(task) && !completeTask(task))) {
+      throw new MeetingOaError(
+        'OA_DRAFT_INVALID',
+        'Every started OA task needs a title, assignee and due date before sync.',
+        'INVALID_ARGUMENT',
+      );
+    }
+    const completeTasks = tasks.filter(completeTask);
     if (completeTasks.length < 1) {
       throw new MeetingOaError(
         'OA_DRAFT_INVALID',
@@ -404,7 +419,7 @@ export class MeetingOaDraftService {
         description: task.description,
       };
     });
-    let summaryCompleteTime = draft.summaryCompleteTime?.trim() || '';
+    let summaryCompleteTime = toOaDateTime(draft.summaryCompleteTime) ?? '';
     if (!summaryCompleteTime) {
       summaryCompleteTime = isoToBeijingDateTime(new Date().toISOString());
       await this.connection

@@ -5,9 +5,12 @@ import {
   isEffectiveMinutes,
 } from '../../server/meetings/minutes.js';
 import {
+  associateTaskResults,
   createHttpMeetingOaAdapter,
   mapPerson,
 } from '../../server/meetings/oa/http-adapter.js';
+import { buildUploadSummaryBody } from '../../server/meetings/oa/oa-payload.js';
+import { preferredDownloadArtifacts } from '../../server/meetings/gateway/record-files.js';
 import { MeetingOaError } from '../../server/meetings/oa/errors.js';
 import type { FrozenOaPayload } from '../../server/meetings/oa/adapter.js';
 import {
@@ -389,5 +392,70 @@ describe('tencent group mapping and Beijing time', () => {
     expect(isoToBeijingDateTime('2026-11-16T01:00:00.000Z')).toBe(
       '2026-11-16 09:00:00',
     );
+  });
+
+  it('uploads summaryCompleteTime as Beijing wall clock, not raw ISO', () => {
+    const body = buildUploadSummaryBody(
+      {
+        ...frozenPayload,
+        summaryCompleteTime: '2026-11-16T10:15:00.000Z',
+      },
+      'oa-meet-1',
+    );
+    expect(body.summaryCompleteTime).toBe('2026-11-16 18:15:00');
+  });
+
+  it('associates unused titles once and leaves extra OA rows unmatched', () => {
+    const mapped = associateTaskResults(frozenPayload.tasks, [
+      { task_name: 'Keep', task_id: 'oa-keep', success: true },
+      { task_name: 'Keep', task_id: 'oa-keep-extra', success: true },
+      { task_name: 'Unknown', task_id: 'oa-other', success: true },
+    ]);
+    expect(mapped).toEqual([
+      {
+        clientTaskId: 'c-keep',
+        status: 'succeeded',
+        externalTaskId: 'oa-keep',
+        errorCode: null,
+      },
+    ]);
+    expect(mapped.some((row) => row.externalTaskId === 'oa-keep-extra')).toBe(
+      false,
+    );
+  });
+
+  it('concatenates importable txt/md in group order and skips pdf/docx', () => {
+    expect(
+      preferredDownloadArtifacts({
+        meeting_summary: [
+          { download_address: 'https://cos.ap-guangzhou.myqcloud.com/a.txt' },
+          {
+            download_address: 'https://cos.ap-guangzhou.myqcloud.com/a.pdf',
+            file_type: 'pdf',
+          },
+          {
+            download_address: 'https://cos.ap-guangzhou.myqcloud.com/b.md',
+            file_type: 'md',
+          },
+        ],
+        ai_ds_minutes: [
+          {
+            download_address: 'https://cos.ap-guangzhou.myqcloud.com/only.docx',
+            file_type: 'docx',
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        group: 'meeting_summary',
+        url: 'https://cos.ap-guangzhou.myqcloud.com/a.txt',
+        extension: 'txt',
+      },
+      {
+        group: 'meeting_summary',
+        url: 'https://cos.ap-guangzhou.myqcloud.com/b.md',
+        extension: 'md',
+      },
+    ]);
   });
 });

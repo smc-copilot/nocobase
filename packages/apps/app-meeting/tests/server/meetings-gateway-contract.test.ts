@@ -148,3 +148,50 @@ test('retries only retryable gateway reads', async () => {
   ).rejects.toBeInstanceOf(MeetingGatewayError);
   expect(attempts).toBe(3);
 });
+
+test('skips failed recording downloads and does not store error HTML', async () => {
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/record-files/rec-1') && !url.includes('myqcloud')) {
+      return new Response(
+        JSON.stringify({
+          code: 0,
+          error_code: 0,
+          data: {
+            meeting_summary: [
+              {
+                download_address:
+                  'https://cos.ap-guangzhou.myqcloud.com/fail.txt',
+              },
+              {
+                download_address:
+                  'https://cos.ap-guangzhou.myqcloud.com/ok.txt',
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    if (url.endsWith('/fail.txt')) {
+      return new Response('<html>denied</html>', { status: 403 });
+    }
+    if (url.endsWith('/ok.txt')) {
+      return new Response('ORIGINAL_ONLY isolation dialogue', { status: 200 });
+    }
+    return new Response(null, { status: 404 });
+  };
+  const adapter = createHttpMeetingGatewayAdapter({
+    config,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+  const imported = await adapter.importRecordingContent!({
+    accessToken: 'mt_x',
+    connectionRef: 'conn-1',
+    recordFileId: 'rec-1',
+  });
+  expect(imported.map((item) => item.text)).toEqual([
+    'ORIGINAL_ONLY isolation dialogue',
+  ]);
+  expect(imported.some((item) => item.text.includes('denied'))).toBe(false);
+});

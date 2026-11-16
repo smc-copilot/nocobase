@@ -274,6 +274,66 @@ test('saves an OA draft with zero adapter writes and keeps mapping optional', as
   expect(adapter.createMeetingCalls).toEqual([]);
 });
 
+test('stores summaryCompleteTime as Beijing wall clock and rejects incomplete freeze tasks', async ({
+  app,
+  testApp,
+  connection,
+}) => {
+  const alice = await createUser(testApp, 'alice');
+  await grant(testApp, alice.user.id, 'meeting-operator');
+  await grant(testApp, alice.user.id, 'meeting-oa-operator');
+  await insertMeeting(
+    connection,
+    { id: 'meet-complete-time', title: 'Time' },
+    alice.user.id,
+  );
+  oaAdapter(app);
+  const draft = (await expectOk(
+    await alice.fetch('/meetings/meet-complete-time/oa-draft'),
+  )) as { data: { version: number } };
+  const saved = (await expectOk(
+    await alice.fetch(
+      '/meetings/meet-complete-time/oa-draft',
+      put(
+        readyDraft(draft.data.version, {
+          summaryCompleteTime: '2026-11-16T10:15:00.000Z',
+          tasks: [
+            {
+              clientTaskId: 'task-ready',
+              title: 'Assigned follow-up',
+              assigneeEmployeeNo: 'E1001',
+              dueAt: '2026-11-20',
+            },
+            {
+              clientTaskId: 'task-incomplete',
+              title: 'Missing due',
+              assigneeEmployeeNo: 'E1001',
+            },
+          ],
+        }),
+      ),
+    ),
+  )) as { data: { version: number; summaryCompleteTime: string | null } };
+  expect(saved.data.summaryCompleteTime).toBe('2026-11-16 18:15:00');
+  await expectOk(
+    await alice.fetch(
+      '/meetingOa/identities',
+      put({ userId: alice.user.id, employeeNo: 'E1001', displayName: 'Alice' }),
+    ),
+  );
+  const blocked = await alice.fetch(
+    '/meetingOa/operations',
+    write({
+      meetingId: 'meet-complete-time',
+      requestId: 'req-incomplete',
+      expectedDraftVersion: saved.data.version,
+    }),
+  );
+  expect(blocked.status).toBe(400);
+  const body = (await blocked.json()) as { error?: { reason?: string } };
+  expect(body.error?.reason).toBe('OA_DRAFT_INVALID');
+});
+
 test('formal sync without mapping writes zero OA and same requestId replays', async ({
   app,
   testApp,

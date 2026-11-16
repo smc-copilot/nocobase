@@ -13,13 +13,6 @@ const GROUPS = [
   'ai_ds_minutes',
 ] as const;
 
-const FORMAT_PREFERENCE = new Map([
-  ['txt', 0],
-  ['md', 1],
-  ['docx', 2],
-  ['pdf', 3],
-]);
-
 export const RECORDING_IMPORT_MAX_BYTES = 20 * 1024 * 1024;
 
 function envelopeData(value: unknown): Record<string, unknown> {
@@ -161,7 +154,6 @@ export function preferredDownloadArtifacts(
         'UNAVAILABLE',
       );
     }
-    let best: { url: string; extension: string; rank: number } | undefined;
     for (const item of rows) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
       const address = (item as { download_address?: unknown }).download_address;
@@ -173,12 +165,9 @@ export function preferredDownloadArtifacts(
         .toLowerCase()
         .replace(/^\./, '');
       const extension = rawType === 'docs' ? 'docx' : rawType;
-      if (!['txt', 'md', 'docx', 'pdf'].includes(extension)) continue;
-      const rank = FORMAT_PREFERENCE.get(extension) ?? FORMAT_PREFERENCE.size;
-      if (!best || rank < best.rank) best = { url: address, extension, rank };
+      if (extension !== 'txt' && extension !== 'md') continue;
+      selected.push({ group, url: address, extension });
     }
-    if (best)
-      selected.push({ group, url: best.url, extension: best.extension });
   }
   return selected;
 }
