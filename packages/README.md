@@ -53,9 +53,9 @@ Inside a template's own directory, use `pnpm dev`, `pnpm build`, and `pnpm start
 
 ## `apps/`
 
-Complete applications that are products in their own right rather than starting points. `app-meeting` is the Meeting product App; NocoBase Studio is maintained in its own repository. An application here is published as its own source, like a template, so it can be installed and built elsewhere, but `create-app` never scaffolds from it and nothing depends on it.
+Complete applications that are products in their own right rather than starting points. `app-meeting` is the Meeting product App; `app-enterprise-portal` is the employee application portal. NocoBase Studio is maintained in its own repository. An application here is published as its own source, like a template, so it can be installed and built elsewhere, but `create-app` never scaffolds from it and nothing depends on it.
 
-For local development of Meeting from this repository, run `pnpm meeting:dev` from the repository root. `pnpm meeting:build` and `pnpm meeting:start` match the template commands. Inside `packages/apps/app-meeting`, use `pnpm dev`, `pnpm build`, and `pnpm start`.
+For local development of Meeting from this repository, run `pnpm meeting:dev` from the repository root. `pnpm meeting:build` and `pnpm meeting:start` match the template commands. Inside `packages/apps/app-meeting`, use `pnpm dev`, `pnpm build`, and `pnpm start`. The employee portal is developed from `packages/apps/app-enterprise-portal` with `pnpm dev`.
 
 It is not kept in step with the templates: it takes a newer template through its `nocobase-app-upgrade` Skill, as any generated application does. Its migrations are immutable history from the moment they merge, because installations of it keep their data across updates.
 

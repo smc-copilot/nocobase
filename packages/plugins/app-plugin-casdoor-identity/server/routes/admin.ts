@@ -15,6 +15,7 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 
 import {
   ERROR_DOMAIN,
+  SETTINGS_EXTERNAL_IDENTITIES,
   SETTINGS_MAPPING,
   SETTINGS_SUBJECT_BINDINGS,
   SETTINGS_SYNC,
@@ -57,6 +58,7 @@ const ClaimMappingSchema = z
     name: z.string().max(255).optional(),
     organization: z.string().max(255).optional(),
     groups: z.string().max(255).optional(),
+    employeeNo: z.string().max(255).optional(),
   })
   .meta({ ref: 'CasdoorIdentityClaimMapping' });
 
@@ -223,6 +225,57 @@ const SubjectBindingSchema = z
   })
   .meta({ ref: 'CasdoorIdentitySubjectBinding' });
 
+const ExternalIdentityBindingQuery = z.object({
+  issuer: z.string().url().max(512).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+const ExternalIdentityBindingRowSchema = z.strictObject({
+  issuer: z.string().url().max(512),
+  subject: z.string().min(1).max(255),
+  employeeNo: z.string().min(1).max(128).optional(),
+  localUserId: z.string().max(64).optional(),
+});
+
+const ExternalIdentityBindingBatchInput = z.strictObject({
+  rows: z.array(ExternalIdentityBindingRowSchema).min(1).max(500),
+});
+
+const ExternalIdentityBindingSchema = z
+  .object({
+    id: z.string(),
+    issuer: z.string(),
+    subject: z.string(),
+    localUserId: z.string(),
+    username: z.string().nullable(),
+    disabledAt: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .meta({ ref: 'CasdoorIdentityExternalIdentity' });
+
+const ExternalIdentityBindingPreviewSchema = z
+  .object({
+    rows: z.array(
+      z.object({
+        index: z.number(),
+        issuer: z.string(),
+        subject: z.string(),
+        employeeNo: z.string().optional(),
+        status: z.enum(['create', 'unchanged', 'conflict']),
+        conflicts: z.array(z.string()),
+        localUserId: z.string().optional(),
+        bindingId: z.string().optional(),
+      }),
+    ),
+    summary: z.object({
+      create: z.number(),
+      unchanged: z.number(),
+      conflict: z.number(),
+    }),
+  })
+  .meta({ ref: 'CasdoorIdentityExternalIdentityPreview' });
+
 const SubjectBindingPreviewSchema = z
   .object({
     rows: z.array(
@@ -267,6 +320,7 @@ export const ADMIN_PATHS: readonly string[] = [
   '/providers',
   '/mappingRules',
   '/subjectBindings',
+  '/externalIdentities',
 ];
 
 const forbidden = (item: string, action: string): ApiError =>
@@ -758,6 +812,92 @@ export function createAdminRouter(options: AdminRouterOptions): Hono<AdminEnv> {
         data: await services().bindings.reEnable(bindingId, actorOf(context)),
       });
     },
+  );
+
+  // ----- External identity employee-number import ------------------------------------------
+
+  router.get(
+    '/externalIdentities',
+    permit(SETTINGS_EXTERNAL_IDENTITIES, 'read'),
+    describeRoute({
+      tags,
+      summary: 'List Casdoor issuer and subject bindings',
+      operationId: 'casdoorIdentityListExternalIdentities',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_EXTERNAL_IDENTITIES}\` read. These rows are employee OIDC bindings, not Business UI subject pre-bindings.`,
+      responses: {
+        200: listResponse(ExternalIdentityBindingSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('query', ExternalIdentityBindingQuery),
+    async (context) => {
+      const query = context.req.valid('query');
+      const bindings = await services().externalIdentities.list({
+        limit: query.limit,
+        ...(query.issuer ? { issuer: query.issuer } : {}),
+      });
+      return context.json({
+        data: bindings.map((row) => ({
+          ...row,
+          disabledAt: row.disabledAt ? row.disabledAt.toISOString() : null,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        })),
+        meta: { total: bindings.length },
+      });
+    },
+  );
+
+  router.post(
+    '/externalIdentities/preview',
+    permit(SETTINGS_EXTERNAL_IDENTITIES, 'import'),
+    describeRoute({
+      tags,
+      summary: 'Preview employee-number identity bindings',
+      operationId: 'casdoorIdentityPreviewExternalIdentities',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_EXTERNAL_IDENTITIES}\` import. Read-only: matches trusted employee numbers to \`user.username\` and never merges by e-mail.`,
+      responses: {
+        200: dataResponse(ExternalIdentityBindingPreviewSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('json', ExternalIdentityBindingBatchInput),
+    async (context) =>
+      context.json({
+        data: await services().externalIdentities.preview(
+          context.req.valid('json').rows,
+        ),
+      }),
+  );
+
+  router.post(
+    '/externalIdentities/commit',
+    permit(SETTINGS_EXTERNAL_IDENTITIES, 'import'),
+    describeRoute({
+      tags,
+      summary: 'Commit employee-number identity bindings',
+      operationId: 'casdoorIdentityCommitExternalIdentities',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_EXTERNAL_IDENTITIES}\` import. Atomic and audited: any conflict (\`IDENTITY_BINDING_CONFLICTS\`) writes nothing.`,
+      responses: {
+        200: dataResponse(ExternalIdentityBindingPreviewSchema),
+        ...apiErrorResponses,
+        409: apiErrorResponse(
+          409,
+          'The batch has conflicts (`IDENTITY_BINDING_CONFLICTS`).',
+        ),
+      },
+    }),
+    apiValidator('json', ExternalIdentityBindingBatchInput),
+    async (context) =>
+      context.json({
+        data: await services().externalIdentities.commit(
+          context.req.valid('json').rows,
+          actorOf(context),
+        ),
+      }),
   );
 
   return router;

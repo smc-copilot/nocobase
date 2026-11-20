@@ -4,6 +4,7 @@ import { IdentityProviderService } from '../services/identity-providers.js';
 import { IdentityProvisioningService } from '../services/identity-provisioning.js';
 import { IdentitySyncService } from '../services/identity-sync.js';
 import { PermissionMappingService } from '../services/permission-mapping.js';
+import { ExternalIdentityBindingService } from '../services/external-identity-bindings.js';
 import { SubjectBindingService } from '../services/subject-bindings.js';
 import type { IdentityRuntime } from './model.js';
 
@@ -15,6 +16,7 @@ export interface IdentityServices {
   readonly provisioning: IdentityProvisioningService;
   readonly sync: IdentitySyncService;
   readonly bindings: SubjectBindingService;
+  readonly externalIdentities: ExternalIdentityBindingService;
 }
 
 export function createIdentityServices(
@@ -42,5 +44,6 @@ export function createIdentityServices(
       directory,
     ),
     bindings: new SubjectBindingService(runtime, audit),
+    externalIdentities: new ExternalIdentityBindingService(runtime, audit),
   };
 }
