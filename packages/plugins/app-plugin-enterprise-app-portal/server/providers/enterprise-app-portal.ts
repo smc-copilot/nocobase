@@ -22,6 +22,7 @@ export class EnterprisePortalProvider extends ServiceProvider<AppPluginApplicati
       createEnterprisePortalServices(
         () => resolver.resolve(databaseManagerToken),
         () => this.config(),
+        { env: process.env },
       ),
     );
   }

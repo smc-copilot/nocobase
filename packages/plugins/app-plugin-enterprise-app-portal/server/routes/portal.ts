@@ -12,14 +12,26 @@ import {
 } from '@nocobase/app-server/router';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 
-import { SETTINGS_AUDIT, SETTINGS_CATALOG } from '../config.js';
+import {
+  SETTINGS_AUDIT,
+  SETTINGS_CASDOOR,
+  SETTINGS_CATALOG,
+} from '../config.js';
 import type { EnterprisePortalServices } from '../services/composition.js';
 import type { AccessIdentity } from '../services/casdoor-application-access.js';
 import type { PortalApplicationRecord } from '../services/application-catalog.js';
 import {
   AppCodeParam,
   AuditEventSchema,
+  ApplicationGrantReplaceInput,
   AuditQuery,
+  CasdoorApplicationQuery,
+  CasdoorApplicationSchema,
+  CasdoorConnectionSchema,
+  CasdoorUserGrantsSchema,
+  CasdoorUserParam,
+  CasdoorUserQuery,
+  CasdoorUserSchema,
   CatalogApplicationSchema,
   CatalogCreateInput,
   CatalogUpdateInput,
@@ -299,6 +311,168 @@ export function createPortalRouter(
           createdAt: event.createdAt.toISOString(),
         })),
         meta: { total: events.length },
+      });
+    },
+  );
+
+  router.post(
+    '/admin/casdoor/testConnection',
+    permit(SETTINGS_CASDOOR, 'read'),
+    describeRoute({
+      tags,
+      summary: 'Test the Casdoor management connection',
+      operationId: 'enterpriseAppPortalTestCasdoorConnection',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_CASDOOR}\` read. Credentials stay on the server. A missing or rejected Casdoor answers 503 \`CASDOOR_MANAGEMENT_UNAVAILABLE\`.`,
+      responses: {
+        200: dataResponse(CasdoorConnectionSchema),
+        ...apiErrorResponses,
+        503: apiErrorResponse(
+          503,
+          'Casdoor management is not configured or did not answer (`CASDOOR_MANAGEMENT_UNAVAILABLE`).',
+        ),
+      },
+    }),
+    async (context) => {
+      return context.json({ data: await services().grants.testConnection() });
+    },
+  );
+
+  router.get(
+    '/admin/casdoor/users',
+    permit(SETTINGS_CASDOOR, 'read'),
+    describeRoute({
+      tags,
+      summary: 'List Casdoor users for application grants',
+      operationId: 'enterpriseAppPortalListCasdoorUsers',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_CASDOOR}\` read. Passwords and access secrets are omitted. \`q\` filters Casdoor user name.`,
+      responses: {
+        200: listResponse(CasdoorUserSchema),
+        ...apiErrorResponses,
+        503: apiErrorResponse(
+          503,
+          'Casdoor management is not configured or did not answer (`CASDOOR_MANAGEMENT_UNAVAILABLE`).',
+        ),
+      },
+    }),
+    apiValidator('query', CasdoorUserQuery),
+    async (context) => {
+      const query = context.req.valid('query');
+      const listed = await services().grants.listUsers({
+        organization: query.organization,
+        query: query.q,
+        page: query.page,
+        pageSize: query.pageSize,
+      });
+      return context.json({
+        data: listed.users,
+        meta: {
+          total: listed.total,
+          page: query.page,
+          pageSize: query.pageSize,
+        },
+      });
+    },
+  );
+
+  router.get(
+    '/admin/casdoor/applications',
+    permit(SETTINGS_CASDOOR, 'read'),
+    describeRoute({
+      tags,
+      summary: 'List Casdoor applications that can be granted',
+      operationId: 'enterpriseAppPortalListCasdoorApplications',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_CASDOOR}\` read. Client secrets are omitted.`,
+      responses: {
+        200: listResponse(CasdoorApplicationSchema),
+        ...apiErrorResponses,
+        503: apiErrorResponse(
+          503,
+          'Casdoor management is not configured or did not answer (`CASDOOR_MANAGEMENT_UNAVAILABLE`).',
+        ),
+      },
+    }),
+    apiValidator('query', CasdoorApplicationQuery),
+    async (context) => {
+      const query = context.req.valid('query');
+      const listed = await services().grants.listApplications({
+        owner: query.owner,
+        page: query.page,
+        pageSize: query.pageSize,
+      });
+      return context.json({
+        data: listed.applications,
+        meta: {
+          total: listed.total,
+          page: query.page,
+          pageSize: query.pageSize,
+        },
+      });
+    },
+  );
+
+  router.get(
+    '/admin/users/:owner/:name/applicationGrants',
+    permit(SETTINGS_CASDOOR, 'read'),
+    describeRoute({
+      tags,
+      summary:
+        'List direct and inherited application grants for a Casdoor user',
+      operationId: 'enterpriseAppPortalGetUserApplicationGrants',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_CASDOOR}\` read. The Casdoor user id is \`{owner}/{name}\`. Direct means the user is on the permission's user list. Inherited means enforce allows the user through a group, role, or wildcard.`,
+      responses: {
+        200: dataResponse(CasdoorUserGrantsSchema),
+        ...apiErrorResponses,
+        503: apiErrorResponse(
+          503,
+          'Casdoor management is not configured or did not answer (`CASDOOR_MANAGEMENT_UNAVAILABLE`).',
+        ),
+      },
+    }),
+    apiValidator('param', CasdoorUserParam),
+    async (context) => {
+      const { owner, name } = context.req.valid('param');
+      return context.json({
+        data: await services().grants.list(`${owner}/${name}`),
+      });
+    },
+  );
+
+  router.put(
+    '/admin/users/:owner/:name/applicationGrants',
+    permit(SETTINGS_CASDOOR, 'configure'),
+    describeRoute({
+      tags,
+      summary: 'Replace direct application grants for a Casdoor user',
+      operationId: 'enterpriseAppPortalUpdateUserApplicationGrants',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_CASDOOR}\` configure. Writes only \`nocobase-portal-app-<applicationName>\` permission user lists. Other permissions, other users, and group or role grants stay. The response is re-read and enforced.`,
+      responses: {
+        200: dataResponse(CasdoorUserGrantsSchema),
+        ...apiErrorResponses,
+        400: apiErrorResponse(
+          400,
+          'The application is unknown (`APPLICATION_UNKNOWN`) or Casdoor did not converge (`GRANT_NOT_ENFORCED`, `GRANT_NOT_REVOKED`).',
+        ),
+        503: apiErrorResponse(
+          503,
+          'Casdoor management is not configured or did not answer (`CASDOOR_MANAGEMENT_UNAVAILABLE`).',
+        ),
+      },
+    }),
+    apiValidator('param', CasdoorUserParam),
+    apiValidator('json', ApplicationGrantReplaceInput),
+    async (context) => {
+      const { owner, name } = context.req.valid('param');
+      const { applicationNames } = context.req.valid('json');
+      return context.json({
+        data: await services().grants.replace(
+          `${owner}/${name}`,
+          applicationNames,
+        ),
       });
     },
   );

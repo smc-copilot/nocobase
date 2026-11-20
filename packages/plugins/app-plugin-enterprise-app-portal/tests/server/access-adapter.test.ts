@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@nocobase/app-server/router';
 
 import { CasdoorApplicationAccessAdapter } from '../../server/services/casdoor-application-access.js';
+import { CasdoorManagementClient } from '../../server/services/casdoor-management-client.js';
 
 describe('CasdoorApplicationAccessAdapter', () => {
   it('fails closed when unconfigured', async () => {
@@ -74,5 +75,94 @@ describe('CasdoorApplicationAccessAdapter', () => {
       claimsObservedAt: now,
     });
     expect(keys.appKeys).toEqual(['octop']);
+  });
+
+  it('enforces namespaced permissions and fails closed on Casdoor errors', async () => {
+    const hits: string[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      hits.push(url.pathname);
+      const body = JSON.parse(String(init?.body)) as string[];
+      if (body[1] === 'octop') {
+        return Response.json({ status: 'ok', data: [true] });
+      }
+      if (body[1] === 'weknora') {
+        return Response.json({ status: 'ok', data: [false] });
+      }
+      return Response.json({
+        status: 'error',
+        msg: 'The permission does not exist',
+      });
+    };
+    const adapter = new CasdoorApplicationAccessAdapter(
+      () => ({ source: 'managementApi' }),
+      () => new Date('2026-11-21T00:00:00Z'),
+      {
+        client: () =>
+          new CasdoorManagementClient(
+            {
+              endpoint: 'https://casdoor.test',
+              clientId: 'portal-client',
+              clientSecret: 'portal-secret',
+              organization: 'smartcore',
+              applicationOwner: 'admin',
+              permissionOwner: 'smartcore',
+              auth: 'query',
+              permissionNamePrefix: 'nocobase-portal-app-',
+            },
+            fetchImpl,
+          ),
+        targets: async () => [
+          { appCode: 'octop', casdoorAppKey: 'octop' },
+          { appCode: 'weknora', casdoorAppKey: null },
+          { appCode: 'missing', casdoorAppKey: 'missing' },
+        ],
+      },
+    );
+    const decision = await adapter.listAuthorizedAppKeys({
+      userId: 'local-1',
+      username: 'alice',
+    });
+    expect(decision).toEqual({ appKeys: ['octop'], source: 'managementApi' });
+    expect(hits).toEqual(['/api/enforce', '/api/enforce', '/api/enforce']);
+    const again = await adapter.listAuthorizedAppKeys({
+      userId: 'local-1',
+      username: 'alice',
+    });
+    expect(again.appKeys).toEqual(['octop']);
+    expect(hits).toHaveLength(3);
+
+    const failing: typeof fetch = async () =>
+      new Response('down', { status: 503 });
+    const uncached = new CasdoorApplicationAccessAdapter(
+      () => ({ source: 'managementApi' }),
+      () => new Date('2026-11-21T00:00:00Z'),
+      {
+        client: () =>
+          new CasdoorManagementClient(
+            {
+              endpoint: 'https://casdoor.test',
+              clientId: 'portal-client',
+              clientSecret: 'portal-secret',
+              organization: 'smartcore',
+              applicationOwner: 'admin',
+              permissionOwner: 'smartcore',
+              auth: 'query',
+              permissionNamePrefix: 'nocobase-portal-app-',
+            },
+            failing,
+          ),
+        targets: async () => [{ appCode: 'octop', casdoorAppKey: 'octop' }],
+      },
+    );
+    await expect(
+      uncached.listAuthorizedAppKeys({ userId: 'local-1', username: 'alice' }),
+    ).rejects.toMatchObject({
+      status: 'UNAVAILABLE',
+      reason: 'CASDOOR_AUTHORIZATION_UNAVAILABLE',
+    });
+    await expect(
+      uncached.listAuthorizedAppKeys({ userId: 'local-1', username: 'alice' }),
+    ).rejects.toMatchObject({ reason: 'CASDOOR_AUTHORIZATION_UNAVAILABLE' });
   });
 });

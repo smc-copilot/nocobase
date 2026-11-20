@@ -1,3 +1,5 @@
+import { ApiError } from '@nocobase/app-server/router';
+
 import {
   MAX_ACCESS_CACHE_TTL_MS,
   type AccessSource,
@@ -5,6 +7,12 @@ import {
   type EnterpriseAppPortalAccessConfig,
 } from '../config.js';
 import { portalError } from '../errors.js';
+import {
+  CasdoorManagementError,
+  namespacedPermissionName,
+  type CasdoorManagementClient,
+  type EnforceDecision,
+} from './casdoor-management-client.js';
 
 export interface AccessIdentity {
   readonly userId: string;
@@ -22,6 +30,16 @@ export interface AccessDecision {
 interface CacheEntry {
   readonly appKeys: readonly string[];
   readonly expiresAt: number;
+}
+
+export interface PortalAccessTarget {
+  readonly appCode: string;
+  readonly casdoorAppKey: string | null;
+}
+
+export interface CasdoorAccessDeps {
+  readonly client?: () => CasdoorManagementClient | undefined;
+  readonly targets?: () => Promise<readonly PortalAccessTarget[]>;
 }
 
 function readClaim(
@@ -50,9 +68,8 @@ function asStrings(value: unknown): string[] {
  * Casdoor is the application-access authority. This adapter never treats the
  * administrator catalog or a local Permission Set as authorization.
  *
- * The live Casdoor Management API / token claim contract is not verified in this
- * repository. Until an operator sets a proven source, the adapter stays
- * `unconfigured` and fails closed.
+ * `managementApi` enforces the namespaced application permission for each catalog
+ * target and returns catalog `appCode`s. Casdoor errors fail closed and are not cached.
  */
 export class CasdoorApplicationAccessAdapter {
   private readonly cache = new Map<string, CacheEntry>();
@@ -60,6 +77,7 @@ export class CasdoorApplicationAccessAdapter {
   constructor(
     private readonly config: () => EnterpriseAppPortalAccessConfig,
     private readonly now: () => Date = () => new Date(),
+    private readonly deps: CasdoorAccessDeps = {},
   ) {}
 
   public clearCache(): void {
@@ -116,17 +134,68 @@ export class CasdoorApplicationAccessAdapter {
       return this.fromClaims(identity);
     }
     if (source === 'managementApi') {
-      throw portalError(
-        'UNAVAILABLE',
-        'CASDOOR_AUTHORIZATION_UNAVAILABLE',
-        'Casdoor Management API access is declared but the live contract is not verified; refusing by default.',
-      );
+      return this.fromManagementApi(identity);
     }
     throw portalError(
       'UNAVAILABLE',
       'CASDOOR_AUTHORIZATION_UNAVAILABLE',
       'Casdoor application access is not configured; refusing by default.',
     );
+  }
+
+  private async fromManagementApi(
+    identity: AccessIdentity,
+  ): Promise<readonly string[]> {
+    const client = this.deps.client?.();
+    if (!client || !this.deps.targets) {
+      throw portalError(
+        'UNAVAILABLE',
+        'CASDOOR_AUTHORIZATION_UNAVAILABLE',
+        'Casdoor Management API access is not configured; refusing by default.',
+      );
+    }
+    const subject = casdoorSubject(identity, client.organization());
+    if (!subject) {
+      throw portalError(
+        'UNAVAILABLE',
+        'CASDOOR_AUTHORIZATION_UNAVAILABLE',
+        'No Casdoor user id is available for application access.',
+      );
+    }
+    let targets: readonly PortalAccessTarget[];
+    try {
+      targets = await this.deps.targets();
+    } catch (error) {
+      throw managementUnavailable(error);
+    }
+    const prefix = client.permissionNamePrefix();
+    const owner = client.permissionOwner();
+    const allowed: string[] = [];
+    for (const target of targets) {
+      const applicationName =
+        (target.casdoorAppKey ?? '').trim() || target.appCode;
+      const permissionName = namespacedPermissionName(prefix, applicationName);
+      if (
+        !applicationName ||
+        applicationName.includes('/') ||
+        permissionName.length > 100
+      ) {
+        continue;
+      }
+      let decision: EnforceDecision;
+      try {
+        decision = await client.enforce({
+          permissionId: `${owner}/${permissionName}`,
+          subject,
+          resource: applicationName,
+          action: 'Read',
+        });
+      } catch (error) {
+        throw managementUnavailable(error);
+      }
+      if (decision === 'allow') allowed.push(target.appCode);
+    }
+    return [...new Set(allowed)];
   }
 
   private fromFixture(identity: AccessIdentity): readonly string[] {
@@ -169,6 +238,59 @@ export class CasdoorApplicationAccessAdapter {
       .filter((value) => value.length > 0);
     return [...new Set(mapped)];
   }
+}
+
+function managementUnavailable(error: unknown): ApiError {
+  if (isPortalError(error)) return error;
+  const message =
+    error instanceof CasdoorManagementError
+      ? error.message
+      : 'Casdoor management request failed.';
+  return portalError(
+    'UNAVAILABLE',
+    'CASDOOR_AUTHORIZATION_UNAVAILABLE',
+    message,
+  );
+}
+
+function isPortalError(error: unknown): error is ApiError {
+  return error instanceof ApiError;
+}
+
+function casdoorSubject(
+  identity: AccessIdentity,
+  organization: string,
+): string | undefined {
+  const claimId = stringClaim(identity.claims, 'id');
+  if (isCasdoorId(claimId)) return claimId;
+  const sub = stringClaim(identity.claims, 'sub');
+  if (isCasdoorId(sub)) return sub;
+  if (isCasdoorId(identity.userId)) return identity.userId;
+  const name =
+    identity.username?.trim() ||
+    stringClaim(identity.claims, 'name') ||
+    stringClaim(identity.claims, 'preferred_username');
+  if (name && !name.includes('/') && organization)
+    return `${organization}/${name}`;
+  return undefined;
+}
+
+function stringClaim(
+  claims: Readonly<Record<string, unknown>> | undefined,
+  key: string,
+): string | undefined {
+  const value = claims?.[key];
+  return typeof value === 'string' && value.trim() !== ''
+    ? value.trim()
+    : undefined;
+}
+
+function isCasdoorId(value: string | undefined): value is string {
+  if (!value) return false;
+  const slash = value.indexOf('/');
+  return (
+    slash > 0 && slash === value.lastIndexOf('/') && slash < value.length - 1
+  );
 }
 
 export type { ContractFixtureGrant };

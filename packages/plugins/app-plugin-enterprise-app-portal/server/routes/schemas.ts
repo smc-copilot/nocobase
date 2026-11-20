@@ -1,11 +1,19 @@
 import { z } from 'zod';
 
-import { APP_TYPES, AUTO_LAUNCH_MODES } from '../config.js';
-import type { AuthorizedApplicationView } from '../services/application-launch.js';
+import { APP_TYPES, AUTO_LAUNCH_MODES, CASDOOR_AUTH_MODES } from '../config.js';
+import type {
+  AuthorizedApplicationView,
+  LaunchResult,
+} from '../services/application-launch.js';
 import type { PortalApplicationRecord } from '../services/application-catalog.js';
 import type { PortalUserPreferences } from '../services/user-preferences.js';
 import type { AccessAuditRecord } from '../services/access-audit.js';
-import type { LaunchResult } from '../services/application-launch.js';
+import type {
+  CasdoorApplicationView,
+  CasdoorConnectionStatus,
+  CasdoorUserView,
+} from '../services/casdoor-management-client.js';
+import type { UserApplicationGrants } from '../services/casdoor-application-grants.js';
 
 export const AppCodeParam: z.ZodType<{ appCode: string }> = z.object({
   appCode: z
@@ -176,3 +184,100 @@ export const AuditEventSchema: z.ZodType<
     createdAt: z.string(),
   })
   .meta({ ref: 'EnterpriseAppPortalAuditEvent' });
+
+const pageQuery = {
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+};
+
+export const CasdoorUserQuery: z.ZodType<{
+  organization?: string;
+  q?: string;
+  page: number;
+  pageSize: number;
+}> = z.object({
+  organization: z.string().min(1).max(100).optional(),
+  q: z.string().max(200).optional(),
+  ...pageQuery,
+});
+
+export const CasdoorApplicationQuery: z.ZodType<{
+  owner?: string;
+  page: number;
+  pageSize: number;
+}> = z.object({
+  owner: z.string().min(1).max(100).optional(),
+  ...pageQuery,
+});
+
+export const CasdoorUserParam: z.ZodType<{ owner: string; name: string }> =
+  z.object({
+    owner: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[^/]+$/u),
+    name: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[^/]+$/u),
+  });
+
+export const ApplicationGrantReplaceInput: z.ZodType<{
+  applicationNames: string[];
+}> = z.strictObject({
+  applicationNames: z.array(z.string().min(1).max(80)).max(200),
+});
+
+export const CasdoorUserSchema: z.ZodType<CasdoorUserView> = z
+  .object({
+    id: z.string().meta({ description: 'Casdoor user id, owner/name.' }),
+    owner: z.string(),
+    name: z.string(),
+    displayName: z.string(),
+    email: z.string(),
+    phone: z.string(),
+    avatar: z.string(),
+    title: z.string(),
+    affiliation: z.string(),
+    isForbidden: z.boolean(),
+    isDeleted: z.boolean(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalCasdoorUser' });
+
+export const CasdoorApplicationSchema: z.ZodType<CasdoorApplicationView> = z
+  .object({
+    name: z.string().meta({ description: 'Casdoor application name.' }),
+    displayName: z.string(),
+    organization: z.string(),
+    owner: z.string(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalCasdoorApplication' });
+
+export const CasdoorConnectionSchema: z.ZodType<CasdoorConnectionStatus> = z
+  .object({
+    ok: z.literal(true),
+    organization: z.string(),
+    applicationOwner: z.string(),
+    permissionOwner: z.string(),
+    auth: z.enum(CASDOOR_AUTH_MODES),
+  })
+  .meta({ ref: 'EnterpriseAppPortalCasdoorConnection' });
+
+export const CasdoorUserGrantsSchema: z.ZodType<UserApplicationGrants> = z
+  .object({
+    casdoorUserId: z.string(),
+    grants: z.array(
+      z.object({
+        applicationName: z.string(),
+        permissionName: z.string(),
+        source: z.enum(['direct', 'inherited']),
+        enforced: z.boolean(),
+        viaGroups: z.array(z.string()),
+        viaRoles: z.array(z.string()),
+        viaUsers: z.array(z.string()),
+      }),
+    ),
+  })
+  .meta({ ref: 'EnterpriseAppPortalCasdoorUserGrants' });

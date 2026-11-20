@@ -35,6 +35,10 @@ export class ApplicationLaunchService {
     private readonly audit: AccessAuditLog,
     private readonly allowlist: () => readonly string[],
     private readonly lookup: DnsLookup | undefined = undefined,
+    private readonly launchUrlOptions: () => {
+      readonly allowHttp?: boolean;
+      readonly allowPrivateDns?: boolean;
+    } = () => ({}),
   ) {}
 
   public async listAuthorized(identity: AccessIdentity): Promise<{
@@ -129,7 +133,12 @@ export class ApplicationLaunchService {
       );
     }
     const url = this.catalog.launchUrlOf(record);
-    await assertPublicHttpsUrl(url, this.allowlist(), this.lookup);
+    const launchOpts = this.launchUrlOptions();
+    await assertPublicHttpsUrl(url, this.allowlist(), {
+      ...(this.lookup ? { lookup: this.lookup } : {}),
+      allowHttp: launchOpts.allowHttp,
+      allowPrivateDns: launchOpts.allowPrivateDns,
+    });
     await this.audit.record({
       actorUserId: identity.userId,
       appCode,

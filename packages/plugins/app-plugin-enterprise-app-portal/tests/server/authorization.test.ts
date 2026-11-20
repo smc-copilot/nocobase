@@ -8,6 +8,7 @@ import { EnterprisePortalAuthorizationProvider } from '../../server/authorizatio
 import {
   PORTAL_SETTINGS_SECTION,
   SETTINGS_AUDIT,
+  SETTINGS_CASDOOR,
   SETTINGS_CATALOG,
 } from '../../server/config.js';
 
@@ -34,5 +35,11 @@ describe('portal authz.settings registration', () => {
         .items?.get(SETTINGS_AUDIT)
         ?.actions.map((entry) => entry.name),
     ).toEqual(['read']);
+    expect(
+      authz.resourceTypes
+        .get('settings')
+        .items?.get(SETTINGS_CASDOOR)
+        ?.actions.map((entry) => entry.name),
+    ).toEqual(['read', 'configure']);
   });
 });

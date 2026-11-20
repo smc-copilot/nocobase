@@ -85,6 +85,10 @@ export class ApplicationCatalogService {
     private readonly allowlist: () => readonly string[],
     private readonly audit: AccessAuditLog,
     private readonly lookup: DnsLookup | undefined = undefined,
+    private readonly launchUrlOptions: () => {
+      readonly allowHttp?: boolean;
+      readonly allowPrivateDns?: boolean;
+    } = () => ({}),
   ) {}
 
   public async list(): Promise<readonly PortalApplicationRecord[]> {
@@ -231,13 +235,15 @@ export class ApplicationCatalogService {
     readonly healthUrl?: string | null;
   }): Promise<void> {
     parseRelativeTargetPath(input.targetPath);
-    await assertPublicHttpsUrl(input.baseUrl, this.allowlist(), this.lookup);
+    const launchOpts = this.launchUrlOptions();
+    const guard = {
+      ...(this.lookup ? { lookup: this.lookup } : {}),
+      allowHttp: launchOpts.allowHttp,
+      allowPrivateDns: launchOpts.allowPrivateDns,
+    };
+    await assertPublicHttpsUrl(input.baseUrl, this.allowlist(), guard);
     if (input.healthUrl) {
-      await assertPublicHttpsUrl(
-        input.healthUrl,
-        this.allowlist(),
-        this.lookup,
-      );
+      await assertPublicHttpsUrl(input.healthUrl, this.allowlist(), guard);
     }
   }
 }

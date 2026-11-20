@@ -122,4 +122,11 @@ describe('enterprise app portal routes', () => {
     const response = await send('GET', '/applications');
     expect(response.status).toBe(401);
   });
+
+  it('refuses Casdoor admin routes without the settings grant', async () => {
+    const response = await send('POST', '/admin/casdoor/testConnection');
+    expect(response.status).toBe(403);
+    const payload = (await response.json()) as { error: { reason: string } };
+    expect(payload.error.reason).toBe('PORTAL_ADMIN_FORBIDDEN');
+  });
 });

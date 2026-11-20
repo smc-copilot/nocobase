@@ -8,6 +8,7 @@ import { ServiceProvider } from '@nocobase/service-provider';
 import {
   PORTAL_SETTINGS_SECTION,
   SETTINGS_AUDIT,
+  SETTINGS_CASDOOR,
   SETTINGS_CATALOG,
 } from './config.js';
 
@@ -24,6 +25,17 @@ export function registerPortalSettings(authz: AppAuthorization): void {
       actions: [
         { name: 'read', title: 'View the application catalog' },
         { name: 'configure', title: 'Create or update catalog entries' },
+      ],
+    },
+    {
+      id: SETTINGS_CASDOOR,
+      title: 'Casdoor application grants',
+      actions: [
+        { name: 'read', title: 'View Casdoor users, applications, and grants' },
+        {
+          name: 'configure',
+          title: 'Grant or revoke Casdoor application access',
+        },
       ],
     },
     {

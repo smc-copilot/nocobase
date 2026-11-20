@@ -6,6 +6,8 @@ import { AccessAuditLog } from './access-audit.js';
 import { ApplicationCatalogService } from './application-catalog.js';
 import { ApplicationLaunchService } from './application-launch.js';
 import { CasdoorApplicationAccessAdapter } from './casdoor-application-access.js';
+import { CasdoorApplicationGrants } from './casdoor-application-grants.js';
+import { createCasdoorClientSource } from './casdoor-management-client.js';
 import { HealthProbeService } from './health-probe.js';
 import { UserPreferenceService } from './user-preferences.js';
 
@@ -16,6 +18,7 @@ export interface EnterprisePortalServices {
   readonly preferences: UserPreferenceService;
   readonly health: HealthProbeService;
   readonly audit: AccessAuditLog;
+  readonly grants: CasdoorApplicationGrants;
 }
 
 export function createEnterprisePortalServices(
@@ -25,18 +28,44 @@ export function createEnterprisePortalServices(
     readonly lookup?: DnsLookup;
     readonly fetchImpl?: typeof fetch;
     readonly now?: () => Date;
+    readonly env?: Readonly<Record<string, string | undefined>>;
   } = {},
 ): EnterprisePortalServices {
   const audit = new AccessAuditLog(database);
+  const launchUrlOptions = () => ({
+    allowHttp: config().launchAllowHttp === true,
+    allowPrivateDns: config().launchAllowPrivateDns === true,
+  });
   const catalog = new ApplicationCatalogService(
     database,
     () => config().launchHostAllowlist ?? [],
     audit,
     options.lookup,
+    launchUrlOptions,
+  );
+  const env = () => options.env ?? process.env;
+  const casdoor = createCasdoorClientSource(
+    () => config().access ?? {},
+    env,
+    options.fetchImpl ?? fetch,
   );
   const access = new CasdoorApplicationAccessAdapter(
     () => config().access ?? {},
     options.now,
+    {
+      client: () => casdoor.client(),
+      targets: async () =>
+        (await catalog.list()).map((record) => ({
+          appCode: record.appCode,
+          casdoorAppKey: record.casdoorAppKey,
+        })),
+    },
+  );
+  const grants = new CasdoorApplicationGrants(
+    () => casdoor.client(),
+    () => {
+      access.clearCache();
+    },
   );
   const health = new HealthProbeService(
     () => config().health ?? {},
@@ -52,6 +81,7 @@ export function createEnterprisePortalServices(
     audit,
     () => config().launchHostAllowlist ?? [],
     options.lookup,
+    launchUrlOptions,
   );
-  return { catalog, access, launch, preferences, health, audit };
+  return { catalog, access, launch, preferences, health, audit, grants };
 }

@@ -40,6 +40,7 @@ export async function createPortalHarness(
   options: {
     readonly lookup?: DnsLookup;
     readonly fetchImpl?: typeof fetch;
+    readonly env?: Readonly<Record<string, string | undefined>>;
   } = {},
 ): Promise<PortalHarness> {
   const testDatabase = await createTestDatabase();
@@ -59,6 +60,7 @@ export async function createPortalHarness(
       lookup: options.lookup ?? PUBLIC_LOOKUP,
       fetchImpl:
         options.fetchImpl ?? (async () => new Response('ok', { status: 200 })),
+      env: options.env ?? {},
     },
   );
   return {

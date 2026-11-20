@@ -97,11 +97,27 @@ export function parseRelativeTargetPath(
   return raw;
 }
 
+export interface LaunchUrlGuardOptions {
+  readonly allowHttp?: boolean;
+  readonly allowPrivateDns?: boolean;
+  readonly lookup?: DnsLookup;
+}
+
 export async function assertPublicHttpsUrl(
   raw: string,
   allowlist: readonly string[],
-  lookup: DnsLookup = (hostname) => dnsLookup(hostname, { all: true }),
+  lookupOrOptions: DnsLookup | LaunchUrlGuardOptions = (hostname) =>
+    dnsLookup(hostname, { all: true }),
 ): Promise<URL> {
+  const options: LaunchUrlGuardOptions =
+    typeof lookupOrOptions === 'function'
+      ? { lookup: lookupOrOptions }
+      : lookupOrOptions;
+  const lookup =
+    options.lookup ?? ((hostname) => dnsLookup(hostname, { all: true }));
+  const allowHttp = options.allowHttp === true;
+  const allowPrivateDns = options.allowPrivateDns === true;
+
   const trimmed = raw.trim();
   if (
     trimmed.startsWith('//') ||
@@ -125,11 +141,15 @@ export async function assertPublicHttpsUrl(
       'The URL is not a valid absolute HTTPS address.',
     );
   }
-  if (parsed.protocol !== 'https:') {
+  const protocolOk =
+    parsed.protocol === 'https:' || (allowHttp && parsed.protocol === 'http:');
+  if (!protocolOk) {
     throw portalError(
       'INVALID_ARGUMENT',
       'URL_NOT_ALLOWED',
-      'Only HTTPS URLs are accepted.',
+      allowHttp
+        ? 'Only HTTP or HTTPS URLs are accepted.'
+        : 'Only HTTPS URLs are accepted.',
     );
   }
   if (parsed.username || parsed.password) {
@@ -163,8 +183,15 @@ export async function assertPublicHttpsUrl(
       'The host could not be resolved.',
     );
   }
+  if (addresses.length === 0) {
+    throw portalError(
+      'PERMISSION_DENIED',
+      'URL_RESOLVES_PRIVATE',
+      'The host resolves to a private or link-local address.',
+    );
+  }
   if (
-    addresses.length === 0 ||
+    !allowPrivateDns &&
     addresses.some((entry) => isBlockedIp(entry.address))
   ) {
     throw portalError(
