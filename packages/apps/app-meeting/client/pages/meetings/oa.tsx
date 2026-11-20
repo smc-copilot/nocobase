@@ -5,10 +5,9 @@ import {
   useToaster,
 } from '@nocobase/app-client';
 import { useTranslation } from '@nocobase/i18n/client';
-import { useMemo, useRef, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ChevronDownIcon } from 'lucide-react';
-import { RecordLink } from '#components/record-link';
 import { Alert, AlertDescription } from '#components/ui/alert';
 import { Button } from '#components/ui/button';
 import {
@@ -29,7 +28,7 @@ import { useListData } from '#hooks/use-list-data';
 import { DateTimeField } from './date-time-field.js';
 import { MeetingLoading, MeetingUnavailable } from './meeting-feedback.js';
 import { createOaPeopleSearch } from './oa-people-source.js';
-import { type OaPersonChip } from './oa-person.js';
+import { oaPersonFrom, type OaPersonChip } from './oa-person.js';
 import { OaPersonMultiSelect, OaPersonSelect } from './oa-person-pickers.js';
 import {
   beijingWallToIso,
@@ -142,11 +141,16 @@ export default function MeetingOaPage(): ReactElement {
   const [copyTo, setCopyTo] = useState<OaPersonChip[] | null>(null);
   const [taskTitle, setTaskTitle] = useState('');
   const [tasksOpen, setTasksOpen] = useState(false);
+  const tasksOpenedForFrozenRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
   const [tasks, setTasks] = useState<DraftTaskRow[] | null>(null);
+  const [creatorSnapshot, setCreatorSnapshot] = useState<OaPersonChip | null>(
+    null,
+  );
   const persistLockRef = useRef(false);
   const persistGenerationRef = useRef(0);
+  const creatorLookupRef = useRef<string | null>(null);
 
   const shownTitle = title ?? draft?.title ?? '';
   const shownPurpose = purpose ?? draft?.purpose ?? '';
@@ -162,13 +166,15 @@ export default function MeetingOaPage(): ReactElement {
     (isoToBeijingInput(draft?.summaryCompleteTime) ||
       defaultBeijingCompleteInput());
   const shownAttendees = attendees ?? [...(draft?.attendeeSnapshots ?? [])];
-  const creatorPerson = identityRow?.employeeNo
-    ? {
-        fd_no: identityRow.employeeNo,
-        fd_name: identityRow.employeeNo,
-        fd_department: '',
-      }
-    : null;
+  const creatorPerson =
+    creatorSnapshot ??
+    (identityRow?.employeeNo
+      ? oaPersonFrom(
+          identityRow.employeeNo,
+          // Empty name until directory returns; chip uses peopleNamePending.
+          '',
+        )
+      : null);
   const shownEmcee =
     emcee === undefined ? (draft?.emceeSnapshot ?? creatorPerson) : emcee;
   const shownHost =
@@ -181,6 +187,43 @@ export default function MeetingOaPage(): ReactElement {
   const isolation = useMemo(() => t('meetingOa.isolationBanner'), [t]);
 
   const searchPeople = useMemo(() => createOaPeopleSearch(api), [api]);
+
+  useEffect(() => {
+    const employeeNo = identityRow?.employeeNo?.trim() ?? '';
+    if (!employeeNo) {
+      creatorLookupRef.current = null;
+      queueMicrotask(() => setCreatorSnapshot(null));
+      return;
+    }
+    if (creatorLookupRef.current === employeeNo) return;
+    creatorLookupRef.current = employeeNo;
+    let cancelled = false;
+    void searchPeople(employeeNo, 'employeeNo')
+      .then((rows) => {
+        if (cancelled || creatorLookupRef.current !== employeeNo) return;
+        const match = rows.find(
+          (row) => row.fd_no.trim().toLowerCase() === employeeNo.toLowerCase(),
+        );
+        setCreatorSnapshot(
+          match ?? oaPersonFrom(employeeNo, t('meetingOa.peopleNamePending')),
+        );
+      })
+      .catch(() => {
+        if (cancelled || creatorLookupRef.current !== employeeNo) return;
+        setCreatorSnapshot(
+          oaPersonFrom(employeeNo, t('meetingOa.peopleNamePending')),
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [identityRow?.employeeNo, searchPeople, t]);
+
+  useEffect(() => {
+    if (!frozen || tasksOpenedForFrozenRef.current) return;
+    tasksOpenedForFrozenRef.current = true;
+    queueMicrotask(() => setTasksOpen(true));
+  }, [frozen]);
 
   const persistDraft = async (
     nextTasks: DraftTaskRow[] = shownTasks,
@@ -333,18 +376,6 @@ export default function MeetingOaPage(): ReactElement {
         <Alert>
           <AlertDescription>{t('meetingOa.localMinutesKept')}</AlertDescription>
         </Alert>
-      ) : null}
-      {frozen ? (
-        <Alert>
-          <AlertDescription>{t('meetingOa.draftFrozen')}</AlertDescription>
-        </Alert>
-      ) : null}
-      {frozen && draft?.operationId ? (
-        <p>
-          <RecordLink to={`/meeting-operations/${draft.operationId}`}>
-            {t('meetingOa.viewOperation')}
-          </RecordLink>
-        </p>
       ) : null}
       {content?.sourceTodos?.length ? (
         <Card>
@@ -635,60 +666,62 @@ export default function MeetingOaPage(): ReactElement {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-            <div className='flex flex-col items-stretch gap-3 border-t px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6 md:px-8'>
-              <Button type='submit' disabled={busy || frozen}>
-                {t('meetingOa.saveDraft')}
-              </Button>
-              <Button
-                type='button'
-                variant='secondary'
-                disabled={busy || frozen || !identityRow?.canSync}
-                onClick={() => void sync()}
-              >
-                {t('meetingOa.submitSync')}
-              </Button>
-              <Button
-                type='button'
-                variant='outline'
-                disabled={busy || frozen}
-                onClick={() => {
-                  if (!window.confirm(t('meetingOa.refillConfirm'))) return;
-                  if (!draft || currentVersion == null) return;
-                  setBusy(true);
-                  void api
-                    .request<{ data: Draft }>({
-                      path: `meetings/${meetingId}/oa-draft/refill`,
-                      method: 'POST',
-                      json: { expectedVersion: currentVersion },
-                    })
-                    .then((result) => {
-                      setSavedVersion(result.data.version);
-                      setTitle(result.data.title);
-                      setLocation(result.data.location);
-                      setStartAt(isoToBeijingInput(result.data.startAt));
-                      setEndAt(isoToBeijingInput(result.data.endAt));
-                      setRemark(result.data.remark);
-                      setSummary(result.data.summary);
-                      void draftRequest.reload();
-                    })
-                    .catch((error: unknown) =>
-                      toaster.show({
-                        type: 'error',
-                        title:
-                          error instanceof ApiClientError
-                            ? error.message
-                            : t('meetingOa.refillFailed'),
-                      }),
-                    )
-                    .finally(() => setBusy(false));
-                }}
-              >
-                {t('meetingOa.refill')}
-              </Button>
-              <p className='text-xs text-muted-foreground sm:ml-auto'>
-                {t('meetingOa.saveWritesZeroOa')}
-              </p>
-            </div>
+            {frozen ? null : (
+              <div className='flex flex-col items-stretch gap-3 border-t px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6 md:px-8'>
+                <Button type='submit' disabled={busy}>
+                  {t('meetingOa.saveDraft')}
+                </Button>
+                <Button
+                  type='button'
+                  variant='secondary'
+                  disabled={busy || !identityRow?.canSync}
+                  onClick={() => void sync()}
+                >
+                  {t('meetingOa.submitSync')}
+                </Button>
+                <Button
+                  type='button'
+                  variant='outline'
+                  disabled={busy}
+                  onClick={() => {
+                    if (!window.confirm(t('meetingOa.refillConfirm'))) return;
+                    if (!draft || currentVersion == null) return;
+                    setBusy(true);
+                    void api
+                      .request<{ data: Draft }>({
+                        path: `meetings/${meetingId}/oa-draft/refill`,
+                        method: 'POST',
+                        json: { expectedVersion: currentVersion },
+                      })
+                      .then((result) => {
+                        setSavedVersion(result.data.version);
+                        setTitle(result.data.title);
+                        setLocation(result.data.location);
+                        setStartAt(isoToBeijingInput(result.data.startAt));
+                        setEndAt(isoToBeijingInput(result.data.endAt));
+                        setRemark(result.data.remark);
+                        setSummary(result.data.summary);
+                        void draftRequest.reload();
+                      })
+                      .catch((error: unknown) =>
+                        toaster.show({
+                          type: 'error',
+                          title:
+                            error instanceof ApiClientError
+                              ? error.message
+                              : t('meetingOa.refillFailed'),
+                        }),
+                      )
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  {t('meetingOa.refill')}
+                </Button>
+                <p className='text-xs text-muted-foreground sm:ml-auto'>
+                  {t('meetingOa.saveWritesZeroOa')}
+                </p>
+              </div>
+            )}
           </div>
         </form>
       ) : (

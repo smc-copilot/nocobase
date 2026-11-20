@@ -284,4 +284,32 @@ describe('OA person pickers', () => {
     ).toBeGreaterThan(0);
     expect(screen.getByText('Zhang San')).toBeVisible();
   });
+
+  it('searches by name only without a mode toggle', async () => {
+    const onSearch = vi.fn(async (query: string, by = 'name') =>
+      by === 'name' && query.startsWith('Zh') ? [zhang] : [],
+    );
+    await renderPicker(
+      <OaPersonSelect
+        id='host'
+        label='Host'
+        value={null}
+        onChange={() => undefined}
+        onSearch={onSearch}
+      />,
+    );
+    expect(
+      screen.queryByRole('button', {
+        name: enUS.meetingOa.peopleSearchByEmployeeNo,
+      }),
+    ).not.toBeInTheDocument();
+    await userEvent.type(
+      screen.getByLabelText(`Host. ${enUS.meetingOa.peopleSearch}`),
+      'Zh',
+    );
+    await waitFor(() => expect(onSearch).toHaveBeenCalledWith('Zh', 'name'));
+    expect(
+      await screen.findByRole('option', { name: 'Zhang San (E1001) R&D' }),
+    ).toBeVisible();
+  });
 });

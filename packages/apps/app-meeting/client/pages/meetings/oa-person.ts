@@ -4,10 +4,29 @@ export interface OaPersonChip {
   fd_department: string;
 }
 
-export function oaPersonLabel(person: OaPersonChip): string {
+export type OaPeopleSearchBy = 'name' | 'employeeNo';
+
+export type OaPeopleSearchFn = (
+  query: string,
+  by?: OaPeopleSearchBy,
+) => Promise<OaPersonChip[]>;
+
+/** Chip / option label. Pass `nameMissing` when fd_name is empty so we never treat fd_no as a real name. */
+export function oaPersonLabel(
+  person: OaPersonChip,
+  nameMissing = '姓名未提供',
+): string {
+  const name = person.fd_name.trim() || nameMissing;
   return person.fd_department
-    ? `${person.fd_name} (${person.fd_no}) ${person.fd_department}`
-    : `${person.fd_name} (${person.fd_no})`;
+    ? `${name} (${person.fd_no}) ${person.fd_department}`
+    : `${name} (${person.fd_no})`;
+}
+
+export function oaPersonChipText(
+  person: OaPersonChip,
+  nameMissing = '姓名未提供',
+): string {
+  return person.fd_name.trim() || `${nameMissing} (${person.fd_no})`;
 }
 
 export function uniqueOaPeople(rows: readonly OaPersonChip[]): OaPersonChip[] {
@@ -17,7 +36,7 @@ export function uniqueOaPeople(rows: readonly OaPersonChip[]): OaPersonChip[] {
     if (!fd_no || next.has(fd_no)) continue;
     next.set(fd_no, {
       fd_no,
-      fd_name: row.fd_name.trim() || fd_no,
+      fd_name: row.fd_name.trim(),
       fd_department: row.fd_department.trim(),
     });
   }
@@ -32,7 +51,7 @@ export function oaPersonFrom(
   if (!fd_no) return null;
   return {
     fd_no,
-    fd_name: name?.trim() || fd_no,
+    fd_name: name?.trim() ?? '',
     fd_department: '',
   };
 }

@@ -16,15 +16,17 @@ import { XIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { isOaPeopleUnconfigured } from './oa-people-source.js';
 import {
+  oaPersonChipText,
   oaPersonLabel,
   uniqueOaPeople,
+  type OaPeopleSearchFn,
   type OaPersonChip,
 } from './oa-person.js';
 
 function useOaPersonQuery(
   query: string,
   disabled: boolean | undefined,
-  onSearch: (query: string) => Promise<OaPersonChip[]>,
+  onSearch: OaPeopleSearchFn,
 ): {
   shownResults: OaPersonChip[];
   emptyText: string;
@@ -46,10 +48,10 @@ function useOaPersonQuery(
     generationRef.current = current;
     const timer = window.setTimeout(() => {
       setLoading(true);
-      void Promise.resolve(onSearch(trimmed))
+      void Promise.resolve(onSearch(trimmed, 'name'))
         .then((rows) => {
           if (current !== generationRef.current) return;
-          setResults(uniqueOaPeople(rows));
+          setResults(uniqueOaPeople(rows).filter((row) => Boolean(row.fd_no)));
           setResultsFor(trimmed);
           setError(false);
         })
@@ -99,7 +101,7 @@ function OaPersonCombobox({
   readonly multiple: boolean;
   readonly disabled?: boolean;
   readonly selected: readonly OaPersonChip[];
-  readonly onSearch: (query: string) => Promise<OaPersonChip[]>;
+  readonly onSearch: OaPeopleSearchFn;
   readonly onChange: (next: OaPersonChip[]) => void;
 }): ReactElement {
   const { t } = useTranslation();
@@ -110,6 +112,7 @@ function OaPersonCombobox({
     disabled,
     onSearch,
   );
+  const nameMissing = t('meetingOa.peopleNameMissing');
   const peopleByNo = useMemo(() => {
     const next = new Map<string, OaPersonChip>();
     for (const person of selected) next.set(person.fd_no, person);
@@ -123,14 +126,14 @@ function OaPersonCombobox({
     .filter((id) => !selectedSet.has(id));
   const labelOf = (item: string): string => {
     const person = peopleByNo.get(item);
-    return person ? oaPersonLabel(person) : item;
+    return person ? oaPersonLabel(person, nameMissing) : item;
   };
   const apply = (nextIds: readonly string[]) => {
     onChange(
       uniqueOaPeople(
         nextIds
           .map((item) => peopleByNo.get(item))
-          .filter((person): person is OaPersonChip => Boolean(person)),
+          .filter((person): person is OaPersonChip => Boolean(person?.fd_no)),
       ),
     );
     setQuery('');
@@ -187,7 +190,7 @@ function OaPersonCombobox({
                     key={person.fd_no}
                     showRemove={!disabled && multiple}
                   >
-                    {person.fd_name}
+                    {oaPersonChipText(person, nameMissing)}
                   </ComboboxChip>
                 ))}
               </ComboboxValue>
@@ -251,7 +254,7 @@ export function OaPersonSelect({
   readonly label?: string;
   readonly value: OaPersonChip | null;
   readonly disabled?: boolean;
-  readonly onSearch: (query: string) => Promise<OaPersonChip[]>;
+  readonly onSearch: OaPeopleSearchFn;
   readonly onChange: (next: OaPersonChip | null) => void;
 }): ReactElement {
   return (
@@ -279,7 +282,7 @@ export function OaPersonMultiSelect({
   readonly label?: string;
   readonly value: readonly OaPersonChip[];
   readonly disabled?: boolean;
-  readonly onSearch: (query: string) => Promise<OaPersonChip[]>;
+  readonly onSearch: OaPeopleSearchFn;
   readonly onChange: (next: OaPersonChip[]) => void;
 }): ReactElement {
   return (

@@ -33,6 +33,7 @@ export const MeetingSchema: z.ZodType<MeetingPublic> = z
     recordingFetchStatus: FetchStatusSchema,
     queryAnomaly: z.string().nullable(),
     importState: z.string(),
+    oaMeetingCreated: z.boolean(),
     createdAt: z.string(),
   })
   .meta({ ref: 'Meeting' });
@@ -455,9 +456,21 @@ export const OaMapBody = z.strictObject({
   status: z.enum(['active', 'revoked']).optional(),
 });
 
-export const OaPeopleQuery = z.object({
-  q: z.string().min(2).max(100),
-});
+export const OaPeopleQuery = z
+  .object({
+    q: z.string().min(1).max(100),
+    by: z.enum(['name', 'employeeNo']).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const by = value.by ?? 'name';
+    if (by === 'name' && value.q.trim().length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['q'],
+        message: 'Name search requires at least 2 characters',
+      });
+    }
+  });
 
 export const OaPersonSchema = z.object({
   fd_no: z.string(),

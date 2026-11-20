@@ -8,7 +8,11 @@ import {
   type MeetingOaDelegation,
   type MeetingOaEmployeeMap,
 } from '../resources.js';
-import type { MeetingOaAdapter, OaPerson } from './adapter.js';
+import type {
+  MeetingOaAdapter,
+  OaPeopleSearchBy,
+  OaPerson,
+} from './adapter.js';
 import { MeetingOaError } from './errors.js';
 import {
   liveSessionDenyReason,
@@ -38,7 +42,10 @@ export class MeetingOaIdentityService {
     private readonly probeLiveSession?: LiveSessionProber,
   ) {}
 
-  async searchPeople(query: string): Promise<readonly OaPerson[]> {
+  async searchPeople(
+    query: string,
+    by: OaPeopleSearchBy = 'name',
+  ): Promise<readonly OaPerson[]> {
     await requireMeetingAction(this.authz, 'oaDraftEdit');
     if (!this.adapter) {
       throw new MeetingOaError(
@@ -47,7 +54,7 @@ export class MeetingOaIdentityService {
         'FAILED_PRECONDITION',
       );
     }
-    return this.adapter.searchPeople(query);
+    return this.adapter.searchPeople(query, by);
   }
 
   async current(): Promise<IdentityPublic> {

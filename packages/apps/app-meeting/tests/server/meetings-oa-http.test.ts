@@ -7,9 +7,16 @@ import {
 import {
   associateTaskResults,
   createHttpMeetingOaAdapter,
+  extractRows,
   mapPerson,
 } from '../../server/meetings/oa/http-adapter.js';
-import { buildUploadSummaryBody } from '../../server/meetings/oa/oa-payload.js';
+import {
+  assertFrozenPersonNos,
+  buildCreateMeetingBody,
+  buildTaskAssignmentBody,
+  buildUploadSummaryBody,
+  isIllegalEmployeeNo,
+} from '../../server/meetings/oa/oa-payload.js';
 import { preferredDownloadArtifacts } from '../../server/meetings/gateway/record-files.js';
 import { MeetingOaError } from '../../server/meetings/oa/errors.js';
 import type { FrozenOaPayload } from '../../server/meetings/oa/adapter.js';
@@ -133,6 +140,7 @@ describe('OA people HTTP contract (oaPeople.js)', () => {
       expect(url.origin).toBe('https://oa.example.test');
       expect(url.pathname).toBe('/people');
       expect(url.searchParams.get('fd_name')).toBe('Alice');
+      expect(url.searchParams.get('fd_no')).toBeNull();
       expect(url.username).toBe('');
       return new Response(
         JSON.stringify({
@@ -157,6 +165,48 @@ describe('OA people HTTP contract (oaPeople.js)', () => {
     expect(people).toEqual([
       { fd_no: 'E1001', fd_name: 'Alice', fd_department: 'Meeting' },
     ]);
+  });
+
+  it('GETs peopleUrl with fd_no only for employeeNo mode and rejects mismatched nos', async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get('fd_no')).toBe('E1001');
+      expect(url.searchParams.get('fd_name')).toBeNull();
+      return Response.json({
+        fd_no: 'E1001',
+        fd_name: 'Alice',
+        fd_department: 'Meeting',
+      });
+    });
+    const adapter = createHttpMeetingOaAdapter({
+      config: {
+        peopleUrl: 'https://oa.example.test/people',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      },
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await expect(adapter.searchPeople('E1001', 'employeeNo')).resolves.toEqual([
+      { fd_no: 'E1001', fd_name: 'Alice', fd_department: 'Meeting' },
+    ]);
+
+    const mismatched = createHttpMeetingOaAdapter({
+      config: {
+        peopleUrl: 'https://oa.example.test/people',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      },
+      fetchImpl: vi.fn(async () =>
+        Response.json({
+          fd_no: 'OTHER',
+          fd_name: 'Alice',
+          fd_department: '',
+        }),
+      ) as unknown as typeof fetch,
+    });
+    await expect(
+      mismatched.searchPeople('E1001', 'employeeNo'),
+    ).rejects.toMatchObject({ reason: 'INVALID_OA_QUERY' });
   });
 
   it('reads peopleUrl from env config', async () => {
@@ -266,7 +316,7 @@ describe('minutes priority and source todos', () => {
     ]);
   });
 
-  it('maps oaPeople.js person fields', () => {
+  it('maps oaPeople.js person fields without id fallback', () => {
     expect(mapPerson({ fd_no: '1', fd_name: 'A', fd_department: 'D' })).toEqual(
       {
         fd_no: '1',
@@ -280,9 +330,26 @@ describe('minutes priority and source todos', () => {
       fd_department: 'D',
     });
     expect(mapPerson({ fd_name: 'A' })).toBeNull();
+    expect(mapPerson({ id: 'internal-1', fd_name: 'A' })).toBeNull();
+    expect(mapPerson({ fd_no: 'E1' })).toEqual({
+      fd_no: 'E1',
+      fd_name: '',
+      fd_department: '',
+    });
   });
 
-  it('skips empty placeholders and keeps later minutes plus 会议待办', () => {
+  it('extracts single-object people payloads for fd_no lookups', () => {
+    expect(
+      extractRows({ fd_no: 'E1', fd_name: 'Alice', fd_department: '' }),
+    ).toEqual([{ fd_no: 'E1', fd_name: 'Alice', fd_department: '' }]);
+    expect(
+      extractRows({
+        data: { fd_no: 'E1', fd_name: 'Alice', fd_department: '' },
+      }),
+    ).toEqual([{ fd_no: 'E1', fd_name: 'Alice', fd_department: '' }]);
+  });
+
+  it('skips empty DeepSeek placeholders and keeps full chapter minutes including 会议待办', () => {
     expect(isEffectiveMinutes('暂无纪要')).toBe(false);
     expect(
       resolveMinutes({
@@ -290,8 +357,18 @@ describe('minutes priority and source todos', () => {
         minutesAi: '## 会议待办：\n- Call vendor\n## 后续\nKeep this section',
       }),
     ).toEqual({
-      text: '## 后续\nKeep this section',
+      text: '## 会议待办：\n- Call vendor\n## 后续\nKeep this section',
       source: 'ai_minutes',
+    });
+    expect(
+      resolveMinutes({
+        minutesAiDs:
+          '## 会议系统集成测试\n- Device access\n## 会议待办\n- Bind ID\n内容由 AI 生成，仅供参考',
+        minutesAi: '## 章节\n- Other',
+      }),
+    ).toEqual({
+      text: '## 会议系统集成测试\n- Device access\n## 会议待办\n- Bind ID\n内容由 AI 生成，仅供参考',
+      source: 'ai_ds_minutes',
     });
     expect(
       extractSourceTodos('## 会议待办：\n- Call vendor\n## 后续\nKeep'),
@@ -508,6 +585,55 @@ describe('tencent group mapping and Beijing time', () => {
       'oa-meet-1',
     );
     expect(body.summaryCompleteTime).toBe('2026-11-16 18:15:00');
+  });
+
+  it('serializes createMeeting PersonNo objects and arrays', () => {
+    const body = buildCreateMeetingBody(frozenPayload);
+    expect(body.creator).toEqual({ PersonNo: 'E1001' });
+    expect(body.emcee).toEqual({ PersonNo: 'E1001' });
+    expect(body.host).toEqual({ PersonNo: 'E1001' });
+    expect(body.attendPersons).toEqual([{ PersonNo: 'E1001' }]);
+  });
+
+  it('serializes uploadMeetingSummary PersonNo objects and arrays', () => {
+    const body = buildUploadSummaryBody(frozenPayload, 'oa-meet-1');
+    expect(body.inputPerson).toEqual({ PersonNo: 'E1001' });
+    expect(body.actualAttendPersons).toEqual([{ PersonNo: 'E1001' }]);
+    expect(body.copyToPersons).toBeUndefined();
+  });
+
+  it('serializes createTaskByMeeting appoint object and perform arrays', () => {
+    const body = buildTaskAssignmentBody(frozenPayload, 'oa-meet-1');
+    expect(body.tasks[0]).toMatchObject({
+      appointPerson: { PersonNo: 'E1001' },
+      performPersons: [{ PersonNo: 'E1001' }],
+    });
+    expect(body.tasks[1]).toMatchObject({
+      appointPerson: { PersonNo: 'E1001' },
+      performPersons: [{ PersonNo: 'E1001' }],
+    });
+  });
+
+  it('rejects illegal employee numbers before outbound PersonNo serialization', () => {
+    expect(isIllegalEmployeeNo('')).toBe(true);
+    expect(isIllegalEmployeeNo('E1,E2')).toBe(true);
+    expect(isIllegalEmployeeNo('张三')).toBe(true);
+    expect(isIllegalEmployeeNo('E1001')).toBe(false);
+    expect(() =>
+      assertFrozenPersonNos({
+        ...frozenPayload,
+        creatorEmployeeNo: '张三',
+      }),
+    ).toThrow(MeetingOaError);
+    expect(() =>
+      buildCreateMeetingBody({
+        ...frozenPayload,
+        meeting: {
+          ...frozenPayload.meeting,
+          attendeeEmployeeNos: [''],
+        },
+      }),
+    ).toThrow(MeetingOaError);
   });
 
   it('associates unused titles once and leaves extra OA rows unmatched', () => {

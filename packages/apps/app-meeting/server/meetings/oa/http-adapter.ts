@@ -7,6 +7,7 @@ import type {
   MeetingOaAdapter,
   OaContractMode,
   OaCreateMeetingResult,
+  OaPeopleSearchBy,
   OaPerson,
   OaTaskWriteResult,
   OaToken,
@@ -36,15 +37,23 @@ function asText(value: unknown): string {
     : '';
 }
 
+function looksLikePersonRow(row: Record<string, unknown>): boolean {
+  return Boolean(
+    asText(row.fd_no || row.fdNo) ||
+    asText(row.fd_name || row.fdName || row.name),
+  );
+}
+
 export function mapPerson(row: unknown): OaPerson | null {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
   const record = row as Record<string, unknown>;
-  const fd_no = asText(record.fd_no || record.fdNo || record.id);
+  // Never fall back to directory-internal `id` as PersonNo / fd_no.
+  const fd_no = asText(record.fd_no || record.fdNo);
+  if (!fd_no) return null;
   const fd_name = asText(record.fd_name || record.fdName || record.name);
   const fd_department = asText(
     record.fd_department || record.fdDepartment || record.department,
   );
-  if (!fd_no || !fd_name) return null;
   return { fd_no, fd_name, fd_department };
 }
 
@@ -53,9 +62,19 @@ export function extractRows(payload: unknown): unknown[] {
   if (!payload || typeof payload !== 'object') return [];
   const record = payload as Record<string, unknown>;
   for (const key of ['data', 'people', 'result', 'results', 'rows', 'list']) {
-    if (Array.isArray(record[key])) return record[key] as unknown[];
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const nested = value as Record<string, unknown>;
+      if (looksLikePersonRow(nested)) return [nested];
+    }
   }
+  if (looksLikePersonRow(record)) return [record];
   return [];
+}
+
+function employeeNosMatch(returned: string, query: string): boolean {
+  return returned.trim().toLowerCase() === query.trim().toLowerCase();
 }
 
 function assertSafeUrl(
@@ -185,12 +204,24 @@ export function createHttpMeetingOaAdapter(options: {
       return mode(Boolean(tokenUrl && options.config.clientId));
     },
 
-    async searchPeople(query: string): Promise<readonly OaPerson[]> {
+    async searchPeople(
+      query: string,
+      by: OaPeopleSearchBy = 'name',
+    ): Promise<readonly OaPerson[]> {
       const q = query.trim();
-      if (q.length < MIN_QUERY_LENGTH) {
+      const mode: OaPeopleSearchBy =
+        by === 'employeeNo' ? 'employeeNo' : 'name';
+      if (mode === 'name' && q.length < MIN_QUERY_LENGTH) {
         throw new MeetingOaError(
           'INVALID_OA_QUERY',
           `OA people query must be at least ${String(MIN_QUERY_LENGTH)} characters`,
+          'INVALID_ARGUMENT',
+        );
+      }
+      if (mode === 'employeeNo' && !q) {
+        throw new MeetingOaError(
+          'INVALID_OA_QUERY',
+          'OA employee number query must not be empty',
           'INVALID_ARGUMENT',
         );
       }
@@ -203,7 +234,13 @@ export function createHttpMeetingOaAdapter(options: {
         );
       }
       const url = assertSafeUrl(configured, urlSafety);
-      url.searchParams.set('fd_name', q);
+      url.searchParams.delete('fd_name');
+      url.searchParams.delete('fd_no');
+      if (mode === 'employeeNo') {
+        url.searchParams.set('fd_no', q);
+      } else {
+        url.searchParams.set('fd_name', q);
+      }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeout);
       let response: Response;
@@ -240,9 +277,29 @@ export function createHttpMeetingOaAdapter(options: {
           'UNAVAILABLE',
         );
       }
-      return extractRows(payload)
+      const people = extractRows(payload)
         .map(mapPerson)
         .filter((row): row is OaPerson => row !== null);
+      if (mode === 'employeeNo') {
+        if (people.length === 0) return [];
+        if (people.length > 1) {
+          throw new MeetingOaError(
+            'INVALID_OA_QUERY',
+            'OA employee number lookup returned multiple people; cannot uniquely confirm.',
+            'INVALID_ARGUMENT',
+          );
+        }
+        const [only] = people;
+        if (!only || !employeeNosMatch(only.fd_no, q)) {
+          throw new MeetingOaError(
+            'INVALID_OA_QUERY',
+            'OA employee number lookup returned a different fd_no than requested.',
+            'INVALID_ARGUMENT',
+          );
+        }
+        return [only];
+      }
+      return people;
     },
 
     async getToken(employeeNo: string): Promise<OaToken> {

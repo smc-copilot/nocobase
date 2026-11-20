@@ -464,9 +464,9 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
     describeRoute({
       tags: ['Meetings'],
       operationId: 'searchMeetingOaPeople',
-      summary: 'Search OA people by name',
+      summary: 'Search OA people by name or employee number',
       description:
-        'HTTP search follows loudon84/anything-llm@codex/meeting-intelligence oaPeople.js: GET peopleUrl?fd_name=',
+        'Proxy to peopleUrl. by=name (default) sets fd_name; by=employeeNo sets fd_no only. Omit by for name compatibility.',
       responses: {
         200: listResponse(OaPersonSchema, TotalMeta),
         ...apiErrorResponses,
@@ -474,8 +474,10 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
     }),
     apiValidator('query', OaPeopleQuery),
     async (c) => {
+      const { q, by } = c.req.valid('query');
       const data = await createMeetingServices(app, c).identity.searchPeople(
-        c.req.valid('query').q,
+        q,
+        by ?? 'name',
       );
       return c.json({ data, meta: { total: data.length } });
     },

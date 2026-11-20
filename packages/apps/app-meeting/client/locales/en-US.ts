@@ -41,14 +41,14 @@ const enUS = {
     unavailable: 'This meeting is unavailable.',
     listDescription: 'Stored meetings you are allowed to open.',
     queryNotConnected:
-      'This list only shows meetings already stored for you. Use Query to call the bound gateway; opening the page does not sync by itself.',
+      'The list below shows stored meetings you can open now. Sign in and use Query only to sync new meetings from the gateway.',
     gatewayNotConfigured:
       'The meeting gateway is not configured yet, so login and query stay disabled.',
     loginTencent: 'Sign in to Tencent Meeting',
     loggedIn: 'Signed in',
     logout: 'Sign out',
     loginHint:
-      'Sign in to Tencent Meeting first, then query by time range. Opening the page does not query automatically.',
+      'Sign in to sync new meetings from Tencent by time range. Stored meetings are listed below without signing in.',
     loginFailed:
       'Meeting gateway authorization could not start. Check the server configuration and try again.',
     loginCompleteFailed: 'Sign-in could not be completed. Try again.',
@@ -63,6 +63,7 @@ const enUS = {
     import: 'Import',
     importing: 'Importing',
     imported: 'Imported',
+    oaMeetingCreated: 'OA meeting created',
     viewMeeting: 'View',
     importTasks: 'Import tasks',
     importPickTitle: 'Choose a recording (meeting {{code}})',
@@ -262,6 +263,16 @@ const enUS = {
     sourceTodosNotAssigned:
       'Source to-dos are not treated as assigned tasks until you add a draft task with an employee number.',
     peopleSearch: 'Search OA people',
+    peopleSearchMode: 'People search mode',
+    peopleSearchByName: 'Name',
+    peopleSearchByEmployeeNo: 'Employee no.',
+    peopleFind: 'Find',
+    peopleNameMissing: 'Name not provided',
+    peopleNamePending: 'Name not loaded yet',
+    peopleEmployeeNoNeed: 'Enter the full employee number, then find',
+    peopleEmployeeNoEmpty: 'No person found for this employee number',
+    peopleEmployeeNoAmbiguous:
+      'This employee number could not be uniquely confirmed. Check and try again.',
     search: 'Search',
     peopleFailed: 'OA people search could not be completed.',
     peopleLoading: 'Searching people…',

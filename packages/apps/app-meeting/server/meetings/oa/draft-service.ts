@@ -26,6 +26,7 @@ import {
   toOaDateTime,
 } from './beijing-time.js';
 import { MeetingOaError } from './errors.js';
+import { assertFrozenPersonNos, isIllegalEmployeeNo } from './oa-payload.js';
 
 export interface DraftTaskInput {
   clientTaskId?: string;
@@ -91,9 +92,10 @@ function asPerson(value: unknown): OaPerson | null {
   const fd_no = typeof row.fd_no === 'string' ? row.fd_no.trim() : '';
   const fd_name = typeof row.fd_name === 'string' ? row.fd_name.trim() : '';
   if (!fd_no) return null;
+  // Keep empty fd_name when directory did not provide a real name; never invent fd_name=fd_no.
   return {
     fd_no,
-    fd_name: fd_name || fd_no,
+    fd_name,
     fd_department:
       typeof row.fd_department === 'string' ? row.fd_department.trim() : '',
   };
@@ -113,7 +115,7 @@ function uniqueNos(values: readonly string[]): string[] {
   const result: string[] = [];
   for (const value of values) {
     const no = value.trim();
-    if (!no || seen.has(no)) continue;
+    if (!no || isIllegalEmployeeNo(no) || seen.has(no)) continue;
     seen.add(no);
     result.push(no);
   }
@@ -362,6 +364,14 @@ export class MeetingOaDraftService {
         'INVALID_ARGUMENT',
       );
     }
+    // Narrow after the missing-field guard (toIso returns string | null).
+    if (!startAt || !endAt) {
+      throw new MeetingOaError(
+        'OA_DRAFT_INVALID',
+        'OA draft is missing required fields before sync: startAt, endAt.',
+        'INVALID_ARGUMENT',
+      );
+    }
     if (new Date(endAt).getTime() <= new Date(startAt).getTime()) {
       throw new MeetingOaError(
         'OA_DRAFT_INVALID',
@@ -448,34 +458,33 @@ export class MeetingOaDraftService {
     const copies = peopleOf(draft.copyToSnapshots);
     const emcee = asPerson(draft.emceeSnapshot);
     const host = asPerson(draft.hostSnapshot);
-    return {
-      draft,
-      payload: {
-        creatorUserId: creator.creatorUserId,
-        creatorEmployeeNo: creator.creatorEmployeeNo,
-        oaTarget: 'default',
-        meeting: {
-          title,
-          startAt,
-          endAt,
-          location,
-          purpose,
-          remark: draft.remark?.trim() ?? '',
-          attendeeEmployeeNos: attendees,
-          attendeeSnapshots: peopleOf(draft.attendeeSnapshots),
-          emceeEmployeeNo: emcee?.fd_no ?? null,
-          hostEmployeeNo: host?.fd_no ?? null,
-          otherAttendPerson: draft.otherAttendPerson?.trim() || null,
-        },
-        summaryTitle: draft.summaryTitle?.trim() || `${title}-会议纪要`,
-        summary,
-        summaryCompleteTime,
-        actualAttendEmployeeNos:
-          actual.length > 0 ? actual.map((row) => row.fd_no) : attendees,
-        copyToEmployeeNos: copies.map((row) => row.fd_no),
-        tasks: frozenTasks,
+    const payload: FrozenOaPayload = {
+      creatorUserId: creator.creatorUserId,
+      creatorEmployeeNo: creator.creatorEmployeeNo,
+      oaTarget: 'default',
+      meeting: {
+        title,
+        startAt,
+        endAt,
+        location,
+        purpose,
+        remark: draft.remark?.trim() ?? '',
+        attendeeEmployeeNos: attendees,
+        attendeeSnapshots: peopleOf(draft.attendeeSnapshots),
+        emceeEmployeeNo: emcee?.fd_no ?? null,
+        hostEmployeeNo: host?.fd_no ?? null,
+        otherAttendPerson: draft.otherAttendPerson?.trim() || null,
       },
+      summaryTitle: draft.summaryTitle?.trim() || `${title}-会议纪要`,
+      summary,
+      summaryCompleteTime,
+      actualAttendEmployeeNos:
+        actual.length > 0 ? actual.map((row) => row.fd_no) : attendees,
+      copyToEmployeeNos: copies.map((row) => row.fd_no),
+      tasks: frozenTasks,
     };
+    assertFrozenPersonNos(payload);
+    return { draft, payload };
   }
 
   private async assertUnlocked(meetingId: string): Promise<void> {

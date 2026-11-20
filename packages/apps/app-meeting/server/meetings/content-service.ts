@@ -303,12 +303,14 @@ export class MeetingContentService {
       const sourceHash = sha256(
         artifacts.map((item) => `${item.group}\n${item.text}`).join('\n'),
       );
-      const minutesText =
-        grouped.ai_ds_minutes ||
-        grouped.ai_minutes ||
-        grouped.ai_topic_minutes ||
-        grouped.ai_speaker_minutes ||
-        '';
+      // Same priority as resolveMinutes: DeepSeek → chapter → topic → speaker.
+      const resolved = resolveMinutes({
+        minutesAiDs: grouped.ai_ds_minutes,
+        minutesAi: grouped.ai_minutes,
+        minutesTopic: grouped.ai_topic_minutes,
+        minutesSpeaker: grouped.ai_speaker_minutes,
+      });
+      const minutesText = resolved.text;
       if (!minutesText.trim() && !grouped.meeting_summary?.trim()) {
         throw new MeetingOaError(
           'IMPORT_RECORDING_REJECTED',

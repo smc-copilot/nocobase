@@ -696,7 +696,8 @@ test('does not overwrite local minutes on re-import and does not echo OA secrets
     };
   };
   expect(imported.data.minutes.text).toContain('Isolation minutes body');
-  expect(imported.data.minutes.text).not.toContain('Isolation source todo');
+  // OA / projection keeps the full Tencent minutes, including 待办事项.
+  expect(imported.data.minutes.text).toContain('Isolation source todo');
   expect(imported.data.tencentDialogues.original).toContain('ORIGINAL_ONLY');
   expect(imported.data.tencentDialogues.optimized).toContain('OPTIMIZED_ONLY');
   expect(imported.data.tencentDialogues.original).not.toContain(
@@ -704,15 +705,20 @@ test('does not overwrite local minutes on re-import and does not echo OA secrets
   );
   expect(imported.data.sourceTodos[0]?.title).toBe('Isolation source todo');
   const listed = (await expectOk(await alice.fetch('/meetings'))) as {
-    data: { id: string; importState: string }[];
+    data: {
+      id: string;
+      importState: string;
+      oaMeetingCreated: boolean;
+    }[];
   };
-  expect(listed.data.find((row) => row.id === 'meet-imp')?.importState).toBe(
-    'imported',
-  );
+  const listedRow = listed.data.find((row) => row.id === 'meet-imp');
+  expect(listedRow?.importState).toBe('imported');
+  expect(listedRow?.oaMeetingCreated).toBe(false);
   const one = (await expectOk(await alice.fetch('/meetings/meet-imp'))) as {
-    data: { importState: string };
+    data: { importState: string; oaMeetingCreated: boolean };
   };
   expect(one.data.importState).toBe('imported');
+  expect(one.data.oaMeetingCreated).toBe(false);
   const alignedRepair = (await expectOk(
     await alice.fetch('/meetingOa/transcriptRepairs', write({})),
   )) as { data: { repaired: number; skipped: number } };
@@ -1279,7 +1285,19 @@ test('proxies OA people search, keeps snapshots, and rejects unauthorized enumer
   expect(people.data).toEqual([
     { fd_no: 'E1001', fd_name: 'Alice', fd_department: 'Meeting' },
   ]);
-  expect(adapter.searchCalls).toEqual(['Alice']);
+  expect(adapter.searchCalls).toEqual([{ query: 'Alice', by: 'name' }]);
+  const byEmployeeNo = (await expectOk(
+    await alice.fetch('/meetingOa/people?q=E1001&by=employeeNo'),
+  )) as {
+    data: { fd_no: string; fd_name: string; fd_department: string }[];
+  };
+  expect(byEmployeeNo.data).toEqual([
+    { fd_no: 'E1001', fd_name: 'Alice', fd_department: 'Meeting' },
+  ]);
+  expect(adapter.searchCalls.at(-1)).toEqual({
+    query: 'E1001',
+    by: 'employeeNo',
+  });
   const denied = await bob.fetch('/meetingOa/people?q=Alice');
   expect(denied.status).toBe(403);
   const draft = (await expectOk(

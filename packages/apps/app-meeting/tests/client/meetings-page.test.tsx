@@ -126,13 +126,25 @@ describe('meetings page', () => {
     ).toBeDisabled();
   });
 
-  it('shows login before the result table when configured but unsigned', async () => {
+  it('shows stored meetings without signing in; login is only for gateway query', async () => {
     await renderMeetings(({ path }) => {
       if (path === 'meetingGateway/config') return gatewayReady();
       if (path === 'meetingGateway/bindings') return binding('pending');
       if (path === 'meetingImportRuns') return { data: [] };
       if (path === 'meetings') {
-        return { data: [], meta: { page: 1, pageSize: 20, total: 0 } };
+        return {
+          data: [
+            {
+              id: 'meeting-stored',
+              title: 'Already imported',
+              meetingCode: '123',
+              importState: 'imported',
+              oaMeetingCreated: false,
+              createdAt: '2026-11-15T00:00:00.000Z',
+            },
+          ],
+          meta: { page: 1, pageSize: 20, total: 1 },
+        };
       }
       return undefined;
     });
@@ -142,7 +154,13 @@ describe('meetings page', () => {
     expect(screen.getAllByText(enUS.meetings.loginHint).length).toBeGreaterThan(
       0,
     );
-    expect(screen.queryByText(enUS.meetings.empty)).not.toBeInTheDocument();
+    expect(await screen.findByText('Already imported')).toBeVisible();
+    expect(
+      screen.getByRole('link', { name: 'Already imported' }),
+    ).toHaveAttribute(
+      'href',
+      expect.stringContaining('/meetings/meeting-stored'),
+    );
   });
 
   it('shows the empty state from a real empty list payload when signed in', async () => {

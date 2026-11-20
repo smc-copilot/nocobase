@@ -60,6 +60,7 @@ export interface MeetingRow {
   recordingFetchStatus?: string;
   queryAnomaly?: string | null;
   importState?: string;
+  oaMeetingCreated?: boolean;
   createdAt: string;
 }
 
@@ -460,6 +461,9 @@ export default function MeetingsPage(): ReactElement {
         header: t('meetings.status'),
         enableSorting: false,
         cell: ({ row }) => {
+          if (row.original.oaMeetingCreated) {
+            return t('meetings.oaMeetingCreated');
+          }
           const state = row.original.importState ?? 'not_imported';
           if (state === 'imported') return t('meetings.imported');
           if (state === 'importing') return t('meetings.importing');
@@ -474,7 +478,7 @@ export default function MeetingsPage(): ReactElement {
         cell: ({ row }) => {
           const state = row.original.importState ?? 'not_imported';
           let primary: ReactElement | null = null;
-          if (state === 'imported') {
+          if (row.original.oaMeetingCreated || state === 'imported') {
             primary = (
               <RecordLink to={`/meetings/${row.original.id}`}>
                 {t('meetings.viewMeeting')}
@@ -705,44 +709,41 @@ export default function MeetingsPage(): ReactElement {
             {queryError ? <FieldError>{queryError}</FieldError> : null}
           </form>
         ) : null}
-        {loggedIn ? (
-          <ListFeedback
-            state={listState}
-            identity={requestPath}
-            empty={
-              <p className='text-sm text-muted-foreground'>
-                {t('meetings.empty')}
-              </p>
-            }
-          >
-            <DataTable
-              columns={columns}
-              data={rows}
-              getRowId={(row) => row.id}
-              manualPagination
-              rowCount={request.data?.meta.total ?? 0}
-              {...tableState}
-              showSelectedCount={false}
-              emptyMessage={t('meetings.empty')}
-              renderCard={(row) => (
-                <div className='rounded-lg border p-4'>
-                  <p className='font-medium'>
-                    <RecordLink to={`/meetings/${row.original.id}`}>
-                      {row.original.title?.trim() || t('meetings.untitled')}
-                    </RecordLink>
-                  </p>
-                  <p className='text-sm text-muted-foreground'>
-                    {row.original.meetingCode ?? t('meetings.notProvided')}
-                  </p>
-                </div>
-              )}
-            />
-          </ListFeedback>
-        ) : (
-          <p className='text-sm text-muted-foreground'>
-            {t('meetings.loginHint')}
-          </p>
-        )}
+        <p className='text-sm text-muted-foreground'>
+          {t('meetings.queryNotConnected')}
+        </p>
+        <ListFeedback
+          state={listState}
+          identity={requestPath}
+          empty={
+            <p className='text-sm text-muted-foreground'>
+              {t('meetings.empty')}
+            </p>
+          }
+        >
+          <DataTable
+            columns={columns}
+            data={rows}
+            getRowId={(row) => row.id}
+            manualPagination
+            rowCount={request.data?.meta.total ?? 0}
+            {...tableState}
+            showSelectedCount={false}
+            emptyMessage={t('meetings.empty')}
+            renderCard={(row) => (
+              <div className='rounded-lg border p-4'>
+                <p className='font-medium'>
+                  <RecordLink to={`/meetings/${row.original.id}`}>
+                    {row.original.title?.trim() || t('meetings.untitled')}
+                  </RecordLink>
+                </p>
+                <p className='text-sm text-muted-foreground'>
+                  {row.original.meetingCode ?? t('meetings.notProvided')}
+                </p>
+              </div>
+            )}
+          />
+        </ListFeedback>
         {tasks.length > 0 ? (
           <section className='space-y-2'>
             <h2 className='text-base font-medium'>

@@ -2,12 +2,16 @@ import type { AuthorizationContext } from '@nocobase/app-plugin-authorization/se
 import { ApiError } from '@nocobase/app-server/router';
 import type { DatabaseConnection, RepositoryPolicy } from '@nocobase/db';
 import {
+  MEETING_OA_OPERATIONS,
+  MEETING_OA_STEPS,
   MEETING_PARTICIPANTS,
   MEETING_RECORDINGS,
   MEETING_RESOURCE,
   MEETINGS,
   type FetchStatus,
   type Meeting,
+  type MeetingOaOperation,
+  type MeetingOaStep,
   type MeetingParticipant,
   type MeetingRecording,
 } from './resources.js';
@@ -27,6 +31,8 @@ export interface MeetingPublic {
   recordingFetchStatus: FetchStatus;
   queryAnomaly: string | null;
   importState: string;
+  /** True when OA createMeeting step succeeded for this meeting. */
+  oaMeetingCreated: boolean;
   createdAt: string;
 }
 
@@ -65,7 +71,10 @@ function toIso(value: Date | string | null | undefined): string | null {
   return value instanceof Date ? value.toISOString() : value;
 }
 
-function toPublic(row: Partial<Meeting>): MeetingPublic {
+function toPublic(
+  row: Partial<Meeting>,
+  oaMeetingCreated = false,
+): MeetingPublic {
   if (!row.id || row.createdAt === undefined) throw meetingsForbidden();
   return {
     id: row.id,
@@ -77,6 +86,7 @@ function toPublic(row: Partial<Meeting>): MeetingPublic {
     recordingFetchStatus: row.recordingFetchStatus ?? 'not_fetched',
     queryAnomaly: row.queryAnomaly ?? null,
     importState: row.importState ?? 'not_imported',
+    oaMeetingCreated,
     createdAt: toIso(row.createdAt) as string,
   };
 }
@@ -104,6 +114,30 @@ export class MeetingQueryService {
     return this.connection.repository<Meeting>(MEETINGS).withPolicy(policy);
   }
 
+  private async oaMeetingCreatedByMeetingId(
+    meetingIds: readonly string[],
+  ): Promise<ReadonlySet<string>> {
+    const created = new Set<string>();
+    if (meetingIds.length === 0) return created;
+    await Promise.all(
+      meetingIds.map(async (meetingId) => {
+        const operation = await this.connection
+          .repository<MeetingOaOperation>(MEETING_OA_OPERATIONS)
+          .findOne({ filter: { meetingId } });
+        if (!operation) return;
+        const step = await this.connection
+          .repository<MeetingOaStep>(MEETING_OA_STEPS)
+          .findOne({
+            filter: { operationId: operation.id, stepKey: 'createMeeting' },
+          });
+        if (step?.status === 'succeeded' && step.externalId?.trim()) {
+          created.add(meetingId);
+        }
+      }),
+    );
+    return created;
+  }
+
   async list(query: MeetingListQuery) {
     const repository = await this.meetings();
     const [rows, total] = await Promise.all([
@@ -114,8 +148,11 @@ export class MeetingQueryService {
       }),
       repository.count(),
     ]);
+    const oaCreated = await this.oaMeetingCreatedByMeetingId(
+      rows.map((row) => row.id),
+    );
     return {
-      data: rows.map(toPublic),
+      data: rows.map((row) => toPublic(row, oaCreated.has(row.id))),
       meta: { page: query.page, pageSize: query.pageSize, total },
     };
   }
@@ -123,7 +160,8 @@ export class MeetingQueryService {
   async get(id: string): Promise<MeetingPublic> {
     const row = await (await this.meetings()).findOne({ filter: { id } });
     if (!row) throw meetingsForbidden();
-    return toPublic(row);
+    const oaCreated = await this.oaMeetingCreatedByMeetingId([id]);
+    return toPublic(row, oaCreated.has(id));
   }
 
   async listParticipants(

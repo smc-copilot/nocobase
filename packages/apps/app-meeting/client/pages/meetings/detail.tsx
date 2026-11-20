@@ -1,6 +1,7 @@
 import { BackButton } from '#components/back-button';
 import { PageContainer } from '#components/page-container';
 import { PageHeader } from '#components/page-header';
+import { RecordLink } from '#components/record-link';
 import { RouteChildPage } from '#components/route-child-page';
 import { Alert, AlertDescription } from '#components/ui/alert';
 import { Button } from '#components/ui/button';
@@ -24,6 +25,11 @@ interface IdentityRow {
   canSync: boolean;
 }
 
+interface OaDraftHeader {
+  frozen?: boolean;
+  operationId?: string | null;
+}
+
 export default function MeetingDetailPage(): ReactElement {
   const { t } = useTranslation();
   const { meetingId = '' } = useParams();
@@ -39,8 +45,13 @@ export default function MeetingDetailPage(): ReactElement {
   const identity = useListData<{ data: IdentityRow }>('meetingOa/identity', {
     scopes: ['meetings'],
   });
+  const oaDraft = useListData<{ data: OaDraftHeader }>(
+    `meetings/${meetingId}/oa-draft`,
+    { scopes: ['meetings'] },
+  );
   const row = meeting.data?.data;
   const identityRow = identity.data?.data;
+  const operationId = oaDraft.data?.data?.operationId?.trim() || null;
   const tab = location.pathname.endsWith('/summary')
     ? 'summary'
     : location.pathname.endsWith('/recordings')
@@ -118,6 +129,13 @@ export default function MeetingDetailPage(): ReactElement {
                   : t('meetingOa.oaUnauthorized')}
               </span>
             </p>
+            {operationId ? (
+              <p className='mt-1 text-sm leading-6'>
+                <RecordLink to={`/meeting-operations/${operationId}`}>
+                  {t('meetingOa.viewOperation')}
+                </RecordLink>
+              </p>
+            ) : null}
           </div>
         </div>
         {meeting.error ? (
