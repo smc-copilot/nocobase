@@ -163,6 +163,7 @@ describe('CasdoorManagementClient', () => {
           avatar: '',
           title: '',
           affiliation: '',
+          groups: [],
           isForbidden: false,
           isDeleted: false,
         },
@@ -177,6 +178,7 @@ describe('CasdoorManagementClient', () => {
         displayName: 'Octop',
         organization: 'smartcore',
         owner: 'admin',
+        homepageUrl: '',
       },
     ]);
     expect(JSON.stringify(applications)).not.toContain('app-secret');

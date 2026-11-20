@@ -123,9 +123,15 @@ const settings = {
   identityBindings: 'Casdoor 工号绑定',
   identityBindingsDescription:
     '按工号将 Casdoor issuer+sub 绑定到本地用户的用户名。不会按邮箱自动合并。本地隔离测试数据，非真实联调。',
+  portalCasdoorConnection: 'Casdoor 连接',
+  portalCasdoorConnectionDescription:
+    '测试服务端 Casdoor 管理连接，并试读用户与应用。Secret 不会下发到浏览器。',
+  portalCasdoorGrants: '应用授权',
+  portalCasdoorGrantsDescription:
+    '按 Casdoor 组织群组树选择员工，并勾选可进入员工门户的应用直接授权。',
   portalCatalog: '应用目录',
   portalCatalogDescription:
-    '登记可出现在员工门户的应用。目录本身不是 Casdoor 授权。本地隔离测试数据，非真实联调。',
+    '以 Casdoor 应用为准。本页维护门户 Launch URL 覆盖、启用状态与排序。',
   portalAudit: '门户访问审计',
   portalAuditDescription:
     '查看启动、目录变更和拒绝记录。不包含 secret 或 token。',

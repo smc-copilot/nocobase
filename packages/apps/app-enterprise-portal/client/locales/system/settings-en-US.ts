@@ -135,9 +135,15 @@ const settings = {
   identityBindings: 'Casdoor employee-number bindings',
   identityBindingsDescription:
     'Bind Casdoor issuer+sub to a local username by trusted employee number. E-mail never auto-merges. Isolation fixtures only; not a live IdP.',
+  portalCasdoorConnection: 'Casdoor connection',
+  portalCasdoorConnectionDescription:
+    'Test the server-side Casdoor management connection and sample users or applications. Secrets never leave the server.',
+  portalCasdoorGrants: 'Application grants',
+  portalCasdoorGrantsDescription:
+    'Browse the Casdoor organization group tree, pick an employee, and grant direct portal application access.',
   portalCatalog: 'Application catalog',
   portalCatalogDescription:
-    'Register applications that can appear on the employee portal. The catalog is not Casdoor authorization. Isolation fixtures only; not a live IdP.',
+    'Casdoor applications are authoritative. This page maintains portal launch URL overrides, enablement and sort order.',
   portalAudit: 'Portal access audit',
   portalAuditDescription:
     'Launch, catalog and denial events. Secrets and tokens are never stored.',

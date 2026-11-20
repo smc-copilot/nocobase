@@ -7,6 +7,7 @@ import {
   namespacedPermissionName,
   type CasdoorApplicationView,
   type CasdoorConnectionStatus,
+  type CasdoorGroupView,
   type CasdoorManagementClient,
   type CasdoorPermission,
   type CasdoorUserView,
@@ -44,6 +45,7 @@ export class CasdoorApplicationGrants {
   public async listUsers(input: {
     readonly organization?: string;
     readonly query?: string;
+    readonly groupName?: string;
     readonly page?: number;
     readonly pageSize?: number;
   }): Promise<{
@@ -54,15 +56,27 @@ export class CasdoorApplicationGrants {
       client.listUsers({
         organization: input.organization ?? client.organization(),
         query: input.query,
+        groupName: input.groupName,
         page: input.page,
         pageSize: input.pageSize,
       }),
     );
   }
 
+  public async listGroups(
+    input: {
+      readonly organization?: string;
+    } = {},
+  ): Promise<readonly CasdoorGroupView[]> {
+    return this.guard((client) =>
+      client.listAllGroups(input.organization ?? client.organization()),
+    );
+  }
+
   public async listApplications(
     input: {
       readonly owner?: string;
+      readonly organization?: string;
       readonly page?: number;
       readonly pageSize?: number;
     } = {},
@@ -119,9 +133,7 @@ export class CasdoorApplicationGrants {
         }
       }
       if (desired.length > 0) {
-        const known = await client.listApplications({
-          owner: client.applicationOwner(),
-        });
+        const known = await client.listApplications();
         const names = new Set(known.applications.map((app) => app.name));
         for (const name of desired) {
           if (!names.has(name)) {

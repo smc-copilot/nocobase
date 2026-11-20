@@ -11,6 +11,7 @@ import type { AccessAuditRecord } from '../services/access-audit.js';
 import type {
   CasdoorApplicationView,
   CasdoorConnectionStatus,
+  CasdoorGroupView,
   CasdoorUserView,
 } from '../services/casdoor-management-client.js';
 import type { UserApplicationGrants } from '../services/casdoor-application-grants.js';
@@ -193,12 +194,20 @@ const pageQuery = {
 export const CasdoorUserQuery: z.ZodType<{
   organization?: string;
   q?: string;
+  groupName?: string;
   page: number;
   pageSize: number;
 }> = z.object({
   organization: z.string().min(1).max(100).optional(),
   q: z.string().max(200).optional(),
+  groupName: z.string().min(1).max(200).optional(),
   ...pageQuery,
+});
+
+export const CasdoorGroupQuery: z.ZodType<{
+  organization?: string;
+}> = z.object({
+  organization: z.string().min(1).max(100).optional(),
 });
 
 export const CasdoorApplicationQuery: z.ZodType<{
@@ -241,10 +250,26 @@ export const CasdoorUserSchema: z.ZodType<CasdoorUserView> = z
     avatar: z.string(),
     title: z.string(),
     affiliation: z.string(),
+    groups: z.array(z.string()),
     isForbidden: z.boolean(),
     isDeleted: z.boolean(),
   })
   .meta({ ref: 'EnterpriseAppPortalCasdoorUser' });
+
+export const CasdoorGroupSchema: z.ZodType<CasdoorGroupView> = z
+  .object({
+    id: z.string().meta({ description: 'Casdoor group id, owner/name.' }),
+    owner: z.string(),
+    name: z.string(),
+    displayName: z.string(),
+    parentId: z.string(),
+    parentName: z.string(),
+    isTopGroup: z.boolean(),
+    haveChildren: z.boolean(),
+    type: z.string(),
+    isEnabled: z.boolean(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalCasdoorGroup' });
 
 export const CasdoorApplicationSchema: z.ZodType<CasdoorApplicationView> = z
   .object({
@@ -252,6 +277,7 @@ export const CasdoorApplicationSchema: z.ZodType<CasdoorApplicationView> = z
     displayName: z.string(),
     organization: z.string(),
     owner: z.string(),
+    homepageUrl: z.string(),
   })
   .meta({ ref: 'EnterpriseAppPortalCasdoorApplication' });
 

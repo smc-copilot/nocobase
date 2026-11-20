@@ -28,6 +28,8 @@ import {
   CasdoorApplicationQuery,
   CasdoorApplicationSchema,
   CasdoorConnectionSchema,
+  CasdoorGroupQuery,
+  CasdoorGroupSchema,
   CasdoorUserGrantsSchema,
   CasdoorUserParam,
   CasdoorUserQuery,
@@ -346,7 +348,7 @@ export function createPortalRouter(
       summary: 'List Casdoor users for application grants',
       operationId: 'enterpriseAppPortalListCasdoorUsers',
       ...cliRoute(false),
-      description: `Requires \`${SETTINGS_CASDOOR}\` read. Passwords and access secrets are omitted. \`q\` filters Casdoor user name.`,
+      description: `Requires \`${SETTINGS_CASDOOR}\` read. Passwords and access secrets are omitted. \`q\` filters Casdoor user name. \`groupName\` filters members of a Casdoor group by group name.`,
       responses: {
         200: listResponse(CasdoorUserSchema),
         ...apiErrorResponses,
@@ -362,6 +364,7 @@ export function createPortalRouter(
       const listed = await services().grants.listUsers({
         organization: query.organization,
         query: query.q,
+        groupName: query.groupName,
         page: query.page,
         pageSize: query.pageSize,
       });
@@ -372,6 +375,37 @@ export function createPortalRouter(
           page: query.page,
           pageSize: query.pageSize,
         },
+      });
+    },
+  );
+
+  router.get(
+    '/admin/casdoor/groups',
+    permit(SETTINGS_CASDOOR, 'read'),
+    describeRoute({
+      tags,
+      summary: 'List Casdoor groups for the organization tree',
+      operationId: 'enterpriseAppPortalListCasdoorGroups',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_CASDOOR}\` read. Returns every group page for the configured organization so the admin UI can build a parent/child tree. \`parentId\` is Casdoor's parent key (often the parent display name).`,
+      responses: {
+        200: listResponse(CasdoorGroupSchema),
+        ...apiErrorResponses,
+        503: apiErrorResponse(
+          503,
+          'Casdoor management is not configured or did not answer (`CASDOOR_MANAGEMENT_UNAVAILABLE`).',
+        ),
+      },
+    }),
+    apiValidator('query', CasdoorGroupQuery),
+    async (context) => {
+      const query = context.req.valid('query');
+      const groups = await services().grants.listGroups({
+        organization: query.organization,
+      });
+      return context.json({
+        data: groups,
+        meta: { total: groups.length },
       });
     },
   );

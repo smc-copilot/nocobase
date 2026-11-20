@@ -47,6 +47,25 @@ describe('casdoor admin routes', () => {
         data2: 1,
       });
     }
+    if (url.pathname === '/api/get-groups') {
+      return Response.json({
+        status: 'ok',
+        data: [
+          {
+            owner: 'smartcore',
+            name: 'IT',
+            displayName: 'IT中心',
+            parentId: '芯智控股',
+            parentName: '芯智控股',
+            isTopGroup: false,
+            haveChildren: false,
+            type: 'ldap-synced',
+            isEnabled: true,
+          },
+        ],
+        data2: 1,
+      });
+    }
     if (url.pathname === '/api/get-permissions') {
       return Response.json({ status: 'ok', data: [] });
     }
@@ -131,5 +150,19 @@ describe('casdoor admin routes', () => {
     expect(listed.data[0]?.password).toBeUndefined();
     expect(listed.meta.total).toBe(1);
     expect(JSON.stringify(listed)).not.toContain('hash');
+    const groups = await send('GET', '/admin/casdoor/groups');
+    expect(groups.status).toBe(200);
+    const groupPayload = (await groups.json()) as {
+      data: { id: string; displayName: string; parentId: string }[];
+      meta: { total: number };
+    };
+    expect(groupPayload.data).toEqual([
+      expect.objectContaining({
+        id: 'smartcore/IT',
+        displayName: 'IT中心',
+        parentId: '芯智控股',
+      }),
+    ]);
+    expect(groupPayload.meta.total).toBe(1);
   });
 });

@@ -19,6 +19,8 @@ export interface CasdoorUserView {
   readonly avatar: string;
   readonly title: string;
   readonly affiliation: string;
+  /** Casdoor group ids (`owner/name`), used as the portal department column. */
+  readonly groups: readonly string[];
   readonly isForbidden: boolean;
   readonly isDeleted: boolean;
 }
@@ -28,6 +30,22 @@ export interface CasdoorApplicationView {
   readonly displayName: string;
   readonly organization: string;
   readonly owner: string;
+  /** Casdoor homepage URL when set; empty string when absent. */
+  readonly homepageUrl: string;
+}
+
+export interface CasdoorGroupView {
+  readonly id: string;
+  readonly owner: string;
+  readonly name: string;
+  readonly displayName: string;
+  /** Parent key as Casdoor stores it (usually the parent display name). */
+  readonly parentId: string;
+  readonly parentName: string;
+  readonly isTopGroup: boolean;
+  readonly haveChildren: boolean;
+  readonly type: string;
+  readonly isEnabled: boolean;
 }
 
 export interface CasdoorPermission {
@@ -131,6 +149,7 @@ function parseUser(value: unknown): CasdoorUserView | undefined {
     avatar: readString(value.avatar) ?? '',
     title: readString(value.title) ?? '',
     affiliation: readString(value.affiliation) ?? '',
+    groups: readStrings(value.groups),
     isForbidden: value.isForbidden === true,
     isDeleted: value.isDeleted === true,
   };
@@ -145,6 +164,26 @@ function parseApplication(value: unknown): CasdoorApplicationView | undefined {
     displayName: readString(value.displayName) ?? name,
     organization: readString(value.organization) ?? '',
     owner: readString(value.owner) ?? '',
+    homepageUrl: readString(value.homepageUrl) ?? '',
+  };
+}
+
+function parseGroup(value: unknown): CasdoorGroupView | undefined {
+  if (!isRecord(value)) return undefined;
+  const owner = readString(value.owner) ?? '';
+  const name = readString(value.name) ?? '';
+  if (!owner || !name) return undefined;
+  return {
+    id: `${owner}/${name}`,
+    owner,
+    name,
+    displayName: readString(value.displayName) ?? name,
+    parentId: readString(value.parentId) ?? '',
+    parentName: readString(value.parentName) ?? '',
+    isTopGroup: value.isTopGroup === true,
+    haveChildren: value.haveChildren === true,
+    type: readString(value.type) ?? '',
+    isEnabled: value.isEnabled !== false,
   };
 }
 
@@ -285,8 +324,9 @@ export class CasdoorManagementClient {
   }
 
   public async testConnection(): Promise<CasdoorConnectionStatus> {
+    // Org-scoped management clients can list via `organization` but not
+    // `owner=admin`. Prefer the configured organization for the probe.
     await this.listApplications({
-      owner: this.settings.applicationOwner,
       page: 1,
       pageSize: 1,
     });
@@ -302,6 +342,8 @@ export class CasdoorManagementClient {
   public async listUsers(input: {
     readonly organization: string;
     readonly query?: string;
+    /** Casdoor `groupName` filter (group `name`, not owner/name). */
+    readonly groupName?: string;
     readonly page?: number;
     readonly pageSize?: number;
   }): Promise<{
@@ -314,6 +356,7 @@ export class CasdoorManagementClient {
         {
           owner: input.organization,
           ...(input.query ? { field: 'name', value: input.query } : {}),
+          ...(input.groupName ? { groupName: input.groupName } : {}),
         },
         input.page,
         input.pageSize,
@@ -325,9 +368,60 @@ export class CasdoorManagementClient {
     return { users, total: readTotal(envelope.data2, users.length) };
   }
 
+  public async listGroups(
+    input: {
+      readonly organization?: string;
+      readonly page?: number;
+      readonly pageSize?: number;
+    } = {},
+  ): Promise<{
+    readonly groups: readonly CasdoorGroupView[];
+    readonly total: number;
+  }> {
+    const envelope = await this.envelope('/api/get-groups', {
+      method: 'GET',
+      query: pageQuery(
+        { owner: input.organization ?? this.settings.organization },
+        input.page,
+        input.pageSize,
+      ),
+    });
+    const groups = readRows(envelope.data)
+      .map(parseGroup)
+      .filter((group): group is CasdoorGroupView => group !== undefined);
+    return { groups, total: readTotal(envelope.data2, groups.length) };
+  }
+
+  /** Loads every Casdoor group page for the organization (tree building). */
+  public async listAllGroups(
+    organization?: string,
+  ): Promise<readonly CasdoorGroupView[]> {
+    const pageSize = 100;
+    const first = await this.listGroups({
+      organization,
+      page: 1,
+      pageSize,
+    });
+    const all: CasdoorGroupView[] = [...first.groups];
+    const total = first.total;
+    let page = 1;
+    while (all.length < total && page < 50) {
+      page += 1;
+      const next = await this.listGroups({
+        organization,
+        page,
+        pageSize,
+      });
+      if (next.groups.length === 0) break;
+      all.push(...next.groups);
+    }
+    return all;
+  }
+
   public async listApplications(
     input: {
       readonly owner?: string;
+      readonly organization?: string;
       readonly page?: number;
       readonly pageSize?: number;
     } = {},
@@ -338,7 +432,10 @@ export class CasdoorManagementClient {
     const envelope = await this.envelope('/api/get-applications', {
       method: 'GET',
       query: pageQuery(
-        { owner: input.owner ?? this.settings.applicationOwner },
+        {
+          organization: input.organization ?? this.settings.organization,
+          ...(input.owner ? { owner: input.owner } : {}),
+        },
         input.page,
         input.pageSize,
       ),

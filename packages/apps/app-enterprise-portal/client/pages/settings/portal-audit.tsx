@@ -31,7 +31,7 @@ export default function PortalAuditPage(): ReactElement {
         description={t('settings.portalAuditDescription')}
       />
       <Alert>
-        <AlertTitle>{t('portal.isolationTitle')}</AlertTitle>
+        <AlertTitle>{t('portal.auditTitle')}</AlertTitle>
         <AlertDescription>{t('portal.auditHint')}</AlertDescription>
       </Alert>
       {list.loading && !list.data ? <SettingsLoading /> : null}

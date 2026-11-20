@@ -6,6 +6,8 @@ import {
   Fingerprint,
   LayoutGrid,
   ScrollText,
+  Cable,
+  Table2,
 } from 'lucide-react';
 import {
   defineAppRoutes,
@@ -72,6 +74,40 @@ const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
     },
     breadcrumb: { title: 'settings.identityBindings' },
     componentLoader: () => import('./identity-bindings.js'),
+  },
+  {
+    parent: 'settingsBusiness',
+    name: 'settingsPortalCasdoorConnection',
+    path: '/portal-casdoor',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.casdoor' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalCasdoorConnection',
+      description: 'settings.portalCasdoorConnectionDescription',
+      icon: Cable,
+    },
+    breadcrumb: { title: 'settings.portalCasdoorConnection' },
+    componentLoader: () => import('./portal-casdoor-connection.js'),
+  },
+  {
+    parent: 'settingsBusiness',
+    name: 'settingsPortalCasdoorGrants',
+    path: '/portal-grants',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.casdoor' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalCasdoorGrants',
+      description: 'settings.portalCasdoorGrantsDescription',
+      icon: Table2,
+    },
+    breadcrumb: { title: 'settings.portalCasdoorGrants' },
+    componentLoader: () => import('./portal-casdoor-grants.js'),
   },
   {
     parent: 'settingsBusiness',
