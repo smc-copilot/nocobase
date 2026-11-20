@@ -102,7 +102,7 @@ function parseWindow(startedAt: string, endedAt: string, maxDays: number) {
   if (
     Number.isNaN(start.getTime()) ||
     Number.isNaN(end.getTime()) ||
-    end <= start
+    end < start
   ) {
     throw new MeetingGatewayError(
       'QUERY_WINDOW_INVALID',
@@ -308,6 +308,23 @@ export class MeetingQueryRunService {
     return this.get(runId);
   }
 
+  private async findOwnedByMeetingCode(
+    userId: string,
+    meetingCode: string,
+  ): Promise<Meeting | undefined> {
+    const grants = await this.connection
+      .repository<MeetingAccess>(MEETING_ACCESS)
+      .findMany({ filter: { userId, canRead: true } });
+    if (grants.length === 0) return undefined;
+    for (const grant of grants) {
+      const row = await this.connection.repository<Meeting>(MEETINGS).findOne({
+        filter: { id: grant.meetingId, meetingCode },
+      });
+      if (row) return row;
+    }
+    return undefined;
+  }
+
   private async upsertMeeting(
     record: GatewayMeetingRecord,
     userId: string,
@@ -315,6 +332,8 @@ export class MeetingQueryRunService {
     binding: { connectionRef: string | null; gatewayMemberId: string | null },
   ): Promise<void> {
     const now = new Date();
+    const missingCode =
+      typeof record.meetingCode !== 'string' || !record.meetingCode.trim();
     const source = {
       sourceGatewayInstance: this.config.instanceId || 'default',
       sourceOrganization: record.organizationId,
@@ -322,17 +341,24 @@ export class MeetingQueryRunService {
       sourceUpstreamMeetingId: record.upstreamMeetingId,
       sourceCycleKey: record.cycleKey || '',
     };
-    const existing = await this.connection
-      .repository<Meeting>(MEETINGS)
-      .findOne({
+    const byCode = missingCode
+      ? undefined
+      : await this.findOwnedByMeetingCode(userId, record.meetingCode);
+    const existing =
+      byCode ??
+      (await this.connection.repository<Meeting>(MEETINGS).findOne({
         filter: source,
-      });
+      }));
     const meetingId = existing?.id ?? randomUUID();
     const values = {
       title: record.title,
-      meetingCode: record.meetingCode,
+      meetingCode: missingCode ? null : record.meetingCode,
       startedAt: record.startedAt ? new Date(record.startedAt) : null,
       endedAt: record.endedAt ? new Date(record.endedAt) : null,
+      sourceUpstreamMeetingId: record.upstreamMeetingId,
+      sourceConnectionRef: record.connectionRef,
+      sourceCycleKey: record.cycleKey || '',
+      queryAnomaly: missingCode ? 'missing_meeting_code' : null,
       updatedAt: now,
     };
     if (existing) {
@@ -348,6 +374,7 @@ export class MeetingQueryRunService {
           ...values,
           participantFetchStatus: 'not_fetched',
           recordingFetchStatus: 'not_fetched',
+          importState: 'not_imported',
           createdAt: now,
         },
       });
@@ -406,9 +433,12 @@ export class MeetingQueryRunService {
             },
           });
         const values = {
+          joinName: item.joinName ?? null,
           displayName: item.displayName,
           department: item.department,
           joinedAt: item.joinedAt ? new Date(item.joinedAt) : null,
+          jobTitle: item.jobTitle ?? null,
+          isCorpMember: item.isCorpMember ?? null,
           updatedAt: now,
         };
         if (existing) {
@@ -475,8 +505,29 @@ export class MeetingQueryRunService {
         { sleep: this.sleep, delaysMs: this.sleep ? [0, 0] : [1_000, 3_000] },
       );
       const now = new Date();
-      const keep = new Set(items.map((item) => item.recordFileId));
+      const merged = new Map<string, (typeof items)[number]>();
       for (const item of items) {
+        const prior = merged.get(item.recordFileId);
+        if (!prior) {
+          merged.set(item.recordFileId, item);
+          continue;
+        }
+        const leftRank =
+          item.importability === 'blocked'
+            ? 2
+            : item.importability === 'unknown'
+              ? 1
+              : 0;
+        const rightRank =
+          prior.importability === 'blocked'
+            ? 2
+            : prior.importability === 'unknown'
+              ? 1
+              : 0;
+        merged.set(item.recordFileId, leftRank >= rightRank ? item : prior);
+      }
+      const keep = new Set(merged.keys());
+      for (const item of merged.values()) {
         const existing = await this.connection
           .repository<MeetingRecording>(MEETING_RECORDINGS)
           .findOne({
@@ -486,6 +537,9 @@ export class MeetingQueryRunService {
           available: item.available,
           format: item.format,
           unavailableReason: item.unavailableReason,
+          sharingUrl: item.sharingUrl ?? null,
+          allowDownload: item.allowDownload ?? null,
+          importability: item.importability ?? 'unknown',
           updatedAt: now,
         };
         if (existing) {

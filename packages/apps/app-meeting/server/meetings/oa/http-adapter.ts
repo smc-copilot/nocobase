@@ -1,4 +1,7 @@
-import type { MeetingOaConfig } from '../../config/meeting-oa.js';
+import {
+  resolveMeetingOaApiUrls,
+  type MeetingOaConfig,
+} from '../../config/meeting-oa.js';
 import type {
   FrozenOaPayload,
   MeetingOaAdapter,
@@ -55,7 +58,10 @@ export function extractRows(payload: unknown): unknown[] {
   return [];
 }
 
-function assertSafeUrl(value: string, allowHttpLoopback: boolean): URL {
+function assertSafeUrl(
+  value: string,
+  options: { allowHttpLoopback: boolean; allowInsecureHttp: boolean },
+): URL {
   let url: URL;
   try {
     url = new URL(value);
@@ -69,11 +75,14 @@ function assertSafeUrl(value: string, allowHttpLoopback: boolean): URL {
   const loopback = url.hostname === '127.0.0.1' || url.hostname === 'localhost';
   const okProtocol =
     url.protocol === 'https:' ||
-    (allowHttpLoopback && url.protocol === 'http:' && loopback);
+    (options.allowInsecureHttp && url.protocol === 'http:') ||
+    (options.allowHttpLoopback && url.protocol === 'http:' && loopback);
   if (!okProtocol || url.username || url.password) {
     throw new MeetingOaError(
       'OA_NOT_CONFIGURED',
-      'OA URL is not configured.',
+      url.protocol === 'http:'
+        ? 'OA URL must use HTTPS, or enable meetingOa.allowInsecureHttp for intranet http:// endpoints.'
+        : 'OA URL is not configured.',
       'FAILED_PRECONDITION',
     );
   }
@@ -91,7 +100,10 @@ export function createHttpMeetingOaAdapter(options: {
     Math.max(Number(options.config.timeoutMs) || 15_000, 1),
     30_000,
   );
-  const allowHttpLoopback = options.config.testAdapter === true;
+  const urlSafety = {
+    allowHttpLoopback: options.config.testAdapter === true,
+    allowInsecureHttp: options.config.allowInsecureHttp === true,
+  };
   const tokenCache = new Map<
     string,
     { token: OaToken; refreshAt: number; pending?: Promise<OaToken> }
@@ -99,9 +111,10 @@ export function createHttpMeetingOaAdapter(options: {
 
   async function credentials(): Promise<OaHttpCredentials> {
     const stored = (await options.resolveCredentials?.()) ?? {};
+    const fromEnv = resolveMeetingOaApiUrls(options.config);
     return {
-      tokenUrl: stored.tokenUrl || options.config.tokenUrl,
-      meetingUrl: stored.meetingUrl || options.config.meetingUrl,
+      tokenUrl: stored.tokenUrl || fromEnv.tokenUrl,
+      meetingUrl: stored.meetingUrl || fromEnv.meetingUrl,
       peopleUrl:
         stored.peopleUrl ||
         (await options.resolvePeopleUrl?.()) ||
@@ -123,7 +136,7 @@ export function createHttpMeetingOaAdapter(options: {
     body: unknown;
     unknownMessage: string;
   }): Promise<{ response: Response; result: Record<string, unknown> | null }> {
-    const endpoint = assertSafeUrl(input.url, allowHttpLoopback);
+    const endpoint = assertSafeUrl(input.url, urlSafety);
     endpoint.searchParams.set('method', input.method);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -164,10 +177,12 @@ export function createHttpMeetingOaAdapter(options: {
   return {
     kind: 'http',
     get writeContract() {
-      return mode(Boolean(options.config.meetingUrl));
+      const { meetingUrl } = resolveMeetingOaApiUrls(options.config);
+      return mode(Boolean(meetingUrl));
     },
     get tokenContract() {
-      return mode(Boolean(options.config.tokenUrl && options.config.clientId));
+      const { tokenUrl } = resolveMeetingOaApiUrls(options.config);
+      return mode(Boolean(tokenUrl && options.config.clientId));
     },
 
     async searchPeople(query: string): Promise<readonly OaPerson[]> {
@@ -187,7 +202,7 @@ export function createHttpMeetingOaAdapter(options: {
           'FAILED_PRECONDITION',
         );
       }
-      const url = assertSafeUrl(configured, allowHttpLoopback);
+      const url = assertSafeUrl(configured, urlSafety);
       url.searchParams.set('fd_name', q);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeout);
@@ -252,10 +267,7 @@ export function createHttpMeetingOaAdapter(options: {
       if (cached && cached.refreshAt > Date.now()) return cached.token;
       if (cached?.pending) return cached.pending;
       const pending = (async () => {
-        const endpoint = assertSafeUrl(
-          conf.tokenUrl as string,
-          allowHttpLoopback,
-        );
+        const endpoint = assertSafeUrl(conf.tokenUrl as string, urlSafety);
         endpoint.searchParams.set('method', 'token');
         endpoint.searchParams.set('grant_type', 'client_credentials');
         endpoint.searchParams.set('employee_no', key);

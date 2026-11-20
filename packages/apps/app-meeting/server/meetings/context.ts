@@ -6,13 +6,18 @@ import { databaseManagerToken } from '@nocobase/db';
 import type { AuthEnv } from '@nocobase/app-plugin-authentication';
 import type { AuthorizationEnv } from '@nocobase/app-plugin-authorization/server';
 import type { MeetingGatewayConfig } from '../config/meeting-gateway.js';
-import type { MeetingOaConfig } from '../config/meeting-oa.js';
+import { getMeetingOaSsoRuntime } from '../auth/oa-ltpa/runtime.js';
+import {
+  resolveMeetingOaApiUrls,
+  type MeetingOaConfig,
+} from '../config/meeting-oa.js';
 import { MeetingContentService } from './content-service.js';
 import { MeetingGatewayService } from './gateway-service.js';
 import { meetingGatewayAdapterToken } from './gateway/token.js';
 import { MeetingOaDraftService } from './oa/draft-service.js';
 import { MeetingOaExecutor } from './oa/executor.js';
 import { MeetingOaIdentityService } from './oa/identity-service.js';
+import { probeLiveOaOAuth } from './oa/live-session.js';
 import { MeetingOaOperationService } from './oa/operation-service.js';
 import { MeetingOaSettingsService } from './oa/settings-service.js';
 import { meetingOaAdapterToken } from './oa/token.js';
@@ -50,6 +55,7 @@ export function createMeetingServices(
   const config =
     app.config.get<MeetingGatewayConfig>('meetingGateway') ??
     ({
+      enabled: false,
       originAllowlist: [],
       scopes: [],
       authorizationPathAllowlist: [],
@@ -72,6 +78,19 @@ export function createMeetingServices(
     ({ timeoutMs: 15_000, testAdapter: false } satisfies MeetingOaConfig);
   const oaAdapter = app.container.resolve(meetingOaAdapterToken);
   const userId = currentUserId(context);
+  const probeLiveSession = async () => {
+    const runtime = getMeetingOaSsoRuntime();
+    const username = userId ? await runtime.findUsernameByUserId(userId) : null;
+    const { tokenUrl } = resolveMeetingOaApiUrls(oaConfig);
+    const tokenConfigured = Boolean(
+      tokenUrl && oaConfig.clientId?.trim() && oaConfig.clientSecret?.trim(),
+    );
+    return probeLiveOaOAuth({
+      username,
+      adapter: oaConfig.testAdapter === true ? undefined : oaAdapter,
+      tokenConfigured: oaConfig.testAdapter === true ? false : tokenConfigured,
+    });
+  };
   const contents = new MeetingContentService(
     connection,
     authz,
@@ -84,6 +103,8 @@ export function createMeetingServices(
     authz,
     userId,
     oaAdapter,
+    oaConfig.testAdapter === true,
+    probeLiveSession,
   );
   const drafts = new MeetingOaDraftService(
     connection,
@@ -118,12 +139,10 @@ export function createMeetingServices(
       oaConfig.testAdapter === true,
     ),
     oaSettings: new MeetingOaSettingsService(
-      connection,
       authz,
-      secrets,
       oaAdapter,
       oaConfig,
-      userId,
+      probeLiveSession,
     ),
     files: new MeetingSupplementalFileService(
       connection,

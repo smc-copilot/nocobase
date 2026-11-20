@@ -1,13 +1,20 @@
 import { MeetingGatewayError } from './errors.js';
 import type {
+  GatewayAuthorizationComplete,
   GatewayAuthorizationStart,
   GatewayConnection,
   GatewayContentArtifact,
   GatewayMeetingRecord,
   GatewayParticipantRecord,
+  GatewayRecordFileDetail,
   GatewayRecordingRecord,
   MeetingGatewayAdapter,
 } from './adapter.js';
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const FIXED_CONNECTION_ID = '11111111-1111-4111-8111-111111111111';
+const FIXED_MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 
 /**
  * Isolation-test adapter. It is not a live gateway and must not be enabled
@@ -20,6 +27,7 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
   meetings: GatewayMeetingRecord[] = [];
   participants = new Map<string, GatewayParticipantRecord[]>();
   recordings = new Map<string, GatewayRecordingRecord[]>();
+  recordFileDetails = new Map<string, GatewayRecordFileDetail>();
   artifacts = new Map<string, GatewayContentArtifact[]>();
   queryError: MeetingGatewayError | undefined;
   participantError: MeetingGatewayError | undefined;
@@ -34,6 +42,7 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     this.meetings = [];
     this.participants = new Map();
     this.recordings = new Map();
+    this.recordFileDetails = new Map();
     this.artifacts = new Map();
     this.queryError = undefined;
     this.participantError = undefined;
@@ -57,13 +66,46 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     accessToken: string;
     applicationId: string;
     returnTo: string;
+    flowNonce?: string;
   }): Promise<GatewayAuthorizationStart> {
     this.requireToken(input.accessToken);
     this.startCalls.push(input);
     return {
-      authorizationUrl: `https://meeting.tencent.com/oauth?state=test&corp_id=corp&sdk_id=sdk&redirect_uri=${encodeURIComponent(input.returnTo)}`,
+      authorizationUrl: `https://meeting.tencent.com/marketplace/authorize.html?corp_id=corp&sdk_id=sdk&redirect_uri=${encodeURIComponent(input.returnTo)}&state=test`,
       transactionId: 'txn-test',
       expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    };
+  }
+
+  async completeAuthorization(input: {
+    transactionId: string;
+  }): Promise<GatewayAuthorizationComplete> {
+    if (!input.transactionId.trim()) {
+      throw new MeetingGatewayError(
+        'OAUTH_STATE_INVALID',
+        'The OAuth transaction is missing.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    const active = this.connections.find((item) => item.status === 'ACTIVE');
+    const connectionId =
+      active && UUID_PATTERN.test(active.connectionId)
+        ? active.connectionId
+        : FIXED_CONNECTION_ID;
+    const memberId =
+      active && UUID_PATTERN.test(active.memberId)
+        ? active.memberId
+        : FIXED_MEMBER_ID;
+    const accessToken = 'mt_test_token';
+    this.accessTokens.add(accessToken);
+    return {
+      tokenType: 'Bearer',
+      accessToken,
+      expiresIn: 3600,
+      connectionId,
+      memberId,
+      connectionName: active?.name ?? 'Test connection',
+      connectionType: active?.type ?? 'THIRD_PARTY_OAUTH',
     };
   }
 
@@ -128,6 +170,23 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     this.requireToken(input.accessToken);
     if (this.recordingError) throw this.recordingError;
     return this.recordings.get(input.meetingId) ?? [];
+  }
+
+  async getRecordFileDetail(input: {
+    accessToken: string;
+    connectionRef: string;
+    recordFileId: string;
+  }): Promise<GatewayRecordFileDetail> {
+    this.requireToken(input.accessToken);
+    const detail = this.recordFileDetails.get(input.recordFileId);
+    if (!detail) {
+      throw new MeetingGatewayError(
+        'UPSTREAM_CONTRACT_ERROR',
+        'The record file detail was not found.',
+        'NOT_FOUND',
+      );
+    }
+    return detail;
   }
 
   async importRecordingContent(input: {

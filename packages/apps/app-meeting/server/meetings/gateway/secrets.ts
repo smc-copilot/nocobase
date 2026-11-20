@@ -3,7 +3,10 @@ import {
   type SecretsStore,
 } from '@nocobase/app-server/secrets';
 import type { DatabaseConnection } from '@nocobase/db';
-import { GATEWAY_SECRET_PURPOSE } from '../resources.js';
+import {
+  GATEWAY_SECRET_PURPOSE,
+  GATEWAY_SETTINGS_PURPOSE,
+} from '../resources.js';
 
 export function createMeetingGatewaySecretsStores(
   connection: () => DatabaseConnection,
@@ -52,6 +55,30 @@ export function createMeetingGatewaySecretsStores(
         },
       ],
       select: ['userId'],
+      connection,
+    }),
+    createSecretsTableStore({
+      name: '@nocobase/app-meeting/gateway-settings',
+      table: 'meetingGatewaySettings',
+      columns: [
+        'sealedContractSha256',
+        'sealedBridgeHmacKey',
+        'sealedBridgeKeyringJson',
+      ].map((column) => ({
+        column,
+        purpose: GATEWAY_SETTINGS_PURPOSE,
+        aad: (row: Record<string, unknown>) => [
+          typeof row.id === 'string' || typeof row.id === 'number'
+            ? String(row.id)
+            : 'default',
+          typeof row.credentialVersion === 'string' ||
+          typeof row.credentialVersion === 'number'
+            ? String(row.credentialVersion)
+            : '1',
+          column,
+        ],
+      })),
+      select: ['credentialVersion'],
       connection,
     }),
   ];

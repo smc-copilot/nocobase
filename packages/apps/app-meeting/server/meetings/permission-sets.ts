@@ -26,6 +26,7 @@ export const meetingOperatorPermissionSet = definePermissionSet(
   .grant(
     meetingResource.reference().grant({
       read: { meetings: MEETING_GRANTED_ACCESS },
+      viewRecording: {},
       manageConnections: {
         meetingGatewayBindings: MEETING_OWN_BINDINGS_ACCESS,
       },

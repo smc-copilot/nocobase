@@ -67,6 +67,22 @@ describe('user administration', () => {
     ).rejects.toMatchObject({ code: 'USER_USERNAME_CONFLICT' });
   });
 
+  it('reports an invalid username as invalid input', async () => {
+    const { users } = await setup();
+    await expect(
+      users.create({
+        name: '王冬辉',
+        username: '王冬辉',
+        email: 'wangdonghui@example.com',
+        password: 'strong-password',
+      }),
+    ).rejects.toMatchObject({
+      name: 'UserAdministrationError',
+      code: 'INVALID_USERNAME',
+      message: 'Username is invalid',
+    });
+  });
+
   it('updates an identity without treating its own values as conflicts', async () => {
     const { users, signUp, connection } = await setup();
     await signUp();

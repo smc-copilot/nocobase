@@ -7,6 +7,7 @@ import {
 export const MEETINGS = 'meetings';
 export const MEETING_ACCESS = 'meetingAccess';
 export const MEETING_GATEWAY_BINDINGS = 'meetingGatewayBindings';
+export const MEETING_GATEWAY_SETTINGS = 'meetingGatewaySettings';
 export const MEETING_OAUTH_STATES = 'meetingOauthStates';
 export const MEETING_QUERY_RUNS = 'meetingQueryRuns';
 export const MEETING_PARTICIPANTS = 'meetingParticipants';
@@ -38,6 +39,7 @@ export const MEETING_RECONCILIATION_PAGE = 'meeting-reconciliation';
 export const MEETING_OPERATIONS_PAGE = 'meeting-operations';
 
 export const GATEWAY_SECRET_PURPOSE = 'app-meeting.gateway-access';
+export const GATEWAY_SETTINGS_PURPOSE = 'app-meeting.gateway-settings';
 export const OA_SECRET_PURPOSE = 'app-meeting.oa-client';
 
 export type FetchStatus =
@@ -81,6 +83,7 @@ export interface MeetingSourceTodo {
 
 export type MeetingOaAction =
   | 'read'
+  | 'viewRecording'
   | 'manageConnections'
   | 'query'
   | 'import'
@@ -91,6 +94,9 @@ export type MeetingOaAction =
   | 'oaReconcile'
   | 'identityManage'
   | 'supplement';
+
+export type MeetingImportState =
+  'not_imported' | 'importing' | 'imported' | 'failed';
 
 export interface Meeting {
   id: string;
@@ -105,6 +111,8 @@ export interface Meeting {
   endedAt: Date | null;
   participantFetchStatus: FetchStatus;
   recordingFetchStatus: FetchStatus;
+  queryAnomaly: string | null;
+  importState: MeetingImportState;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -168,12 +176,17 @@ export interface MeetingParticipant {
   id: string;
   meetingId: string;
   upstreamParticipantId: string;
+  joinName: string | null;
   displayName: string | null;
   department: string | null;
   joinedAt: Date | null;
+  jobTitle: string | null;
+  isCorpMember: boolean | null;
   createdAt: Date;
   updatedAt: Date;
 }
+
+export type RecordingImportability = 'importable' | 'unknown' | 'blocked';
 
 export interface MeetingRecording {
   id: string;
@@ -182,6 +195,9 @@ export interface MeetingRecording {
   available: boolean;
   format: string | null;
   unavailableReason: string | null;
+  sharingUrl: string | null;
+  allowDownload: boolean | null;
+  importability: RecordingImportability;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -249,6 +265,23 @@ export interface MeetingImportRun {
   errorCode: string | null;
   sourceHash: string | null;
   requestedBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MeetingGatewaySettings {
+  id: string;
+  enabled: boolean | null;
+  origin: string | null;
+  resource: string | null;
+  instanceId: string | null;
+  allowedOrigin: string | null;
+  contractRevision: string | null;
+  sealedContractSha256: string | null;
+  sealedBridgeHmacKey: string | null;
+  sealedBridgeKeyringJson: string | null;
+  credentialVersion: number;
+  updatedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -402,6 +435,8 @@ export const meetingPublicFields = [
   'endedAt',
   'participantFetchStatus',
   'recordingFetchStatus',
+  'queryAnomaly',
+  'importState',
   'createdAt',
 ] as const;
 
@@ -437,6 +472,55 @@ const meetingData = defineDatabasePermission((permission) =>
     .collection<Meeting>(MEETINGS)
     .read([...meetingPublicFields])
     .options(meetingGrantedAccess.reference()),
+);
+
+const gatewaySettingsData = defineDatabasePermission((permission) =>
+  permission
+    .collection<MeetingGatewaySettings>(MEETING_GATEWAY_SETTINGS)
+    .read([
+      'id',
+      'enabled',
+      'origin',
+      'resource',
+      'instanceId',
+      'allowedOrigin',
+      'contractRevision',
+      'sealedContractSha256',
+      'sealedBridgeHmacKey',
+      'sealedBridgeKeyringJson',
+      'credentialVersion',
+      'updatedAt',
+    ])
+    .create([
+      'id',
+      'enabled',
+      'origin',
+      'resource',
+      'instanceId',
+      'allowedOrigin',
+      'contractRevision',
+      'sealedContractSha256',
+      'sealedBridgeHmacKey',
+      'sealedBridgeKeyringJson',
+      'credentialVersion',
+      'updatedBy',
+      'createdAt',
+      'updatedAt',
+    ])
+    .update([
+      'enabled',
+      'origin',
+      'resource',
+      'instanceId',
+      'allowedOrigin',
+      'contractRevision',
+      'sealedContractSha256',
+      'sealedBridgeHmacKey',
+      'sealedBridgeKeyringJson',
+      'credentialVersion',
+      'updatedBy',
+      'updatedAt',
+    ]),
 );
 
 const bindingData = defineDatabasePermission((permission) =>
@@ -543,10 +627,22 @@ export const meetingResource = defineCompositeResource(MEETING_RESOURCE, (r) =>
         .grant('meetings', meetingData)
         .grant('meetingTranscriptRepairs', transcriptRepairData),
     )
+    .action('viewRecording', (action) =>
+      action
+        .title('View recording detail for preview')
+        // The composite builder rejects an action that grants nothing.
+        // Default the same granted-meeting read the caller already has so
+        // `viewRecording: {}` does not open every meeting.
+        .grant(
+          'meetings',
+          meetingData.default(meetingGrantedAccess.reference()),
+        ),
+    )
     .action('manageConnections', (action) =>
       action
         .title('Manage own meeting gateway connections')
-        .grant('meetingGatewayBindings', bindingData),
+        .grant('meetingGatewayBindings', bindingData)
+        .grant('meetingGatewaySettings', gatewaySettingsData),
     )
     .action('query', (action) =>
       action

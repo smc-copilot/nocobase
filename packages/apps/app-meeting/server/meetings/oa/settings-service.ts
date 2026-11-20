@@ -1,15 +1,12 @@
 import type { AuthorizationContext } from '@nocobase/app-plugin-authorization/server';
-import type { SecretsService } from '@nocobase/app-server/secrets';
-import type { DatabaseConnection } from '@nocobase/db';
-import type { MeetingOaConfig } from '../../config/meeting-oa.js';
-import { requireMeetingAction, requireUser, toIso } from '../access.js';
 import {
-  MEETING_OA_SETTINGS,
-  OA_SECRET_PURPOSE,
-  type MeetingOaSettings,
-} from '../resources.js';
+  resolveMeetingOaApiUrls,
+  type MeetingOaConfig,
+} from '../../config/meeting-oa.js';
+import { requireMeetingAction } from '../access.js';
 import type { MeetingOaAdapter, OaContractMode } from './adapter.js';
-import { oaSettingsAad } from './secrets.js';
+import { MeetingOaError } from './errors.js';
+import type { LiveSessionProber } from './identity-service.js';
 
 export interface OaSettingsPublic {
   tokenUrl: string | null;
@@ -26,51 +23,37 @@ export interface OaSettingsPublic {
   writeContract: OaContractMode;
   tokenContract: OaContractMode;
   peopleContract: 'oaPeople.js' | 'test';
-  peopleUrlSource: 'settings' | 'env' | 'test' | 'none';
+  peopleUrlSource: 'env' | 'test' | 'none';
   testAdapter: boolean;
   isolationNote: string | null;
-  liveVerified: false;
+  liveVerified: boolean;
+  liveVerifyReason: string | null;
   updatedAt: string | null;
 }
 
-function keep(
-  incoming: string | null | undefined,
-  existing: string | null | undefined,
-): string | null {
-  if (incoming === undefined) return existing ?? null;
-  if (incoming === null) return null;
-  const trimmed = incoming.trim();
-  return trimmed || null;
-}
-
 function peopleUrlSource(
-  row: MeetingOaSettings | undefined,
   config: MeetingOaConfig,
   adapterKind: string,
-): 'settings' | 'env' | 'test' | 'none' {
+): 'env' | 'test' | 'none' {
   if (adapterKind === 'test') return 'test';
-  if (row?.peopleUrl?.trim()) return 'settings';
   if (config.peopleUrl?.trim()) return 'env';
   return 'none';
 }
 
 export class MeetingOaSettingsService {
   constructor(
-    private readonly connection: DatabaseConnection,
     private readonly authz: AuthorizationContext,
-    private readonly secrets: SecretsService,
     private readonly adapter: MeetingOaAdapter,
     private readonly config: MeetingOaConfig,
-    private readonly userId: string | undefined,
+    private readonly probeLiveSession?: LiveSessionProber,
   ) {}
 
   async get(): Promise<OaSettingsPublic> {
     await requireMeetingAction(this.authz, 'identityManage');
-    const row = await this.row();
-    return this.publicRow(row);
+    return this.publicFromConfig();
   }
 
-  async save(input: {
+  async save(_input: {
     tokenUrl?: string | null;
     peopleUrl?: string | null;
     meetingUrl?: string | null;
@@ -80,69 +63,23 @@ export class MeetingOaSettingsService {
     clientSecret?: string | null;
   }): Promise<OaSettingsPublic> {
     await requireMeetingAction(this.authz, 'identityManage');
-    const actor = requireUser(this.userId);
-    const now = new Date();
-    const existing = await this.row();
-    const secret = input.clientSecret?.trim() || '';
-    const nextVersion = secret
-      ? (existing?.credentialVersion ?? 0) + 1
-      : (existing?.credentialVersion ?? 1);
-    const values: Partial<MeetingOaSettings> = {
-      tokenUrl: keep(input.tokenUrl, existing?.tokenUrl),
-      peopleUrl: keep(input.peopleUrl, existing?.peopleUrl),
-      meetingUrl: keep(input.meetingUrl, existing?.meetingUrl),
-      viewUrl: keep(input.viewUrl, existing?.viewUrl),
-      scope: keep(input.scope, existing?.scope),
-      clientId: keep(input.clientId, existing?.clientId),
-      updatedBy: actor,
-      updatedAt: now,
-    };
-    if (secret) {
-      values.credentialVersion = nextVersion;
-      values.sealedClientSecret = this.secrets.seal(secret, {
-        purpose: OA_SECRET_PURPOSE,
-        aad: oaSettingsAad({ id: 'default', credentialVersion: nextVersion }),
-      });
-    }
-    if (existing) {
-      await this.connection
-        .repository<MeetingOaSettings>(MEETING_OA_SETTINGS)
-        .updateOne({ filter: { id: existing.id }, values });
-    } else {
-      await this.connection
-        .repository<MeetingOaSettings>(MEETING_OA_SETTINGS)
-        .createOne({
-          values: {
-            id: 'default',
-            tokenUrl: values.tokenUrl ?? null,
-            peopleUrl: values.peopleUrl ?? null,
-            meetingUrl: values.meetingUrl ?? null,
-            viewUrl: values.viewUrl ?? null,
-            scope: values.scope ?? null,
-            clientId: values.clientId ?? null,
-            sealedClientSecret: values.sealedClientSecret ?? null,
-            credentialVersion: values.credentialVersion ?? nextVersion,
-            updatedBy: actor,
-            createdAt: now,
-            updatedAt: now,
-          },
-        });
-    }
-    return this.get();
-  }
-
-  private async row(): Promise<MeetingOaSettings | undefined> {
-    return this.connection
-      .repository<MeetingOaSettings>(MEETING_OA_SETTINGS)
-      .findOne({ filter: { id: 'default' } });
-  }
-
-  private publicRow(row: MeetingOaSettings | undefined): OaSettingsPublic {
-    const meetingUrl = row?.meetingUrl || this.config.meetingUrl;
-    const tokenUrl = row?.tokenUrl || this.config.tokenUrl;
-    const hasSecret = Boolean(
-      row?.sealedClientSecret || this.config.clientSecret,
+    void _input;
+    throw new MeetingOaError(
+      'OA_SETTINGS_INVALID',
+      'Meeting OA settings are read from the application environment (packages/apps/app-meeting/.env). The settings form is disabled.',
+      'FAILED_PRECONDITION',
     );
+  }
+
+  private async publicFromConfig(): Promise<OaSettingsPublic> {
+    const resolved = resolveMeetingOaApiUrls(this.config);
+    const meetingUrl = resolved.meetingUrl ?? null;
+    const tokenUrl = resolved.tokenUrl ?? null;
+    const peopleUrl = this.config.peopleUrl?.trim() || null;
+    const viewUrl = this.config.viewUrl?.trim() || null;
+    const scope = this.config.scope?.trim() || null;
+    const clientId = this.config.clientId?.trim() || null;
+    const hasSecret = Boolean(this.config.clientSecret?.trim());
     const writeContract: OaContractMode =
       this.adapter.kind === 'test'
         ? 'test'
@@ -155,28 +92,35 @@ export class MeetingOaSettingsService {
         : tokenUrl && hasSecret
           ? 'configured'
           : 'unavailable';
+    const testAdapter = this.config.testAdapter === true;
+    let liveVerified = false;
+    let liveVerifyReason: string | null = null;
+    if (!testAdapter && this.probeLiveSession) {
+      const live = await this.probeLiveSession();
+      liveVerified = live.liveVerified;
+      liveVerifyReason = live.reason;
+    }
     return {
-      tokenUrl: row?.tokenUrl ?? null,
-      peopleUrl: row?.peopleUrl ?? null,
-      meetingUrl: row?.meetingUrl ?? null,
-      viewUrl: row?.viewUrl ?? null,
-      scope: row?.scope ?? null,
-      clientId: row?.clientId ?? null,
+      tokenUrl,
+      peopleUrl,
+      meetingUrl,
+      viewUrl,
+      scope,
+      clientId,
       tokenUrlConfigured: Boolean(tokenUrl),
-      peopleUrlConfigured: Boolean(row?.peopleUrl || this.config.peopleUrl),
+      peopleUrlConfigured: Boolean(peopleUrl),
       meetingUrlConfigured: Boolean(meetingUrl),
-      clientIdConfigured: Boolean(row?.clientId || this.config.clientId),
+      clientIdConfigured: Boolean(clientId),
       hasSecret,
       writeContract,
       tokenContract,
       peopleContract: this.adapter.kind === 'test' ? 'test' : 'oaPeople.js',
-      peopleUrlSource: peopleUrlSource(row, this.config, this.adapter.kind),
-      testAdapter: this.config.testAdapter === true,
-      isolationNote: this.config.testAdapter
-        ? '本地测试数据，未调用真实OA'
-        : null,
-      liveVerified: false,
-      updatedAt: row ? toIso(row.updatedAt) : null,
+      peopleUrlSource: peopleUrlSource(this.config, this.adapter.kind),
+      testAdapter,
+      isolationNote: testAdapter ? '本地测试数据，未调用真实OA' : null,
+      liveVerified,
+      liveVerifyReason,
+      updatedAt: null,
     };
   }
 }

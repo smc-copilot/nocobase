@@ -1,11 +1,4 @@
-import {
-  Users,
-  ShieldCheck,
-  KeyRound,
-  ListFilter,
-  Cable,
-  Landmark,
-} from 'lucide-react';
+import { Users, ShieldCheck, KeyRound, ListFilter } from 'lucide-react';
 import {
   defineAppRoutes,
   type AppClientRouteContribution,
@@ -18,6 +11,7 @@ import {
  */
 const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
   {
+    // Hidden: connection material is env-only. Keep callback path for OAuth return.
     parent: 'settingsBusiness',
     name: 'meetingConnections',
     path: '/meeting-connections',
@@ -25,11 +19,6 @@ const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
     authz: {
       resource: { type: 'page', id: 'meeting-connections' },
       action: 'access',
-    },
-    navigation: {
-      title: 'meetingConnections.title',
-      description: 'meetingConnections.description',
-      icon: Cable,
     },
     breadcrumb: { title: 'meetingConnections.title' },
     componentLoader: () => import('./meeting-connections.js'),
@@ -51,6 +40,7 @@ const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
     ],
   },
   {
+    // Hidden: OA URLs and secrets are env-only. Keep path so old bookmarks redirect.
     parent: 'settingsBusiness',
     name: 'meetingIntegrations',
     path: '/meeting-integrations',
@@ -58,11 +48,6 @@ const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
     authz: {
       resource: { type: 'page', id: 'meeting-integrations' },
       action: 'access',
-    },
-    navigation: {
-      title: 'meetingOa.integrationsTitle',
-      description: 'meetingOa.integrationsDescription',
-      icon: Landmark,
     },
     breadcrumb: { title: 'meetingOa.integrationsTitle' },
     componentLoader: () => import('./meeting-integrations.js'),

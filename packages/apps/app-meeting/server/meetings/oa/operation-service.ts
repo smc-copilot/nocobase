@@ -142,11 +142,17 @@ export class MeetingOaOperationService {
       asPrincipalUserId: input.asPrincipalUserId,
     });
     if ('denyReason' in creator) {
+      const reason = creator.denyReason as
+        | 'OA_MAPPING_MISSING'
+        | 'OA_LIVE_SESSION_REQUIRED'
+        | 'OA_DELEGATION_DENIED';
       throw new MeetingOaError(
-        creator.denyReason as 'OA_MAPPING_MISSING' | 'OA_DELEGATION_DENIED',
-        creator.denyReason === 'OA_DELEGATION_DENIED'
+        reason,
+        reason === 'OA_DELEGATION_DENIED'
           ? 'Controlled OA delegation is not in effect for this caller.'
-          : 'The signed-in user has no trusted OA employee mapping. The draft was not written to OA.',
+          : reason === 'OA_LIVE_SESSION_REQUIRED'
+            ? 'OA OAuth token verification for the signed-in Meeting username (employee_no) is required before formal sync. The draft was not written to OA.'
+            : 'The signed-in user has no trusted OA employee mapping. The draft was not written to OA.',
         'FAILED_PRECONDITION',
         'NONE',
       );

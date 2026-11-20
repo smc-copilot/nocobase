@@ -19,6 +19,11 @@ import {
 } from 'react-router';
 import type { MeetingRow } from './index.js';
 
+interface IdentityRow {
+  employeeNo: string | null;
+  canSync: boolean;
+}
+
 export default function MeetingDetailPage(): ReactElement {
   const { t } = useTranslation();
   const { meetingId = '' } = useParams();
@@ -31,7 +36,11 @@ export default function MeetingDetailPage(): ReactElement {
   const meeting = useListData<{ data: MeetingRow }>(`meetings/${meetingId}`, {
     scopes: ['meetings'],
   });
+  const identity = useListData<{ data: IdentityRow }>('meetingOa/identity', {
+    scopes: ['meetings'],
+  });
   const row = meeting.data?.data;
+  const identityRow = identity.data?.data;
   const tab = location.pathname.endsWith('/summary')
     ? 'summary'
     : location.pathname.endsWith('/recordings')
@@ -93,6 +102,15 @@ export default function MeetingDetailPage(): ReactElement {
             row?.meetingCode
               ? t('meetings.meetingCodeLabel', { code: row.meetingCode })
               : t('meetings.detailDescription')
+          }
+          actions={
+            identityRow?.canSync && identityRow.employeeNo ? (
+              <p className='max-w-md text-right text-sm text-muted-foreground'>
+                {t('meetingOa.mappedAs', {
+                  employeeNo: identityRow.employeeNo,
+                })}
+              </p>
+            ) : null
           }
         />
         {meeting.error ? (

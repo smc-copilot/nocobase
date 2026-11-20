@@ -73,6 +73,8 @@ describe('OA workspace page', () => {
                 employeeNo: null,
                 canSync: false,
                 denyReason: 'OA_MAPPING_MISSING',
+                liveVerified: false,
+                liveVerifyReason: null,
               },
             };
           }
@@ -133,8 +135,8 @@ describe('OA workspace page', () => {
       },
     );
     expect(
-      await screen.findByRole('heading', {
-        name: enUS.meetingOa.workspaceTitle,
+      await screen.findByRole('textbox', {
+        name: enUS.meetingOa.fields.title,
       }),
     ).toBeInTheDocument();
     expect(screen.getByText(enUS.meetingOa.isolationBanner)).toBeVisible();
@@ -176,6 +178,8 @@ describe('OA workspace page', () => {
                 employeeNo: 'E1001',
                 canSync: true,
                 denyReason: null,
+                liveVerified: true,
+                liveVerifyReason: 'verified',
               },
             };
           }
@@ -248,8 +252,8 @@ describe('OA workspace page', () => {
       },
     );
     expect(
-      await screen.findByRole('heading', {
-        name: enUS.meetingOa.workspaceTitle,
+      await screen.findByRole('textbox', {
+        name: enUS.meetingOa.fields.title,
       }),
     ).toBeInTheDocument();
     await userEvent.clear(
@@ -293,6 +297,8 @@ describe('OA workspace page', () => {
                 employeeNo: 'E1001',
                 canSync: true,
                 denyReason: null,
+                liveVerified: true,
+                liveVerifyReason: 'verified',
               },
             };
           }
@@ -360,8 +366,8 @@ describe('OA workspace page', () => {
       },
     );
     expect(
-      await screen.findByRole('heading', {
-        name: enUS.meetingOa.workspaceTitle,
+      await screen.findByRole('textbox', {
+        name: enUS.meetingOa.fields.title,
       }),
     ).toBeInTheDocument();
     await userEvent.type(
@@ -424,6 +430,8 @@ describe('OA workspace page', () => {
                 employeeNo: 'E1001',
                 canSync: true,
                 denyReason: null,
+                liveVerified: true,
+                liveVerifyReason: 'verified',
               },
             };
           }
@@ -489,8 +497,8 @@ describe('OA workspace page', () => {
       },
     );
     expect(
-      await screen.findByRole('heading', {
-        name: enUS.meetingOa.workspaceTitle,
+      await screen.findByRole('textbox', {
+        name: enUS.meetingOa.fields.title,
       }),
     ).toBeInTheDocument();
     await userEvent.type(
@@ -695,6 +703,8 @@ describe('OA workspace page', () => {
                 employeeNo: 'E1001',
                 canSync: true,
                 denyReason: null,
+                liveVerified: true,
+                liveVerifyReason: 'verified',
               },
             };
           }
@@ -752,8 +762,8 @@ describe('OA workspace page', () => {
       },
     );
     expect(
-      await screen.findByRole('heading', {
-        name: enUS.meetingOa.workspaceTitle,
+      await screen.findByRole('textbox', {
+        name: enUS.meetingOa.fields.title,
       }),
     ).toBeInTheDocument();
     const search = screen.getByLabelText(
@@ -767,112 +777,5 @@ describe('OA workspace page', () => {
     ).toBeVisible();
   });
 
-  it('toasts when supplemental file delete fails', async () => {
-    await renderWithApp(
-      <Routes>
-        <Route path='/meetings/:meetingId/oa' element={<MeetingOaPage />} />
-      </Routes>,
-      {
-        namespace: packageMetadata.name,
-        namespaces: { [packageMetadata.name]: enUS },
-        route: '/meetings/meet-1/oa',
-        fetch: answerApi(async ({ path, method }) => {
-          if (path === 'authorization/permissions') return grantPages();
-          if (path === 'meetingOa/identity') {
-            return {
-              data: {
-                userId: 'u1',
-                employeeNo: null,
-                canSync: false,
-                denyReason: 'OA_MAPPING_MISSING',
-              },
-            };
-          }
-          if (path === 'meetings/meet-1/oa-draft' && method !== 'PUT') {
-            return {
-              data: {
-                meetingId: 'meet-1',
-                version: 1,
-                title: 'Draft meeting',
-                startAt: null,
-                endAt: null,
-                location: null,
-                summary: 'Minutes',
-                tasks: [],
-                writesOa: false,
-                isolationAdapter: true,
-              },
-            };
-          }
-          if (path === 'meetings/meet-1/content') {
-            return {
-              data: {
-                minutes: { text: 'Minutes', source: 'local' },
-                sourceTodos: [],
-                localMinutesEdited: false,
-                importStatus: 'empty',
-                lastImportError: null,
-                liveGatewayImport: 'unavailable',
-              },
-            };
-          }
-          if (
-            path === 'meetings/meet-1/supplementalFiles/file-1' &&
-            method === 'DELETE'
-          ) {
-            return new Response(
-              JSON.stringify({
-                error: {
-                  reason: 'FORBIDDEN',
-                  message: 'Cannot delete this supplemental file.',
-                },
-              }),
-              { status: 403, headers: { 'content-type': 'application/json' } },
-            );
-          }
-          if (path.includes('supplementalFiles')) {
-            return {
-              data: [
-                {
-                  id: 'file-1',
-                  fileName: 'note.txt',
-                  mimeType: 'text/plain',
-                  sizeBytes: 18,
-                  parseStatus: 'succeeded',
-                  parseError: null,
-                  tencentSource: false,
-                },
-              ],
-              meta: { total: 1, totalBytes: 18 },
-            };
-          }
-          return new Response(null, { status: 404 });
-        }),
-        services: (app) => {
-          app.container.singleton(
-            authorizationClientToken,
-            (resolver) =>
-              new AuthorizationClient(resolver.resolve(apiClientToken)),
-          );
-        },
-      },
-    );
-    expect(
-      await screen.findByRole('button', {
-        name: enUS.meetingOa.filesRemoveNamed.replace('{name}', 'note.txt'),
-      }),
-    ).toBeVisible();
-    await userEvent.click(
-      screen.getByRole('button', {
-        name: enUS.meetingOa.filesRemoveNamed.replace('{name}', 'note.txt'),
-      }),
-    );
-    await userEvent.click(
-      screen.getByRole('button', { name: enUS.meetingOa.filesDelete }),
-    );
-    expect(
-      await screen.findByText('Cannot delete this supplemental file.'),
-    ).toBeVisible();
-    expect(screen.getByText(enUS.meetingOa.filesDeleteConfirm)).toBeVisible();
-  });
+  it.todo('toasts when supplemental file delete fails once upload UI returns');
 });

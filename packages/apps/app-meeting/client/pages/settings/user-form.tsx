@@ -1,7 +1,7 @@
 import { PendingButton } from '#components/pending-button';
 import { FeedbackForm } from '#components/feedback-form';
 import { useAuthentication } from '@nocobase/app-plugin-authentication/client';
-import { useSubmission } from '@nocobase/app-client';
+import { PendingSubmissionError, useSubmission } from '@nocobase/app-client';
 import {
   useSettingsLeave,
   useSettingsData,
@@ -393,18 +393,28 @@ function UserEditor(): ReactElement {
           'PASSWORD_TOO_SHORT',
           'PASSWORD_TOO_LONG',
           'USER_IDENTITY_CONFLICT',
+          'INVALID_USERNAME',
         ].includes(next.reason ?? '')
       ) {
         const field =
-          next.reason === 'USER_IDENTITY_CONFLICT' ? 'email' : 'password';
+          next.reason === 'USER_IDENTITY_CONFLICT'
+            ? 'email'
+            : next.reason === 'INVALID_USERNAME'
+              ? 'username'
+              : 'password';
         setServerErrors({
           [field]: t(
             field === 'password'
               ? 'settings.passwordPolicy'
-              : 'settings.identityConflict',
+              : field === 'username'
+                ? 'settings.invalidUsername'
+                : 'settings.identityConflict',
           ),
         });
         form.querySelector<HTMLInputElement>(`[name="${field}"]`)?.focus();
+      } else if (next instanceof PendingSubmissionError) {
+        submission.acknowledgeOutcome('not-committed');
+        setError({ staleAttempt: true });
       } else {
         setError(next);
       }
@@ -471,7 +481,15 @@ function UserEditor(): ReactElement {
             aria-busy={busy}
             submitting={busy}
             error={error}
-            errorContent={<SettingsError error={error} inline />}
+            errorContent={
+              error && typeof error === 'object' && 'staleAttempt' in error ? (
+                <p className='text-sm text-destructive'>
+                  {t('settings.staleAttempt')}
+                </p>
+              ) : (
+                <SettingsError error={error} inline />
+              )
+            }
             id={formId}
             ref={formRef}
             onSubmit={(event) => {
@@ -510,7 +528,12 @@ function UserEditor(): ReactElement {
                   value={fields[name]}
                   aria-invalid={Boolean(fieldError(name))}
                   aria-describedby={
-                    fieldError(name) ? `${formId}-${name}-error` : undefined
+                    [
+                      name === 'username' ? `${formId}-username-hint` : '',
+                      fieldError(name) ? `${formId}-${name}-error` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ') || undefined
                   }
                   onChange={(event) => {
                     setDraftFields(() => ({
@@ -521,6 +544,14 @@ function UserEditor(): ReactElement {
                     setDirty(true);
                   }}
                 />
+                {name === 'username' && (
+                  <p
+                    id={`${formId}-username-hint`}
+                    className='text-xs text-muted-foreground'
+                  >
+                    {t('settings.usernameHint')}
+                  </p>
+                )}
                 {fieldError(name) && (
                   <p
                     data-feedback-field-error

@@ -31,6 +31,8 @@ import {
   MeetingParticipantSchema,
   MeetingRecordingSchema,
   MeetingSchema,
+  RecordingDetailParams,
+  RecordingDetailSchema,
   TotalMeta,
 } from './schemas.js';
 
@@ -82,6 +84,18 @@ const recordingsDoc = describeRoute({
   },
 });
 
+const recordingDetailDoc = describeRoute({
+  tags: ['Meetings'],
+  operationId: 'getMeetingRecordingDetail',
+  summary: 'Read one stored recording from the gateway for preview',
+  description:
+    'Loads the signed-in binding and returns the gateway record-file detail for a recording already stored on this meeting. Signed URLs are not persisted. The response is not cacheable.',
+  responses: {
+    200: dataResponse(RecordingDetailSchema),
+    ...apiErrorResponses,
+  },
+});
+
 export const meetingsRoutes = defineApiRoutes((app: Application) => {
   const router = new Hono<AuthEnv & AuthorizationEnv>();
   router.onError((error, c) =>
@@ -107,10 +121,31 @@ export const meetingsRoutes = defineApiRoutes((app: Application) => {
     app.container.resolve(authorizationToken).middleware(),
     requireMeetingRead,
   ] as const;
+  const requireViewRecording = createMiddleware<AuthorizationEnv>(
+    async (context, next) => {
+      const decision = await context.get('authz').authorize({
+        resource: { type: 'composite', id: MEETING_RESOURCE },
+        action: 'viewRecording',
+      });
+      if (decision.effect === 'deny') {
+        throw new AuthorizationDeniedError(decision);
+      }
+      await next();
+    },
+  );
+  const protectRecordingDetail = [
+    app.container.resolve(authenticationToken).required({ scopedKeys: false }),
+    app.container.resolve(authorizationToken).middleware(),
+    requireViewRecording,
+  ] as const;
   router.use('/meetings', ...protect);
   router.use('/meetings/:meetingId', ...protect);
   router.use('/meetings/:meetingId/participants', ...protect);
   router.use('/meetings/:meetingId/recordings', ...protect);
+  router.use(
+    '/meetings/:meetingId/recordings/:recordFileId/detail',
+    ...protectRecordingDetail,
+  );
   if (!app.container.has(databaseManagerToken)) {
     const unavailable = () => {
       throw new ApiError({
@@ -134,6 +169,11 @@ export const meetingsRoutes = defineApiRoutes((app: Application) => {
     );
     router.get(
       '/meetings/:meetingId/recordings',
+      describeRoute({ hide: true }),
+      unavailable,
+    );
+    router.get(
+      '/meetings/:meetingId/recordings/:recordFileId/detail',
       describeRoute({ hide: true }),
       unavailable,
     );
@@ -169,6 +209,20 @@ export const meetingsRoutes = defineApiRoutes((app: Application) => {
           c.req.valid('param').meetingId,
         ),
       ),
+  );
+  router.get(
+    '/meetings/:meetingId/recordings/:recordFileId/detail',
+    recordingDetailDoc,
+    apiValidator('param', RecordingDetailParams),
+    async (c) => {
+      const params = c.req.valid('param');
+      const data = await createMeetingServices(
+        app,
+        c,
+      ).contents.previewRecordingDetail(params.meetingId, params.recordFileId);
+      c.header('Cache-Control', 'no-store');
+      return c.json({ data });
+    },
   );
   router.get(
     '/meetings/:meetingId',

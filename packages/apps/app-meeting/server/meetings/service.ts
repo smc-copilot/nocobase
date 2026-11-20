@@ -25,21 +25,30 @@ export interface MeetingPublic {
   endedAt: string | null;
   participantFetchStatus: FetchStatus;
   recordingFetchStatus: FetchStatus;
+  queryAnomaly: string | null;
+  importState: string;
   createdAt: string;
 }
 
 export interface MeetingParticipantPublic {
   id: string;
+  joinName: string | null;
   displayName: string | null;
   department: string | null;
   joinedAt: string | null;
+  jobTitle: string | null;
+  isCorpMember: boolean | null;
 }
 
 export interface MeetingRecordingPublic {
   id: string;
+  recordFileId: string;
   available: boolean;
   format: string | null;
   unavailableReason: string | null;
+  sharingUrl: string | null;
+  allowDownload: boolean | null;
+  importability: string;
 }
 
 function meetingsForbidden(): ApiError {
@@ -66,6 +75,8 @@ function toPublic(row: Partial<Meeting>): MeetingPublic {
     endedAt: toIso(row.endedAt ?? null),
     participantFetchStatus: row.participantFetchStatus ?? 'not_fetched',
     recordingFetchStatus: row.recordingFetchStatus ?? 'not_fetched',
+    queryAnomaly: row.queryAnomaly ?? null,
+    importState: row.importState ?? 'not_imported',
     createdAt: toIso(row.createdAt) as string,
   };
 }
@@ -128,9 +139,12 @@ export class MeetingQueryService {
     return {
       data: rows.map((row) => ({
         id: row.id,
+        joinName: row.joinName ?? null,
         displayName: row.displayName,
         department: row.department,
         joinedAt: toIso(row.joinedAt),
+        jobTitle: row.jobTitle ?? null,
+        isCorpMember: row.isCorpMember ?? null,
       })),
       meta: { total: rows.length },
     };
@@ -149,9 +163,13 @@ export class MeetingQueryService {
     return {
       data: rows.map((row) => ({
         id: row.id,
+        recordFileId: row.recordFileId,
         available: row.available,
         format: row.format,
         unavailableReason: row.unavailableReason,
+        sharingUrl: row.sharingUrl ?? null,
+        allowDownload: row.allowDownload ?? null,
+        importability: row.importability ?? 'unknown',
       })),
       meta: { total: rows.length },
     };

@@ -2,9 +2,18 @@ import { ApiError } from '@nocobase/app-server/router';
 
 export type MeetingGatewayReason =
   | 'ACCESS_DENIED'
+  | 'PERMISSION_DENIED'
   | 'AUTH_REQUIRED'
   | 'GATEWAY_REAUTH_REQUIRED'
   | 'GATEWAY_NOT_CONFIGURED'
+  | 'GATEWAY_ORIGIN_INVALID'
+  | 'GATEWAY_SETTINGS_INVALID'
+  | 'RESOURCE_NOT_ACCESSIBLE'
+  | 'CONTENT_NOT_READY'
+  | 'CURSOR_INVALID'
+  | 'TOKEN_INVALID'
+  | 'INVALID_REQUEST'
+  | 'QUERY_RESULT_UNKNOWN'
   | 'GATEWAY_IDENTITY_TOKEN_UNAVAILABLE'
   | 'UPSTREAM_CONTRACT_ERROR'
   | 'OAUTH_STATE_INVALID'
@@ -25,6 +34,8 @@ export class MeetingGatewayError extends Error {
       | 'PERMISSION_DENIED'
       | 'FAILED_PRECONDITION'
       | 'INVALID_ARGUMENT'
+      | 'NOT_FOUND'
+      | 'ABORTED'
       | 'UNAVAILABLE'
       | 'ALREADY_EXISTS' = 'FAILED_PRECONDITION',
     readonly retryable = false,

@@ -28,6 +28,7 @@ import users from './users.js';
 import foundation from './foundation.js';
 import meetingGateway from './meeting-gateway.js';
 import meetingOa from './meeting-oa.js';
+import meetingOaSso from './meeting-oa-sso.js';
 
 const defaultConfigs: AppConfigFactory<{
   mailers: ReturnType<typeof mailers>;
@@ -56,6 +57,7 @@ const defaultConfigs: AppConfigFactory<{
   foundation: ReturnType<typeof foundation>;
   meetingGateway: ReturnType<typeof meetingGateway>;
   meetingOa: ReturnType<typeof meetingOa>;
+  meetingOaSso: ReturnType<typeof meetingOaSso>;
 }> = defaultAppConfigs({
   mailers,
   auth,
@@ -83,6 +85,7 @@ const defaultConfigs: AppConfigFactory<{
   foundation,
   meetingGateway,
   meetingOa,
+  meetingOaSso,
 });
 
 export default defaultConfigs;

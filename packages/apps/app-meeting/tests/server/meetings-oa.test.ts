@@ -8,6 +8,7 @@ import { createStandaloneServer } from '../../server/standalone.js';
 import { TestMeetingOaAdapter } from '../../server/meetings/oa/test-adapter.js';
 import { meetingOaAdapterToken } from '../../server/meetings/oa/token.js';
 import { MeetingOaError } from '../../server/meetings/oa/errors.js';
+import { MeetingGatewayError } from '../../server/meetings/gateway/errors.js';
 import { TestMeetingGatewayAdapter } from '../../server/meetings/gateway/test-adapter.js';
 import { meetingGatewayAdapterToken } from '../../server/meetings/gateway/token.js';
 
@@ -42,6 +43,19 @@ const test = createAppTest({
   createServer: createStandaloneServer,
   connections: ['main'],
   scope: 'test',
+  // Keep the provisioned SQLite dialect: the app `.env` sets DB_DIALECT=postgres.
+  server: {
+    env: {
+      DB_DIALECT: 'sqlite',
+      DB_HOST: undefined,
+      DB_PORT: undefined,
+      DB_DATABASE: undefined,
+      DB_USER: undefined,
+      DB_USERNAME: undefined,
+      DB_PASSWORD: undefined,
+      DB_STORAGE: undefined,
+    },
+  },
   config: {
     logging: { enabled: false },
     app: { publicOrigin: 'http://localhost' },
@@ -124,10 +138,12 @@ async function insertMeeting(
       ...values,
       sourceGatewayInstance: 'test-gateway',
       sourceOrganization: 'test-org',
-      sourceConnectionRef: 'test-connection',
+      sourceConnectionRef: 'conn-alice',
       sourceUpstreamMeetingId: values.id,
       sourceCycleKey: '',
       startedAt: now,
+      importState: 'not_imported',
+      queryAnomaly: null,
       createdAt: now,
       updatedAt: now,
     },
@@ -151,6 +167,9 @@ async function insertMeeting(
       available: true,
       format: 'txt',
       unavailableReason: null,
+      sharingUrl: null,
+      allowDownload: true,
+      importability: 'importable',
       createdAt: now,
       updatedAt: now,
     },
@@ -684,6 +703,16 @@ test('does not overwrite local minutes on re-import and does not echo OA secrets
     'OPTIMIZED_ONLY',
   );
   expect(imported.data.sourceTodos[0]?.title).toBe('Isolation source todo');
+  const listed = (await expectOk(await alice.fetch('/meetings'))) as {
+    data: { id: string; importState: string }[];
+  };
+  expect(listed.data.find((row) => row.id === 'meet-imp')?.importState).toBe(
+    'imported',
+  );
+  const one = (await expectOk(await alice.fetch('/meetings/meet-imp'))) as {
+    data: { importState: string };
+  };
+  expect(one.data.importState).toBe('imported');
   const alignedRepair = (await expectOk(
     await alice.fetch('/meetingOa/transcriptRepairs', write({})),
   )) as { data: { repaired: number; skipped: number } };
@@ -785,34 +814,40 @@ test('does not overwrite local minutes on re-import and does not echo OA secrets
   expect(failedImport.data.lastImportError).toBe('IMPORT_FAILED');
   expect(failedImport.data.minutes.text).toBe('Human edited minutes');
 
-  const saved = (await expectOk(
+  gateway.importError = new MeetingGatewayError(
+    'SOURCE_NOT_IMPORTABLE',
+    'No complete importable recording text was downloaded.',
+    'FAILED_PRECONDITION',
+  );
+  const typedFail = (await expectOk(
     await alice.fetch(
-      '/meetingOa/settings',
-      put({
-        peopleUrl: 'https://oa.example.test/people',
-        clientSecret: 'super-secret-value',
-      }),
+      '/meetings/meet-imp/imports',
+      write({ recordFileId: 'rec-meet-imp' }),
     ),
+  )) as {
+    data: { lastImportError: string | null };
+    meta: { importRun: { errorCode: string | null } };
+  };
+  expect(typedFail.data.lastImportError).toBe('SOURCE_NOT_IMPORTABLE');
+  expect(typedFail.meta.importRun.errorCode).toBe('SOURCE_NOT_IMPORTABLE');
+
+  const settings = (await expectOk(
+    await alice.fetch('/meetingOa/settings'),
   )) as { data: Record<string, unknown> };
-  expect(JSON.stringify(saved)).not.toContain('super-secret-value');
-  expect(saved.data.hasSecret).toBe(true);
-  expect(saved.data.peopleUrl).toBe('https://oa.example.test/people');
-  expect(saved.data.writeContract).toBe('test');
-  const urlOnly = (await expectOk(
-    await alice.fetch(
-      '/meetingOa/settings',
-      put({ tokenUrl: 'https://oa.example.test/token' }),
-    ),
-  )) as { data: Record<string, unknown> };
-  expect(JSON.stringify(urlOnly)).not.toContain('super-secret-value');
-  expect(urlOnly.data.hasSecret).toBe(true);
-  expect(urlOnly.data.peopleUrl).toBe('https://oa.example.test/people');
-  expect(urlOnly.data.tokenUrl).toBe('https://oa.example.test/token');
-  const settingsRow = (await connection
-    .repository('meetingOaSettings')
-    .findOne({ filter: { id: 'default' } })) as
-    { credentialVersion?: number } | undefined;
-  expect(settingsRow?.credentialVersion).toBe(1);
+  expect(settings.data.writeContract).toBe('test');
+  expect(settings.data.liveVerified).toBe(false);
+  expect(settings.data.peopleUrlSource).toBe('test');
+  const rejected = await alice.fetch(
+    '/meetingOa/settings',
+    put({
+      peopleUrl: 'https://oa.example.test/people',
+      clientSecret: 'super-secret-value',
+    }),
+  );
+  expect(rejected.status).toBe(400);
+  expect(await rejected.json()).toMatchObject({
+    error: { reason: 'OA_SETTINGS_INVALID' },
+  });
   const rootMap = await alice.fetch(
     '/meetingOa/identities',
     put({ userId: alice.user.id, employeeNo: 'root' }),
@@ -1336,21 +1371,21 @@ test('proxies OA people search, keeps snapshots, and rejects unauthorized enumer
   expect(frozen.data.emceeSnapshot.fd_no).toBe('E1001');
 });
 
-test('clears a saved peopleUrl instead of keeping the previous value', async ({
+test('rejects PUT meetingOa/settings because OA material is environment-only', async ({
   testApp,
 }) => {
   const alice = await createUser(testApp, 'alice');
   await grant(testApp, alice.user.id, 'meeting-oa-operator');
-  const saved = (await expectOk(
-    await alice.fetch(
-      '/meetingOa/settings',
-      put({ peopleUrl: 'https://oa.example.test/people' }),
-    ),
-  )) as { data: { peopleUrl: string | null; peopleUrlSource: string } };
-  expect(saved.data.peopleUrl).toBe('https://oa.example.test/people');
-  expect(saved.data.peopleUrlSource).toBe('test');
-  const cleared = (await expectOk(
-    await alice.fetch('/meetingOa/settings', put({ peopleUrl: null })),
-  )) as { data: { peopleUrl: string | null } };
-  expect(cleared.data.peopleUrl).toBeNull();
+  const before = (await expectOk(await alice.fetch('/meetingOa/settings'))) as {
+    data: { peopleUrlSource: string };
+  };
+  expect(before.data.peopleUrlSource).toBe('test');
+  const rejected = await alice.fetch(
+    '/meetingOa/settings',
+    put({ peopleUrl: 'https://oa.example.test/people' }),
+  );
+  expect(rejected.status).toBe(400);
+  expect(await rejected.json()).toMatchObject({
+    error: { reason: 'OA_SETTINGS_INVALID' },
+  });
 });

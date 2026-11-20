@@ -17,12 +17,7 @@ import {
   CardFooter,
   CardHeader,
 } from '#components/ui/card';
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from '#components/ui/field';
+import { Field, FieldGroup, FieldLabel } from '#components/ui/field';
 import { Input } from '#components/ui/input';
 import { Textarea } from '#components/ui/textarea';
 import { useListData } from '#hooks/use-list-data';
@@ -31,8 +26,11 @@ import { MeetingLoading, MeetingUnavailable } from './meeting-feedback.js';
 import { createOaPeopleSearch } from './oa-people-source.js';
 import { type OaPersonChip } from './oa-person.js';
 import { OaPersonMultiSelect, OaPersonSelect } from './oa-person-pickers.js';
-import { beijingWallToIso, isoToBeijingInput } from './oa-time.js';
-import { SupplementalFilesPanel } from './supplemental-files.js';
+import {
+  beijingWallToIso,
+  defaultBeijingCompleteInput,
+  isoToBeijingInput,
+} from './oa-time.js';
 import { TaskTable, type DraftTaskRow } from './task-table.js';
 
 interface Identity {
@@ -40,6 +38,8 @@ interface Identity {
   employeeNo: string | null;
   canSync: boolean;
   denyReason: string | null;
+  liveVerified: boolean;
+  liveVerifyReason: string | null;
 }
 
 interface Draft {
@@ -152,7 +152,9 @@ export default function MeetingOaPage(): ReactElement {
   const shownSummaryTitle = summaryTitle ?? draft?.summaryTitle ?? '';
   const shownSummary = summary ?? draft?.summary ?? '';
   const shownComplete =
-    summaryCompleteTime ?? isoToBeijingInput(draft?.summaryCompleteTime);
+    summaryCompleteTime ??
+    (isoToBeijingInput(draft?.summaryCompleteTime) ||
+      defaultBeijingCompleteInput());
   const shownAttendees = attendees ?? [...(draft?.attendeeSnapshots ?? [])];
   const creatorPerson = identityRow?.employeeNo
     ? {
@@ -278,18 +280,34 @@ export default function MeetingOaPage(): ReactElement {
 
   return (
     <div className='flex flex-col gap-6'>
-      <Alert>
-        <AlertDescription>
-          {draft?.isolationAdapter
-            ? isolation
-            : t('meetingOa.liveWriteBlocked')}
-        </AlertDescription>
-      </Alert>
-      {identityRow ? (
-        <Alert variant={identityRow.canSync ? 'default' : 'destructive'}>
+      {draft?.isolationAdapter ? (
+        <Alert>
+          <AlertDescription>{isolation}</AlertDescription>
+        </Alert>
+      ) : identityRow && !identityRow.liveVerified ? (
+        <Alert>
+          <AlertDescription>{t('meetingOa.liveWriteBlocked')}</AlertDescription>
+        </Alert>
+      ) : null}
+      {identityRow && !identityRow.canSync ? (
+        <Alert variant='destructive'>
           <AlertDescription>
-            {identityRow.canSync
-              ? t('meetingOa.mappedAs', { employeeNo: identityRow.employeeNo })
+            {identityRow.denyReason === 'OA_LIVE_SESSION_REQUIRED'
+              ? [
+                  t('meetingOa.liveSessionRequired'),
+                  identityRow.liveVerifyReason
+                    ? t('meetingOa.liveVerifyReason', {
+                        reason: t(
+                          `meetingOa.liveVerifyReasons.${identityRow.liveVerifyReason}`,
+                          {
+                            defaultValue: identityRow.liveVerifyReason,
+                          },
+                        ),
+                      })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' ')
               : t('meetingOa.mappingMissing')}
           </AlertDescription>
         </Alert>
@@ -341,7 +359,6 @@ export default function MeetingOaPage(): ReactElement {
           </CardContent>
         </Card>
       ) : null}
-      <SupplementalFilesPanel meetingId={meetingId} frozen={frozen} />
       {draft ? (
         <form
           className='flex flex-col gap-6'
@@ -351,227 +368,202 @@ export default function MeetingOaPage(): ReactElement {
           }}
         >
           <Card>
-            <CardHeader>
-              <h2 className='font-heading text-base font-medium'>
-                {t('meetingOa.workspaceTitle')}
-              </h2>
-              <CardDescription>
-                {t('meetingOa.workspaceDescription')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FieldGroup>
-                <div className='grid grid-cols-1 gap-5 md:grid-cols-2'>
-                  <Field className='md:col-span-2'>
-                    <FieldDescription>
-                      {t('meetingOa.beijingHint')}
-                    </FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-title'>
-                      {t('meetingOa.fields.title')}
-                    </FieldLabel>
-                    <Input
-                      id='oa-title'
-                      value={shownTitle}
-                      disabled={frozen}
-                      onChange={(event) => setTitle(event.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-purpose'>
-                      {t('meetingOa.fields.purpose')}
-                    </FieldLabel>
-                    <Input
-                      id='oa-purpose'
-                      value={shownPurpose}
-                      disabled={frozen}
-                      onChange={(event) => setPurpose(event.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-location'>
-                      {t('meetingOa.fields.location')}
-                    </FieldLabel>
-                    <Input
-                      id='oa-location'
-                      value={shownLocation}
-                      disabled={frozen}
-                      onChange={(event) => setLocation(event.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-start'>
-                      {t('meetingOa.fields.startAt')}
-                    </FieldLabel>
-                    <DateTimeField
-                      id='oa-start'
-                      value={shownStart}
-                      disabled={frozen}
-                      onChange={setStartAt}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-end'>
-                      {t('meetingOa.fields.endAt')}
-                    </FieldLabel>
-                    <DateTimeField
-                      id='oa-end'
-                      value={shownEnd}
-                      disabled={frozen}
-                      onChange={setEndAt}
-                    />
-                  </Field>
-                  <Field className='md:col-span-2'>
-                    <FieldDescription>
-                      {draft?.isolationAdapter
-                        ? t('meetingOa.peopleSourceTest')
-                        : t('meetingOa.peopleSourceHttp')}
-                    </FieldDescription>
-                  </Field>
-                  <Field className='md:col-span-2'>
-                    <FieldLabel htmlFor='oa-attendees'>
-                      {t('meetingOa.fields.attendees')}
-                    </FieldLabel>
-                    <OaPersonMultiSelect
-                      id='oa-attendees'
-                      label={t('meetingOa.fields.attendees')}
-                      value={shownAttendees}
-                      disabled={frozen}
-                      onSearch={searchPeople}
-                      onChange={setAttendees}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-emcee'>
-                      {t('meetingOa.fields.emcee')}
-                    </FieldLabel>
-                    <OaPersonSelect
-                      id='oa-emcee'
-                      label={t('meetingOa.fields.emcee')}
-                      value={shownEmcee}
-                      disabled={frozen}
-                      onSearch={searchPeople}
-                      onChange={setEmcee}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-host'>
-                      {t('meetingOa.fields.host')}
-                    </FieldLabel>
-                    <OaPersonSelect
-                      id='oa-host'
-                      label={t('meetingOa.fields.host')}
-                      value={shownHost}
-                      disabled={frozen}
-                      onSearch={searchPeople}
-                      onChange={setHost}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-other'>
-                      {t('meetingOa.fields.otherAttendPerson')}
-                    </FieldLabel>
-                    <Input
-                      id='oa-other'
-                      value={shownOther}
-                      disabled={frozen}
-                      onChange={(event) =>
-                        setOtherAttendPerson(event.target.value)
-                      }
-                    />
-                  </Field>
-                  <Field className='md:col-span-2'>
-                    <FieldLabel htmlFor='oa-remark'>
-                      {t('meetingOa.fields.remark')}
-                    </FieldLabel>
-                    <Textarea
-                      id='oa-remark'
-                      value={shownRemark}
-                      disabled={frozen}
-                      onChange={(event) => setRemark(event.target.value)}
-                    />
-                  </Field>
-                </div>
-              </FieldGroup>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <h2 className='font-heading text-base font-medium'>
-                {t('meetingOa.fields.summary')}
-              </h2>
-            </CardHeader>
-            <CardContent>
-              <FieldGroup>
-                <div className='grid grid-cols-1 gap-5 md:grid-cols-2'>
-                  <Field>
-                    <FieldLabel htmlFor='oa-summary-title'>
-                      {t('meetingOa.fields.summaryTitle')}
-                    </FieldLabel>
-                    <Input
-                      id='oa-summary-title'
-                      value={shownSummaryTitle}
-                      disabled={frozen}
-                      onChange={(event) => setSummaryTitle(event.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-complete'>
-                      {t('meetingOa.fields.summaryCompleteTime')}
-                    </FieldLabel>
-                    <DateTimeField
-                      id='oa-complete'
-                      value={shownComplete}
-                      disabled={frozen}
-                      onChange={setSummaryCompleteTime}
-                    />
-                  </Field>
-                  <Field className='md:col-span-2'>
-                    <FieldLabel htmlFor='oa-summary'>
-                      {t('meetingOa.fields.summary')}
-                    </FieldLabel>
-                    <Textarea
-                      id='oa-summary'
-                      value={shownSummary}
-                      disabled={frozen}
-                      onChange={(event) => setSummary(event.target.value)}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel>{t('meetingOa.fields.inputPerson')}</FieldLabel>
-                    <p className='text-sm'>
-                      {identityRow?.employeeNo ?? t('meetings.notProvided')}
-                    </p>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor='oa-actual'>
-                      {t('meetingOa.fields.actualAttend')}
-                    </FieldLabel>
-                    <OaPersonMultiSelect
-                      id='oa-actual'
-                      label={t('meetingOa.fields.actualAttend')}
-                      value={shownActual}
-                      disabled={frozen}
-                      onSearch={searchPeople}
-                      onChange={setActualAttend}
-                    />
-                  </Field>
-                  <Field className='md:col-span-2'>
-                    <FieldLabel htmlFor='oa-copy'>
-                      {t('meetingOa.fields.copyTo')}
-                    </FieldLabel>
-                    <OaPersonMultiSelect
-                      id='oa-copy'
-                      label={t('meetingOa.fields.copyTo')}
-                      value={shownCopyTo}
-                      disabled={frozen}
-                      onSearch={searchPeople}
-                      onChange={setCopyTo}
-                    />
-                  </Field>
-                </div>
-              </FieldGroup>
+            <CardContent className='pt-6'>
+              <div className='grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,65%)_minmax(0,35%)] lg:items-start'>
+                <section className='min-w-0 space-y-5'>
+                  <FieldGroup>
+                    <div className='grid grid-cols-1 gap-5 md:grid-cols-2'>
+                      <Field>
+                        <FieldLabel htmlFor='oa-summary-title'>
+                          {t('meetingOa.fields.summaryTitle')}
+                        </FieldLabel>
+                        <Input
+                          id='oa-summary-title'
+                          value={shownSummaryTitle}
+                          disabled={frozen}
+                          onChange={(event) =>
+                            setSummaryTitle(event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-complete'>
+                          {t('meetingOa.fields.summaryCompleteTime')}
+                        </FieldLabel>
+                        <DateTimeField
+                          id='oa-complete'
+                          value={shownComplete}
+                          disabled={frozen}
+                          onChange={setSummaryCompleteTime}
+                        />
+                      </Field>
+                      <Field className='md:col-span-2'>
+                        <FieldLabel htmlFor='oa-summary'>
+                          {t('meetingOa.fields.summary')}
+                        </FieldLabel>
+                        <Textarea
+                          id='oa-summary'
+                          rows={20}
+                          value={shownSummary}
+                          disabled={frozen}
+                          className='max-h-[calc(1.25rem*20+1rem)] overflow-y-auto [field-sizing:fixed]'
+                          onChange={(event) => setSummary(event.target.value)}
+                        />
+                      </Field>
+                      <Field className='md:col-span-2'>
+                        <FieldLabel htmlFor='oa-actual'>
+                          {t('meetingOa.fields.actualAttend')}
+                        </FieldLabel>
+                        <OaPersonMultiSelect
+                          id='oa-actual'
+                          label={t('meetingOa.fields.actualAttend')}
+                          value={shownActual}
+                          disabled={frozen}
+                          onSearch={searchPeople}
+                          onChange={setActualAttend}
+                        />
+                      </Field>
+                      <Field className='md:col-span-2'>
+                        <FieldLabel htmlFor='oa-copy'>
+                          {t('meetingOa.fields.copyTo')}
+                        </FieldLabel>
+                        <OaPersonMultiSelect
+                          id='oa-copy'
+                          label={t('meetingOa.fields.copyTo')}
+                          value={shownCopyTo}
+                          disabled={frozen}
+                          onSearch={searchPeople}
+                          onChange={setCopyTo}
+                        />
+                      </Field>
+                    </div>
+                  </FieldGroup>
+                </section>
+                <section className='min-w-0 space-y-5 border-t pt-8 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0'>
+                  <FieldGroup>
+                    <div className='grid grid-cols-1 gap-5'>
+                      <Field>
+                        <FieldLabel htmlFor='oa-title'>
+                          {t('meetingOa.fields.title')}
+                        </FieldLabel>
+                        <Input
+                          id='oa-title'
+                          value={shownTitle}
+                          disabled={frozen}
+                          onChange={(event) => setTitle(event.target.value)}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-purpose'>
+                          {t('meetingOa.fields.purpose')}
+                        </FieldLabel>
+                        <Input
+                          id='oa-purpose'
+                          value={shownPurpose}
+                          disabled={frozen}
+                          onChange={(event) => setPurpose(event.target.value)}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-location'>
+                          {t('meetingOa.fields.location')}
+                        </FieldLabel>
+                        <Input
+                          id='oa-location'
+                          value={shownLocation}
+                          disabled={frozen}
+                          onChange={(event) => setLocation(event.target.value)}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-start'>
+                          {t('meetingOa.fields.startAt')}
+                        </FieldLabel>
+                        <DateTimeField
+                          id='oa-start'
+                          value={shownStart}
+                          disabled={frozen}
+                          onChange={setStartAt}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-end'>
+                          {t('meetingOa.fields.endAt')}
+                        </FieldLabel>
+                        <DateTimeField
+                          id='oa-end'
+                          value={shownEnd}
+                          disabled={frozen}
+                          onChange={setEndAt}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-attendees'>
+                          {t('meetingOa.fields.attendees')}
+                        </FieldLabel>
+                        <OaPersonMultiSelect
+                          id='oa-attendees'
+                          label={t('meetingOa.fields.attendees')}
+                          value={shownAttendees}
+                          disabled={frozen}
+                          onSearch={searchPeople}
+                          onChange={setAttendees}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-emcee'>
+                          {t('meetingOa.fields.emcee')}
+                        </FieldLabel>
+                        <OaPersonSelect
+                          id='oa-emcee'
+                          label={t('meetingOa.fields.emcee')}
+                          value={shownEmcee}
+                          disabled={frozen}
+                          onSearch={searchPeople}
+                          onChange={setEmcee}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-host'>
+                          {t('meetingOa.fields.host')}
+                        </FieldLabel>
+                        <OaPersonSelect
+                          id='oa-host'
+                          label={t('meetingOa.fields.host')}
+                          value={shownHost}
+                          disabled={frozen}
+                          onSearch={searchPeople}
+                          onChange={setHost}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-other'>
+                          {t('meetingOa.fields.otherAttendPerson')}
+                        </FieldLabel>
+                        <Input
+                          id='oa-other'
+                          value={shownOther}
+                          disabled={frozen}
+                          onChange={(event) =>
+                            setOtherAttendPerson(event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor='oa-remark'>
+                          {t('meetingOa.fields.remark')}
+                        </FieldLabel>
+                        <Textarea
+                          id='oa-remark'
+                          value={shownRemark}
+                          disabled={frozen}
+                          onChange={(event) => setRemark(event.target.value)}
+                        />
+                      </Field>
+                    </div>
+                  </FieldGroup>
+                </section>
+              </div>
             </CardContent>
           </Card>
           <Card>

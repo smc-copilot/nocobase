@@ -15,6 +15,7 @@ export default class MeetingGatewayProvider extends ServiceProvider<Application>
     const config =
       this.app.config.get<MeetingGatewayConfig>('meetingGateway') ??
       ({
+        enabled: false,
         originAllowlist: [],
         scopes: [],
         authorizationPathAllowlist: [],
@@ -26,7 +27,11 @@ export default class MeetingGatewayProvider extends ServiceProvider<Application>
     this.app.container.singleton(meetingGatewayAdapterToken, () =>
       config.testAdapter
         ? new TestMeetingGatewayAdapter()
-        : createHttpMeetingGatewayAdapter({ config }),
+        : createHttpMeetingGatewayAdapter({
+            config,
+            // Connection material comes from env / config.yml only.
+            getConfig: async () => config,
+          }),
     );
   }
 

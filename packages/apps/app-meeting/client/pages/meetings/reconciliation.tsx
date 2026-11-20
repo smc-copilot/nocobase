@@ -73,13 +73,11 @@ export default function MeetingReconciliationPage(): ReactElement {
         title={t('meetingOa.reconciliationTitle')}
         description={t('meetingOa.reconciliationDescription')}
       />
-      <Alert>
-        <AlertDescription>
-          {rows.some((row) => row.isolationAdapter)
-            ? t('meetingOa.isolationBanner')
-            : t('meetingOa.liveWriteBlocked')}
-        </AlertDescription>
-      </Alert>
+      {rows.some((row) => row.isolationAdapter) ? (
+        <Alert>
+          <AlertDescription>{t('meetingOa.isolationBanner')}</AlertDescription>
+        </Alert>
+      ) : null}
       <Card>
         <CardHeader>
           <h2 className='font-heading text-base font-medium'>

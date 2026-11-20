@@ -319,6 +319,7 @@ export class MeetingOaDraftService {
       location: meeting.meetingCode
         ? `腾讯会议 ${meeting.meetingCode}`
         : meeting.title,
+      purpose: meeting.title,
       remark:
         todos ||
         (meeting.meetingCode ? `腾讯会议 ${meeting.meetingCode}` : null),
@@ -332,19 +333,32 @@ export class MeetingOaDraftService {
   ): Promise<{ draft: MeetingOaDraft; payload: FrozenOaPayload }> {
     const draft = await this.ensure(meetingId);
     const tasks = await this.tasks(draft.id);
-    const title = draft.title?.trim();
+    const title = draft.title?.trim() || '';
     const startAt = toIso(draft.startAt);
     const endAt = toIso(draft.endAt);
-    const location = draft.location?.trim();
-    const purpose = draft.purpose?.trim();
-    const summary = draft.summary?.trim();
+    const location = draft.location?.trim() || '';
+    // Purpose is required by OA createMeeting; default to title when the form left it blank.
+    const purpose = draft.purpose?.trim() || title;
+    const summary = draft.summary?.trim() || '';
     const attendees = uniqueNos(
       parseJsonField<string[]>(draft.attendeeEmployeeNos) ?? [],
     );
-    if (!title || !startAt || !endAt || !location || !purpose || !summary) {
+    const missing = (
+      [
+        ['title', title],
+        ['startAt', startAt],
+        ['endAt', endAt],
+        ['location', location],
+        ['purpose', purpose],
+        ['summary', summary],
+      ] as const
+    )
+      .filter(([, value]) => !value)
+      .map(([name]) => name);
+    if (missing.length > 0) {
       throw new MeetingOaError(
         'OA_DRAFT_INVALID',
-        'OA draft title, time range, location, purpose and summary are required before sync.',
+        `OA draft is missing required fields before sync: ${missing.join(', ')}.`,
         'INVALID_ARGUMENT',
       );
     }
@@ -536,8 +550,8 @@ export class MeetingOaDraftService {
           endAt: meeting.endedAt,
           location: meeting.meetingCode
             ? `腾讯会议 ${meeting.meetingCode}`
-            : null,
-          purpose: null,
+            : meeting.title,
+          purpose: meeting.title,
           remark: todos || null,
           otherAttendPerson: null,
           attendeeEmployeeNos: [],

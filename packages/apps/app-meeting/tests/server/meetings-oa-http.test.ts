@@ -19,9 +19,71 @@ import {
 } from '../../server/meetings/oa/beijing-time.js';
 import { concatenateGroupTexts } from '../../server/meetings/tencent-groups.js';
 import { MeetingContentService } from '../../server/meetings/content-service.js';
+import { resolveMeetingOaApiUrls } from '../../server/config/meeting-oa.js';
+
+describe('MEETING_OA_OAUTH_URL and BASE_API_URL', () => {
+  it('uses oauthUrl for token and baseApiUrl for meeting writes only', () => {
+    expect(
+      resolveMeetingOaApiUrls({
+        oauthUrl: 'http://oa.example.test/pt/api/oauth.do',
+        baseApiUrl:
+          'http://oa.example.test/sqm/sysdata/sqmSysdataMeetingApi.do',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      }),
+    ).toEqual({
+      tokenUrl: 'http://oa.example.test/pt/api/oauth.do',
+      meetingUrl: 'http://oa.example.test/sqm/sysdata/sqmSysdataMeetingApi.do',
+    });
+  });
+
+  it('does not fill tokenUrl from baseApiUrl alone', () => {
+    expect(
+      resolveMeetingOaApiUrls({
+        baseApiUrl: 'http://oa.example.test/MeetingApi.do',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      }),
+    ).toEqual({
+      tokenUrl: undefined,
+      meetingUrl: 'http://oa.example.test/MeetingApi.do',
+    });
+  });
+
+  it('prefers oauthUrl over tokenUrl; meetingUrl over baseApiUrl', () => {
+    expect(
+      resolveMeetingOaApiUrls({
+        oauthUrl: 'http://oa.example.test/oauth',
+        tokenUrl: 'http://oa.example.test/token',
+        baseApiUrl: 'http://oa.example.test/base',
+        meetingUrl: 'http://oa.example.test/meeting',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      }),
+    ).toEqual({
+      tokenUrl: 'http://oa.example.test/oauth',
+      meetingUrl: 'http://oa.example.test/meeting',
+    });
+  });
+
+  it('marks contracts from oauthUrl + baseApiUrl + clientId', () => {
+    const adapter = createHttpMeetingOaAdapter({
+      config: {
+        oauthUrl: 'https://oa.example.test/oauth.do',
+        baseApiUrl: 'https://oa.example.test/MeetingApi.do',
+        clientId: 'client',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      },
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+    });
+    expect(adapter.writeContract).toBe('configured');
+    expect(adapter.tokenContract).toBe('configured');
+  });
+});
 
 describe('OA people HTTP contract (oaPeople.js)', () => {
-  it('throws OA_NOT_CONFIGURED when no peopleUrl is saved or in env', async () => {
+  it('throws OA_NOT_CONFIGURED when peopleUrl is missing from env', async () => {
     const adapter = createHttpMeetingOaAdapter({
       config: { timeoutMs: 5_000, testAdapter: false },
       fetchImpl: vi.fn() as unknown as typeof fetch,
@@ -29,6 +91,40 @@ describe('OA people HTTP contract (oaPeople.js)', () => {
     await expect(adapter.searchPeople('Alice')).rejects.toMatchObject({
       reason: 'OA_NOT_CONFIGURED',
     });
+  });
+
+  it('rejects http peopleUrl unless allowInsecureHttp is enabled', async () => {
+    const fetchImpl = vi.fn();
+    const blocked = createHttpMeetingOaAdapter({
+      config: {
+        peopleUrl: 'http://oa.example.test/people',
+        timeoutMs: 5_000,
+        testAdapter: false,
+        allowInsecureHttp: false,
+      },
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await expect(blocked.searchPeople('Alice')).rejects.toMatchObject({
+      reason: 'OA_NOT_CONFIGURED',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    const allowed = createHttpMeetingOaAdapter({
+      config: {
+        peopleUrl: 'http://oa.example.test/people',
+        timeoutMs: 5_000,
+        testAdapter: false,
+        allowInsecureHttp: true,
+      },
+      fetchImpl: vi.fn(async () =>
+        Response.json({
+          data: [{ fd_no: 'E1', fd_name: 'Alice', fd_department: '' }],
+        }),
+      ) as unknown as typeof fetch,
+    });
+    await expect(allowed.searchPeople('Alice')).resolves.toEqual([
+      { fd_no: 'E1', fd_name: 'Alice', fd_department: '' },
+    ]);
   });
 
   it('GETs peopleUrl with fd_name and maps fd_no/fd_name/fd_department from data[]', async () => {
@@ -63,65 +159,11 @@ describe('OA people HTTP contract (oaPeople.js)', () => {
     ]);
   });
 
-  it('does not let env peopleUrl override a saved peopleUrl', async () => {
+  it('reads peopleUrl from env config', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
       expect(url.origin).toBe('https://oa.example.test');
-      expect(url.pathname).toBe('/saved');
-      return new Response(JSON.stringify({ data: [] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    });
-    const adapter = createHttpMeetingOaAdapter({
-      config: {
-        peopleUrl: 'https://oa.example.test/from-env',
-        timeoutMs: 5_000,
-        testAdapter: false,
-      },
-      resolveCredentials: async () => ({
-        peopleUrl: 'https://oa.example.test/saved',
-      }),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    });
-    await adapter.searchPeople('Alice');
-    expect(fetchImpl).toHaveBeenCalledOnce();
-  });
-
-  it('switches peopleUrl A to B on the next search without a process restart', async () => {
-    let peopleUrl = 'https://oa.example.test/a/people';
-    const seen: string[] = [];
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      const url = new URL(String(input));
-      seen.push(`${url.origin}${url.pathname}`);
-      return new Response(JSON.stringify({ data: [] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    });
-    const adapter = createHttpMeetingOaAdapter({
-      config: {
-        peopleUrl: 'https://oa.example.test/from-env',
-        timeoutMs: 5_000,
-        testAdapter: false,
-      },
-      resolveCredentials: async () => ({ peopleUrl }),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    });
-    await adapter.searchPeople('Alice');
-    peopleUrl = 'https://oa.example.test/b/people';
-    await adapter.searchPeople('Bob');
-    expect(seen).toEqual([
-      'https://oa.example.test/a/people',
-      'https://oa.example.test/b/people',
-    ]);
-  });
-
-  it('reads peopleUrl from stored settings at call time, not boot-time env', async () => {
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      const url = new URL(String(input));
-      expect(url.origin).toBe('https://oa.example.test');
-      expect(url.pathname).toBe('/from-settings');
+      expect(url.pathname).toBe('/from-env');
       expect(url.searchParams.get('fd_name')).toBe('Alice');
       return new Response(JSON.stringify({ data: [] }), {
         status: 200,
@@ -134,7 +176,6 @@ describe('OA people HTTP contract (oaPeople.js)', () => {
         timeoutMs: 5_000,
         testAdapter: false,
       },
-      resolvePeopleUrl: async () => 'https://oa.example.test/from-settings',
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
     await adapter.searchPeople('Alice');

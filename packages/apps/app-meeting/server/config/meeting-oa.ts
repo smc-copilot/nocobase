@@ -7,6 +7,16 @@ import {
 } from '@nocobase/app-server/config';
 
 export interface MeetingOaConfig {
+  /**
+   * OA MeetingApi.do URL for business writes (createMeeting / upload / tasks).
+   * Does not supply the OAuth token endpoint.
+   */
+  readonly baseApiUrl?: string;
+  /**
+   * OA oauth.do URL for client_credentials token (method=token). Preferred over
+   * `tokenUrl` when set.
+   */
+  readonly oauthUrl?: string;
   readonly tokenUrl?: string;
   readonly peopleUrl?: string;
   readonly meetingUrl?: string;
@@ -16,21 +26,53 @@ export interface MeetingOaConfig {
   readonly clientSecret?: string;
   readonly timeoutMs: number;
   readonly testAdapter: boolean;
+  /**
+   * When true, allow `http:` OA endpoints (corporate intranet). Default false:
+   * only HTTPS, or HTTP loopback when `testAdapter` is on.
+   */
+  readonly allowInsecureHttp?: boolean;
+}
+
+/**
+ * Token comes from oauth.do / tokenUrl only. Meeting writes use meetingUrl or
+ * baseApiUrl — baseApiUrl never fills tokenUrl.
+ */
+export function resolveMeetingOaApiUrls(config: MeetingOaConfig): {
+  tokenUrl?: string;
+  meetingUrl?: string;
+} {
+  const oauth = config.oauthUrl?.trim() || undefined;
+  const token = config.tokenUrl?.trim() || undefined;
+  const meeting = config.meetingUrl?.trim() || undefined;
+  const base = config.baseApiUrl?.trim() || undefined;
+  return {
+    tokenUrl: oauth || token,
+    meetingUrl: meeting || base,
+  };
 }
 
 const meetingOa: AppConfigFactory<MeetingOaConfig> = defineAppConfig({
   defaults: {
     timeoutMs: 15_000,
     testAdapter: false,
+    allowInsecureHttp: false,
   },
   env: {
+    MEETING_OA_BASE_API_URL: envString('baseApiUrl', {
+      description:
+        'OA MeetingApi.do URL for business writes (method=createMeeting|…). Not used as the OAuth token URL.',
+    }),
+    MEETING_OA_OAUTH_URL: envString('oauthUrl', {
+      description:
+        'OA oauth.do URL for client_credentials token (method=token, employee_no, Basic auth). Preferred over MEETING_OA_TOKEN_URL.',
+    }),
     MEETING_OA_TOKEN_URL: envString('tokenUrl', {
       description:
-        'OA token endpoint URL. The client sends grant_type and employee_no in both query and form body, with Basic auth.',
+        'Optional OA token endpoint when MEETING_OA_OAUTH_URL is unset. Sends grant_type and employee_no in query and form body with Basic auth.',
     }),
     MEETING_OA_MEETING_URL: envString('meetingUrl', {
       description:
-        'OA business write URL. createMeeting, uploadMeetingSummary and createTaskByMeeting are selected with the method query parameter. This is not inferred from the token URL.',
+        'Optional override for OA business writes. Defaults to MEETING_OA_BASE_API_URL. createMeeting, uploadMeetingSummary and createTaskByMeeting use the method query parameter.',
     }),
     MEETING_OA_VIEW_URL: envString('viewUrl', {
       description:
@@ -56,6 +98,10 @@ const meetingOa: AppConfigFactory<MeetingOaConfig> = defineAppConfig({
     MEETING_OA_TEST_ADAPTER: envBoolean('testAdapter', {
       description:
         'Isolation tests only: use the in-process OA adapter. Never enable in a real environment.',
+    }),
+    MEETING_OA_ALLOW_INSECURE_HTTP: envBoolean('allowInsecureHttp', {
+      description:
+        'Allow http:// OA token, people and meeting URLs (intranet only). Prefer HTTPS in production.',
     }),
   },
   public: [],

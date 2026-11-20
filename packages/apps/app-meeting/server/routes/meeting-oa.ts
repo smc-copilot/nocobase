@@ -26,6 +26,7 @@ import {
   MeetingContentEditBody,
   MeetingContentSchema,
   MeetingImportBody,
+  MeetingImportRunSchema,
   MeetingParams,
   OaDraftSaveBody,
   OaDraftSchema,
@@ -67,6 +68,7 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
   const paths = [
     '/meetings/:meetingId/content',
     '/meetings/:meetingId/imports',
+    '/meetingImportRuns',
     '/meetingOa/transcriptRepairs',
     '/meetings/:meetingId/oa-draft',
     '/meetings/:meetingId/oa-draft/refill',
@@ -183,6 +185,27 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
           app,
           c,
         ).contents.repairLegacyTranscripts(),
+      }),
+  );
+  router.get(
+    '/meetingImportRuns',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'listMeetingImportRuns',
+      summary: 'List recent import runs for the signed-in user',
+      description:
+        'Returns the caller’s own import tasks only. Tokens and download URLs are never included.',
+      responses: {
+        200: listResponse(MeetingImportRunSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    async (c) =>
+      c.json({
+        data: await createMeetingServices(
+          app,
+          c,
+        ).contents.listRecentImportRuns(),
       }),
   );
   router.post(
@@ -462,7 +485,10 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
     describeRoute({
       tags: ['Meetings'],
       operationId: 'getMeetingOaSettings',
-      summary: 'Read OA integration settings without secrets',
+      summary:
+        'Read OA integration settings from the environment without secrets',
+      description:
+        'Values come from packages/apps/app-meeting/.env / config.yml (MEETING_OA_*). Database settings rows are ignored.',
       responses: { 200: dataResponse(OaSettingsSchema), ...apiErrorResponses },
     }),
     async (c) =>
@@ -473,7 +499,9 @@ export const meetingOaRoutes = defineApiRoutes((app: Application) => {
     describeRoute({
       tags: ['Meetings'],
       operationId: 'saveMeetingOaSettings',
-      summary: 'Save OA URLs and seal the client secret',
+      summary: 'Rejected: OA settings are environment-only',
+      description:
+        'Always fails with OA_SETTINGS_INVALID. Configure MEETING_OA_* in packages/apps/app-meeting/.env (or config.yml).',
       responses: { 200: dataResponse(OaSettingsSchema), ...apiErrorResponses },
     }),
     apiValidator('json', OaSettingsBody),

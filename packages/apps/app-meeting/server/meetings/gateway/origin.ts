@@ -55,6 +55,57 @@ export function normalizeOriginAllowlist(
   return new Set(originAllowlist.map(validateHttpsOrigin));
 }
 
+export interface GatewayAdminSettings {
+  readonly enabled?: boolean | null;
+  readonly origin?: string | null;
+  readonly resource?: string | null;
+  readonly instanceId?: string | null;
+  readonly allowedOrigin?: string | null;
+  readonly contractRevision?: string | null;
+  readonly contractSha256?: string | null;
+  readonly bridgeHmacKey?: string | null;
+  readonly bridgeKeyringJson?: string | null;
+}
+
+/**
+ * Gateway connection material is environment / config.yml only.
+ * DB-saved administrator overrides are ignored (settings page form removed).
+ */
+export function gatewayConfigWithSettings<
+  T extends {
+    enabled: boolean;
+    origin?: string;
+    originAllowlist: readonly string[];
+    resource?: string;
+    instanceId?: string;
+    allowedOrigin?: string;
+    contractRevision?: string;
+    contractSha256?: string;
+    bridgeHmacKey?: string;
+    bridgeKeyringJson?: string;
+  },
+>(config: T, _settings?: GatewayAdminSettings | null): T {
+  void _settings;
+  return config;
+}
+
+/** A saved administrator origin is the connection address. It is added to the allowlist and wins over the environment. */
+export function gatewayConfigWithOrigin<
+  T extends { origin?: string; originAllowlist: readonly string[] },
+>(config: T, savedOrigin: string | null | undefined): T {
+  const saved = savedOrigin?.trim();
+  if (!saved) return config;
+  const origin = validateHttpsOrigin(saved);
+  return {
+    ...config,
+    origin,
+    originAllowlist: [
+      origin,
+      ...config.originAllowlist.filter((item) => item !== origin),
+    ],
+  };
+}
+
 export function resolveConfiguredOrigin(
   origin: string | undefined,
   originAllowlist: readonly string[],

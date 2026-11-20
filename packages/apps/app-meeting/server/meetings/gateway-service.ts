@@ -5,7 +5,12 @@ import { ApiError } from '@nocobase/app-server/router';
 import type { DatabaseConnection } from '@nocobase/db';
 import { buildFilter } from '@nocobase/repository-input';
 import type { MeetingGatewayConfig } from '../config/meeting-gateway.js';
+import {
+  isGatewayContractReady,
+  missingGatewayContract,
+} from './gateway/contract.js';
 import type {
+  GatewayAuthorizationComplete,
   GatewayConnection,
   MeetingGatewayAdapter,
 } from './gateway/adapter.js';
@@ -23,12 +28,35 @@ import {
 
 const TEST_ACCESS_TOKEN = 'mt_test_token';
 const CONNECTION_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export interface GatewayContinueToCallback {
+  readonly accessToken: string;
+  readonly tokenType: string;
+  readonly expiresIn: number;
+  readonly connectionId: string;
+  readonly memberId: string;
+  readonly status: string;
+}
 
 export interface GatewayConfigPublic {
   configured: boolean;
+  enabled: boolean;
+  origin: string | null;
+  resource: string | null;
+  instanceId: string | null;
+  allowedOrigin: string | null;
+  contractRevision: string | null;
+  hasContractSha256: boolean;
+  hasBridgeHmacKey: boolean;
+  hasBridgeKeyring: boolean;
+  originSource: 'settings' | 'env' | 'none';
   originConfigured: boolean;
+  contractReady: boolean;
+  missingContract: readonly string[];
   applicationConfigured: boolean;
-  identityIssuance: 'unavailable' | 'test-adapter' | 'stored';
+  identityIssuance: 'unavailable' | 'test-adapter' | 'stored' | 'ready';
   testAdapter: boolean;
   queryHttpContract: 'unavailable';
   disconnectRevokesUpstream: false;
@@ -73,6 +101,16 @@ function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
 
+function invalidStoredGatewayToken(error: unknown): boolean {
+  return (
+    error instanceof MeetingGatewayError &&
+    (error.reason === 'TOKEN_INVALID' ||
+      error.reason === 'AUTH_REQUIRED' ||
+      error.reason === 'GATEWAY_REAUTH_REQUIRED' ||
+      error.reason === 'GATEWAY_IDENTITY_TOKEN_UNAVAILABLE')
+  );
+}
+
 export class MeetingGatewayService {
   constructor(
     private readonly connection: DatabaseConnection,
@@ -101,22 +139,60 @@ export class MeetingGatewayService {
     }
   }
 
-  configStatus(): GatewayConfigPublic {
+  async configStatus(): Promise<GatewayConfigPublic> {
+    const config = this.config;
     const originConfigured = Boolean(
-      this.config.origin && this.config.originAllowlist.length,
+      config.origin && config.originAllowlist.length,
     );
+    const contractReady = isGatewayContractReady(config);
     return {
-      configured: originConfigured && Boolean(this.config.applicationId),
+      configured:
+        originConfigured &&
+        (config.testAdapter ? Boolean(config.applicationId) : contractReady),
+      enabled: config.enabled,
+      origin: config.origin ?? null,
+      resource: config.resource ?? null,
+      instanceId: config.instanceId ?? null,
+      allowedOrigin: config.allowedOrigin ?? null,
+      contractRevision: config.contractRevision ?? null,
+      hasContractSha256: Boolean(config.contractSha256),
+      hasBridgeHmacKey: Boolean(config.bridgeHmacKey),
+      hasBridgeKeyring: Boolean(config.bridgeKeyringJson),
+      originSource: config.origin ? 'env' : 'none',
       originConfigured,
-      applicationConfigured: Boolean(this.config.applicationId),
+      contractReady,
+      missingContract: missingGatewayContract(config),
+      applicationConfigured: Boolean(config.applicationId),
       identityIssuance: this.config.testAdapter
         ? 'test-adapter'
-        : 'unavailable',
-      testAdapter: this.config.testAdapter === true,
+        : contractReady
+          ? 'ready'
+          : 'unavailable',
+      testAdapter: config.testAdapter === true,
       queryHttpContract: 'unavailable',
       disconnectRevokesUpstream: false,
       rootUnrestrictedReadsAllMeetings: true,
     };
+  }
+
+  async saveSettings(_input: {
+    enabled?: boolean;
+    origin?: string | null;
+    resource?: string | null;
+    instanceId?: string | null;
+    allowedOrigin?: string | null;
+    contractRevision?: string | null;
+    contractSha256?: string | null;
+    bridgeHmacKey?: string | null;
+    bridgeKeyringJson?: string | null;
+  }): Promise<GatewayConfigPublic> {
+    await this.requireAction('manageConnections');
+    void _input;
+    throw new MeetingGatewayError(
+      'GATEWAY_SETTINGS_INVALID',
+      'Meeting gateway connection settings are read from the application environment (packages/apps/app-meeting/.env). The settings form is disabled.',
+      'FAILED_PRECONDITION',
+    );
   }
 
   private bindings() {
@@ -181,7 +257,7 @@ export class MeetingGatewayService {
 
   async getBinding(): Promise<GatewayBindingPublic> {
     await this.requireAction('manageConnections');
-    const status = this.configStatus();
+    const status = await this.configStatus();
     if (!status.configured && !this.config.testAdapter) {
       return this.publicBinding(undefined);
     }
@@ -199,6 +275,9 @@ export class MeetingGatewayService {
           } as MeetingGatewayBinding),
       );
     }
+    if (row.status === 'active' && row.connectionRef) {
+      return this.revalidateActiveBinding(row);
+    }
     if (row.status === 'awaiting_connection' && row.sealedAccessToken) {
       try {
         const accessToken = this.openBindingToken(row);
@@ -213,6 +292,58 @@ export class MeetingGatewayService {
     return this.publicBinding(row);
   }
 
+  private async revalidateActiveBinding(
+    row: MeetingGatewayBinding,
+  ): Promise<GatewayBindingPublic> {
+    try {
+      const accessToken = this.openBindingToken(row);
+      const connections = await this.adapter.listConnections({ accessToken });
+      const memberId = row.gatewayMemberId;
+      const owned = memberId
+        ? connections.filter((item) => item.memberId === memberId)
+        : [];
+      const current = owned.find(
+        (item) =>
+          item.connectionId === row.connectionRef && item.status === 'ACTIVE',
+      );
+      if (!current) {
+        // PRD: only ACTIVE counts as signed in. Drop the local bridge so query
+        // and import cannot keep using a stale connectionRef.
+        await this.clearStoredBridge(row);
+        return this.publicBinding({
+          ...row,
+          status: 'pending',
+          sealedAccessToken: null,
+          sealedRefreshToken: null,
+        });
+      }
+      return this.publicBinding(row, owned);
+    } catch (error) {
+      if (!invalidStoredGatewayToken(error)) return this.publicBinding(row);
+      await this.clearStoredBridge(row);
+      return this.publicBinding({
+        ...row,
+        status: 'pending',
+        sealedAccessToken: null,
+        sealedRefreshToken: null,
+      });
+    }
+  }
+
+  private async clearStoredBridge(row: MeetingGatewayBinding): Promise<void> {
+    const userId = requireUser(this.userId);
+    await this.bindings().updateOne({
+      filter: { id: row.id, userId },
+      values: {
+        status: 'pending',
+        credentialVersion: row.credentialVersion + 1,
+        sealedAccessToken: null,
+        sealedRefreshToken: null,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
   private accessTokenForStart(): string {
     if (this.adapter.kind === 'test') return TEST_ACCESS_TOKEN;
     throw new MeetingGatewayError(
@@ -225,7 +356,42 @@ export class MeetingGatewayService {
   async start(): Promise<GatewayStartResult> {
     await this.requireAction('manageConnections');
     const userId = requireUser(this.userId);
-    if (!this.config.testAdapter && !this.configStatus().configured) {
+    const status = await this.configStatus();
+    if (this.adapter.kind === 'http') {
+      if (!status.contractReady) {
+        throw new MeetingGatewayError(
+          'GATEWAY_NOT_CONFIGURED',
+          'The meeting gateway contract is not ready.',
+          'UNAVAILABLE',
+        );
+      }
+      const stateId = randomUUID();
+      const started = await this.adapter.startAuthorization({
+        accessToken: '',
+        applicationId: this.config.instanceId || '',
+        returnTo: this.config.allowedOrigin || '',
+        flowNonce: stateId,
+      });
+      const expiresAt = new Date(started.expiresAt);
+      const now = new Date();
+      await this.states().createOne({
+        values: {
+          id: stateId,
+          userId,
+          expiresAt,
+          transactionId: started.transactionId,
+          sealedAccessToken: null,
+          returnTo: this.config.allowedOrigin || '',
+          createdAt: now,
+        },
+      });
+      return {
+        authorizationUrl: started.authorizationUrl,
+        state: stateId,
+        expiresAt: expiresAt.toISOString(),
+      };
+    }
+    if (!this.config.testAdapter && !status.configured) {
       throw new MeetingGatewayError(
         'GATEWAY_NOT_CONFIGURED',
         'The meeting gateway origin and application id are not configured.',
@@ -308,7 +474,10 @@ export class MeetingGatewayService {
     return { status: 'pending_completion' };
   }
 
-  async complete(state: string): Promise<GatewayBindingPublic> {
+  async complete(
+    state: string,
+    callback?: GatewayContinueToCallback,
+  ): Promise<GatewayBindingPublic> {
     await this.requireAction('manageConnections');
     const userId = requireUser(this.userId);
     return this.connection.transaction(async (trx) => {
@@ -356,6 +525,9 @@ export class MeetingGatewayService {
         ),
         values: { consumedAt: new Date() },
       });
+      if (this.adapter.kind === 'http') {
+        return this.completeHttpAuthorization(trx, row, userId, callback);
+      }
       if (!row.sealedAccessToken || !this.secrets.ready) {
         throw new MeetingGatewayError(
           'GATEWAY_IDENTITY_TOKEN_UNAVAILABLE',
@@ -433,6 +605,147 @@ export class MeetingGatewayService {
       });
       return this.publicBinding(saved, owned);
     });
+  }
+
+  private async completeFromContinueToCallback(
+    callback: GatewayContinueToCallback,
+  ): Promise<GatewayAuthorizationComplete> {
+    const accessToken = callback.accessToken.trim();
+    const connectionId = callback.connectionId.trim();
+    const memberId = callback.memberId.trim();
+    if (
+      callback.tokenType.toLowerCase() !== 'bearer' ||
+      !accessToken.startsWith('mt_') ||
+      accessToken.length <= 3 ||
+      /\s/.test(accessToken) ||
+      !Number.isInteger(callback.expiresIn) ||
+      callback.expiresIn < 1 ||
+      callback.expiresIn > 86_400 ||
+      !UUID_PATTERN.test(connectionId) ||
+      !UUID_PATTERN.test(memberId) ||
+      callback.status.trim().toUpperCase() !== 'ACTIVE'
+    ) {
+      throw new MeetingGatewayError(
+        'UPSTREAM_CONTRACT_ERROR',
+        'The gateway continue_to callback did not carry a usable bearer token.',
+        'UNAVAILABLE',
+      );
+    }
+    const connections = await this.adapter.listConnections({ accessToken });
+    const match = connections.find(
+      (item) =>
+        item.connectionId === connectionId &&
+        item.memberId === memberId &&
+        item.status === 'ACTIVE',
+    );
+    if (!match) {
+      throw new MeetingGatewayError(
+        'CONNECTION_NOT_ALLOWED',
+        'The gateway connection is not active for this member.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    return {
+      tokenType: 'Bearer',
+      accessToken,
+      expiresIn: callback.expiresIn,
+      connectionId,
+      memberId,
+      connectionName: match.name || null,
+      connectionType: match.type || null,
+    };
+  }
+
+  private async completeHttpAuthorization(
+    trx: DatabaseConnection,
+    row: MeetingOauthState,
+    userId: string,
+    callback?: GatewayContinueToCallback,
+  ): Promise<GatewayBindingPublic> {
+    const completed = callback
+      ? await this.completeFromContinueToCallback(callback)
+      : await (async () => {
+          if (!row.transactionId) {
+            throw new MeetingGatewayError(
+              'OAUTH_STATE_INVALID',
+              'The OAuth state is missing its transaction.',
+              'FAILED_PRECONDITION',
+            );
+          }
+          return this.adapter.completeAuthorization({
+            transactionId: row.transactionId,
+          });
+        })();
+    if (!this.secrets.ready) {
+      throw new MeetingGatewayError(
+        'GATEWAY_NOT_CONFIGURED',
+        'Secrets are not configured, so gateway tokens cannot be sealed.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    const now = new Date();
+    const bindings = trx.repository<MeetingGatewayBinding>(
+      MEETING_GATEWAY_BINDINGS,
+    );
+    const existing = await bindings.findOne({
+      filter: buildFilter((filter) =>
+        filter.and([
+          filter.string('userId').eq(userId),
+          filter
+            .string('gatewayInstanceId')
+            .eq(this.config.instanceId || 'default'),
+        ]),
+      ),
+    });
+    const nextVersion = (existing?.credentialVersion ?? 0) + 1;
+    const bindingId = existing?.id ?? randomUUID();
+    const sealedAccess = this.secrets.seal(completed.accessToken, {
+      purpose: GATEWAY_SECRET_PURPOSE,
+      aad: [bindingId, userId, String(nextVersion)],
+    });
+    const values: Partial<MeetingGatewayBinding> = {
+      status: 'active',
+      gatewayInstanceId: this.config.instanceId || 'default',
+      organizationId: existing?.organizationId ?? null,
+      gatewayMemberId: completed.memberId,
+      connectionRef: completed.connectionId,
+      connectionName: completed.connectionName,
+      connectionType: completed.connectionType,
+      credentialVersion: nextVersion,
+      sealedAccessToken: sealedAccess,
+      sealedRefreshToken: null,
+      tokenExpiresAt: new Date(now.getTime() + completed.expiresIn * 1000),
+      disconnectRevokesUpstream: false,
+      updatedAt: now,
+    };
+    if (existing) {
+      await bindings.updateOne({
+        filter: { id: existing.id, userId },
+        values,
+      });
+    } else {
+      await bindings.createOne({
+        values: {
+          id: bindingId,
+          userId,
+          createdAt: now,
+          ...values,
+        },
+      });
+    }
+    const saved = await bindings.findOne({
+      filter: { id: bindingId, userId },
+    });
+    return this.publicBinding(saved, [
+      {
+        connectionId: completed.connectionId,
+        applicationId: '',
+        name: completed.connectionName ?? '',
+        memberId: completed.memberId,
+        type: completed.connectionType ?? '',
+        status: 'ACTIVE',
+      },
+    ]);
   }
 
   async select(connectionId: string): Promise<GatewayBindingPublic> {
@@ -518,7 +831,8 @@ export class MeetingGatewayService {
   }
 
   async requireActiveBinding(): Promise<MeetingGatewayBinding> {
-    if (!this.config.testAdapter && !this.configStatus().configured) {
+    const status = await this.configStatus();
+    if (!this.config.testAdapter && !status.configured) {
       throw new MeetingGatewayError(
         'GATEWAY_NOT_CONFIGURED',
         'The meeting gateway origin and application id are not configured.',
