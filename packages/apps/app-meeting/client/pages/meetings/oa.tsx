@@ -7,6 +7,7 @@ import {
 import { useTranslation } from '@nocobase/i18n/client';
 import { useMemo, useRef, useState, type ReactElement } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { ChevronDownIcon } from 'lucide-react';
 import { RecordLink } from '#components/record-link';
 import { Alert, AlertDescription } from '#components/ui/alert';
 import { Button } from '#components/ui/button';
@@ -14,9 +15,13 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
 } from '#components/ui/card';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '#components/ui/collapsible';
 import { Field, FieldGroup, FieldLabel } from '#components/ui/field';
 import { Input } from '#components/ui/input';
 import { Textarea } from '#components/ui/textarea';
@@ -136,6 +141,7 @@ export default function MeetingOaPage(): ReactElement {
   const [actualAttend, setActualAttend] = useState<OaPersonChip[] | null>(null);
   const [copyTo, setCopyTo] = useState<OaPersonChip[] | null>(null);
   const [taskTitle, setTaskTitle] = useState('');
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
   const [tasks, setTasks] = useState<DraftTaskRow[] | null>(null);
@@ -566,54 +572,70 @@ export default function MeetingOaPage(): ReactElement {
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <h2 className='font-heading text-base font-medium'>
-                {t('meetingOa.fields.tasks')}
-              </h2>
-            </CardHeader>
-            <CardContent>
-              <TaskTable
-                tasks={shownTasks}
-                disabled={frozen}
-                busy={busy}
-                taskTitle={taskTitle}
-                onTaskTitle={setTaskTitle}
-                onSearch={searchPeople}
-                onChange={(next) => {
-                  setTasks(next);
-                }}
-                onAdd={() => {
-                  if (busy || persistLockRef.current || !taskTitle.trim())
-                    return;
-                  const previous = shownTasks.at(-1);
-                  const nextTasks = [
-                    ...shownTasks,
-                    {
-                      clientTaskId: createUuid(),
-                      title: taskTitle.trim(),
-                      assigneeEmployeeNo: null,
-                      assigneeName: null,
-                      appointEmployeeNo:
-                        previous?.appointEmployeeNo ??
-                        identityRow?.employeeNo ??
-                        null,
-                      appointName: previous?.appointName ?? null,
-                      attentionEmployeeNos: [],
-                      attentionSnapshots: [],
-                      startAt: null,
-                      dueAt: null,
-                      description: null,
-                      fromSourceTodo: false,
-                    },
-                  ];
-                  setTasks(nextTasks);
-                  setTaskTitle('');
-                  void save(nextTasks);
-                }}
-              />
-            </CardContent>
-            <CardFooter className='flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center'>
+          <div className='sticky bottom-0 z-20 -mx-4 border-t bg-background/95 shadow-[0_-8px_24px_rgba(0,0,0,0.06)] backdrop-blur supports-backdrop-filter:bg-background/90 sm:-mx-6 md:-mx-8'>
+            <Collapsible open={tasksOpen} onOpenChange={setTasksOpen}>
+              <div className='flex items-center justify-between gap-3 px-4 py-3 sm:px-6 md:px-8'>
+                <h2 className='font-heading text-base font-medium'>
+                  {t('meetingOa.tasksCount', { count: shownTasks.length })}
+                </h2>
+                <CollapsibleTrigger
+                  type='button'
+                  className='inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50'
+                >
+                  {tasksOpen
+                    ? t('meetingOa.tasksHide')
+                    : t('meetingOa.tasksShow')}
+                  <ChevronDownIcon
+                    aria-hidden='true'
+                    className={`size-4 shrink-0 transition-transform ${tasksOpen ? 'rotate-180' : ''}`}
+                  />
+                </CollapsibleTrigger>
+              </div>
+              <CollapsibleContent>
+                <div className='max-h-[min(40vh,28rem)] overflow-y-auto border-t px-4 py-4 sm:px-6 md:px-8'>
+                  <TaskTable
+                    tasks={shownTasks}
+                    disabled={frozen}
+                    busy={busy}
+                    taskTitle={taskTitle}
+                    onTaskTitle={setTaskTitle}
+                    onSearch={searchPeople}
+                    onChange={(next) => {
+                      setTasks(next);
+                    }}
+                    onAdd={() => {
+                      if (busy || persistLockRef.current || !taskTitle.trim())
+                        return;
+                      const previous = shownTasks.at(-1);
+                      const nextTasks = [
+                        ...shownTasks,
+                        {
+                          clientTaskId: createUuid(),
+                          title: taskTitle.trim(),
+                          assigneeEmployeeNo: null,
+                          assigneeName: null,
+                          appointEmployeeNo:
+                            previous?.appointEmployeeNo ??
+                            identityRow?.employeeNo ??
+                            null,
+                          appointName: previous?.appointName ?? null,
+                          attentionEmployeeNos: [],
+                          attentionSnapshots: [],
+                          startAt: null,
+                          dueAt: null,
+                          description: null,
+                          fromSourceTodo: false,
+                        },
+                      ];
+                      setTasks(nextTasks);
+                      setTaskTitle('');
+                      void save(nextTasks);
+                    }}
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+            <div className='flex flex-col items-stretch gap-3 border-t px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6 md:px-8'>
               <Button type='submit' disabled={busy || frozen}>
                 {t('meetingOa.saveDraft')}
               </Button>
@@ -666,8 +688,8 @@ export default function MeetingOaPage(): ReactElement {
               <p className='text-xs text-muted-foreground sm:ml-auto'>
                 {t('meetingOa.saveWritesZeroOa')}
               </p>
-            </CardFooter>
-          </Card>
+            </div>
+          </div>
         </form>
       ) : (
         <MeetingLoading />

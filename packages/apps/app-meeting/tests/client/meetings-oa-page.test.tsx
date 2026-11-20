@@ -370,6 +370,9 @@ describe('OA workspace page', () => {
         name: enUS.meetingOa.fields.title,
       }),
     ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: enUS.meetingOa.tasksShow }),
+    );
     await userEvent.type(
       screen.getByRole('textbox', { name: enUS.meetingOa.fields.taskTitle }),
       'Assigned follow-up',
@@ -501,6 +504,9 @@ describe('OA workspace page', () => {
         name: enUS.meetingOa.fields.title,
       }),
     ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: enUS.meetingOa.tasksShow }),
+    );
     await userEvent.type(
       screen.getByRole('textbox', { name: enUS.meetingOa.fields.taskTitle }),
       'First task',

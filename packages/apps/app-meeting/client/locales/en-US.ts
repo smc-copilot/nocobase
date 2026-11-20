@@ -158,6 +158,11 @@ const enUS = {
       dialogues: 'Dialogue',
       original: 'Original',
       optimized: 'Optimized',
+      searchPlaceholder: 'Search keyword',
+      searchPrev: 'Previous match',
+      searchNext: 'Next match',
+      searchMatches: '{{current}} / {{total}}',
+      searchNoMatch: 'No matches',
     },
     fetchStatus: {
       not_fetched: 'Not fetched yet',
@@ -245,7 +250,8 @@ const enUS = {
     isolationBanner: 'Local test data, real OA was not called.',
     mappingMissing:
       'No trusted employee mapping. You can still save a valid draft; formal sync will write nothing to OA.',
-    mappedAs: 'Signed-in identity maps to employee {{employeeNo}}.',
+    mappedAs: 'OA employee {{employeeNo}}',
+    oaUnauthorized: 'OA authorization not granted',
     importContractMissing:
       'Gateway recording download is not in the published client. Local content can still be edited.',
     importFailed:
@@ -346,6 +352,9 @@ const enUS = {
     saveDraft: 'Save draft',
     submitSync: 'Submit OA sync',
     saveWritesZeroOa: 'Saving a draft writes zero OA side effects.',
+    tasksShow: 'Show tasks',
+    tasksHide: 'Hide tasks',
+    tasksCount: 'Task assignment ({{count}})',
     draftSaved: 'Draft saved locally.',
     draftFailed: 'The draft could not be saved.',
     syncFailed: 'OA sync was not submitted.',
@@ -420,7 +429,7 @@ const enUS = {
       requestId: 'Request id',
       creator: 'Frozen creator',
       steps: 'Steps',
-      tasks: 'Task results',
+      tasks: 'Task assignment',
       tokenUrl: 'Token URL',
       peopleUrl: 'People search URL',
       meetingUrl: 'OA meeting URL',

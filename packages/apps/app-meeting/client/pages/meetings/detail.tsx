@@ -95,24 +95,31 @@ export default function MeetingDetailPage(): ReactElement {
   return (
     <RouteChildPage>
       <PageContainer>
-        <BackButton />
-        <PageHeader
-          title={row?.title?.trim() || t('meetings.untitled')}
-          description={
-            row?.meetingCode
-              ? t('meetings.meetingCodeLabel', { code: row.meetingCode })
-              : t('meetings.detailDescription')
-          }
-          actions={
-            identityRow?.canSync && identityRow.employeeNo ? (
-              <p className='max-w-md text-right text-sm text-muted-foreground'>
-                {t('meetingOa.mappedAs', {
-                  employeeNo: identityRow.employeeNo,
-                })}
-              </p>
-            ) : null
-          }
-        />
+        <div className='flex w-full items-start justify-between gap-4'>
+          <BackButton className='mt-1.5 shrink-0' />
+          <div className='min-w-0 max-w-full text-right sm:max-w-[min(100%,42rem)]'>
+            <h1 className='font-heading text-2xl font-semibold tracking-[-0.035em] break-words'>
+              {row?.title?.trim() || t('meetings.untitled')}
+            </h1>
+            <p className='mt-1 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-sm leading-6 text-muted-foreground'>
+              {row?.meetingCode ? (
+                <span>
+                  {t('meetings.meetingCodeLabel', { code: row.meetingCode })}
+                </span>
+              ) : (
+                <span>{t('meetings.detailDescription')}</span>
+              )}
+              <span aria-hidden='true'>｜</span>
+              <span>
+                {identityRow?.canSync && identityRow.employeeNo
+                  ? t('meetingOa.mappedAs', {
+                      employeeNo: identityRow.employeeNo,
+                    })
+                  : t('meetingOa.oaUnauthorized')}
+              </span>
+            </p>
+          </div>
+        </div>
         {meeting.error ? (
           <Alert variant='destructive'>
             <AlertDescription>{t('meetings.unavailable')}</AlertDescription>

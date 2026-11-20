@@ -87,20 +87,47 @@ describe('meeting summary page', () => {
         },
       },
     );
-    expect(await screen.findByText(enUS.meetings.summaryTitle)).toBeVisible();
+    expect(
+      await screen.findByRole('tablist', { name: enUS.meetings.summaryTitle }),
+    ).toBeVisible();
     expect(screen.getByText(enUS.meetings.summary.deepseek)).toBeVisible();
     expect(screen.getByText(enUS.meetings.summary.chapters)).toBeVisible();
     expect(screen.getByText(enUS.meetings.summary.speaker)).toBeVisible();
     expect(screen.getByText(enUS.meetings.summary.topic)).toBeVisible();
-    expect(screen.getByText(enUS.meetings.summary.dialogues)).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: enUS.meetings.summary.dialogues }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(enUS.meetings.summaryDescription),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(enUS.meetings.summaryReadOnly),
+    ).not.toBeInTheDocument();
     expect(screen.getByText('DEEPSEEK_RAW')).toBeVisible();
     expect(screen.queryByText('LOCAL_SUMMARY')).not.toBeInTheDocument();
-    expect(screen.getByText('ORIGINAL_ONLY')).toBeVisible();
+    expect(screen.queryByText('ORIGINAL_ONLY')).not.toBeInTheDocument();
     await userEvent.click(
       screen.getByRole('tab', { name: enUS.meetings.summary.chapters }),
     );
     expect(
       await screen.findByText(enUS.meetings.summaryEmptyMinutes),
+    ).toBeVisible();
+    await userEvent.click(
+      screen.getByRole('button', { name: enUS.meetings.summary.dialogues }),
+    );
+    expect(await screen.findByText('ORIGINAL_ONLY')).toBeVisible();
+    await userEvent.type(
+      screen.getByRole('textbox', {
+        name: enUS.meetings.summary.searchPlaceholder,
+      }),
+      'ORIGINAL',
+    );
+    expect(
+      await screen.findByText(
+        enUS.meetings.summary.searchMatches
+          .replace('{{current}}', '1')
+          .replace('{{total}}', '1'),
+      ),
     ).toBeVisible();
     await userEvent.click(
       screen.getByRole('tab', { name: enUS.meetings.summary.optimized }),
