@@ -95,7 +95,7 @@ describe('agent grant presentation', () => {
     ).toBe('completed');
   });
 
-  it('builds the simplified create body and keeps default expert empty for existing users', () => {
+  it('builds the simplified create body and keeps default expert optional for new users', () => {
     const draft = toggleExpertTemplate(
       {
         ...emptyCreateDraft('user'),
@@ -107,6 +107,7 @@ describe('agent grant presentation', () => {
       true,
       true,
     );
+    expect(draft.defaultExpertTemplateId).toBeNull();
     const body = buildAgentGrantCreateBody({
       casdoorUserId: 'org/alice',
       isNewUser: true,
@@ -120,7 +121,23 @@ describe('agent grant presentation', () => {
       maxAgents: null,
       directory: true,
       expertTemplateIds: ['tpl-1'],
-      defaultExpertTemplateId: 'tpl-1',
+      defaultExpertTemplateId: null,
+    });
+    expect(
+      buildAgentGrantCreateBody({
+        casdoorUserId: 'org/alice',
+        isNewUser: true,
+        draft: emptyCreateDraft('user'),
+      }),
+    ).toEqual({
+      casdoorUserId: 'org/alice',
+      role: 'user',
+      workspaceRootDir: null,
+      tokenQuota: null,
+      maxAgents: null,
+      directory: true,
+      expertTemplateIds: [],
+      defaultExpertTemplateId: null,
     });
     expect(body && Object.keys(body)).not.toEqual(
       expect.arrayContaining([
@@ -153,6 +170,13 @@ describe('agent grant presentation', () => {
       maxAgents: null,
       tokenQuota: null,
     });
+    expect(
+      buildAgentGrantCreateBody({
+        casdoorUserId: 'org/alice',
+        isNewUser: false,
+        draft: emptyCreateDraft('user'),
+      }),
+    ).toBeUndefined();
     expect(
       buildAgentGrantCreateBody({
         casdoorUserId: 'org/alice',
@@ -442,7 +466,7 @@ describe('agent grants page', () => {
       role: 'user',
       directory: true,
       expertTemplateIds: ['tpl-1'],
-      defaultExpertTemplateId: 'tpl-1',
+      defaultExpertTemplateId: null,
     });
     expect(grants[0]?.json).not.toHaveProperty('password');
     expect(grants[0]?.json).not.toHaveProperty('permissions');

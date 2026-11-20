@@ -369,13 +369,33 @@ describe('agent grant create', () => {
     expect(octopState.posts).toBe(1);
   });
 
+  it('creates a new user without a default expert and without installing experts', async () => {
+    const created = await harness.services.agentGrants.createGrant(
+      'octop',
+      {
+        casdoorUserId: 'smartcore/alice',
+        expertTemplateIds: [],
+        defaultExpertTemplateId: null,
+      },
+      'admin-1',
+    );
+    expect(octopState.posts).toBe(1);
+    expect(octopState.installs).toBe(0);
+    expect(octopState.lastBody).toMatchObject({
+      create_default_expert: false,
+    });
+    expect(octopState.lastBody).not.toHaveProperty('expert_template_id');
+    expect(created.selectedExpertCount).toBe(0);
+    expect(created.status).toBe('COMPLETED');
+  });
+
   it('sends directory=true, create_default_expert=false, and never a password for new users', async () => {
     const created = await harness.services.agentGrants.createGrant(
       'octop',
       {
         casdoorUserId: 'smartcore/alice',
         expertTemplateIds: [TEMPLATE],
-        defaultExpertTemplateId: TEMPLATE,
+        defaultExpertTemplateId: null,
       },
       'admin-1',
     );
@@ -417,21 +437,8 @@ describe('agent grant create', () => {
     expect(octopState.lastInstallBody).toMatchObject({
       name: 'Ops',
       backend: {
-        type: 'docker',
-        image: 'python:3.12-slim',
-        sandbox_scope: 'agent',
-        sandbox_prefix: 'octop_sandbox',
-        workspace_path: '/workspace',
-        volumes: {
-          '/home/smc/.octop/agent-workspaces/Ops': {
-            bind: '/workspace',
-            mode: 'rw',
-          },
-        },
-        allow_network: true,
-        memory: '1g',
-        cpus: 2,
-        pids_limit: 256,
+        type: 'named',
+        name: 'sandbox',
       },
     });
     expect(created.selectedExpertCount).toBe(2);
@@ -445,6 +452,70 @@ describe('agent grant create', () => {
     expect(
       items.find((item) => item.expertTemplateId === TEMPLATE_B)?.agentId,
     ).toBe('4HJVNM');
+  });
+
+  it('recreates the employee after Octop deletes the account that still holds the grant lock', async () => {
+    const stale = await harness.services.agentGrantOps.acquire({
+      appCode: 'octop',
+      casdoorUserId: 'smartcore/alice',
+      username: 'alice',
+      actorUserId: 'admin-1',
+      createOptionsSnapshot: {},
+    });
+    await harness.services.agentGrantOps.transition(stale.id, {
+      status: 'BOOTSTRAP_PENDING',
+      operationMode: 'CREATE_USER_AND_INSTALL',
+      octopUserId: '9',
+    });
+    octopState.users = [];
+
+    const created = await harness.services.agentGrants.createGrant(
+      'octop',
+      {
+        casdoorUserId: 'smartcore/alice',
+        expertTemplateIds: [TEMPLATE],
+        defaultExpertTemplateId: TEMPLATE,
+      },
+      'admin-1',
+    );
+
+    expect(octopState.posts).toBe(1);
+    expect(created.id).not.toBe(stale.id);
+    const closed = await harness.services.agentGrantOps.requireById(stale.id);
+    expect(closed.status).toBe('BOOTSTRAP_FAILED');
+    expect(closed.lockKey).toBeNull();
+    expect(closed.errorCode).toBe('OCTOP_ACCOUNT_REMOVED');
+  });
+
+  it('keeps the lock when the Octop account from the open operation still exists', async () => {
+    const stale = await harness.services.agentGrantOps.acquire({
+      appCode: 'octop',
+      casdoorUserId: 'smartcore/alice',
+      username: 'alice',
+      actorUserId: 'admin-1',
+      createOptionsSnapshot: {},
+    });
+    await harness.services.agentGrantOps.transition(stale.id, {
+      status: 'BOOTSTRAP_PENDING',
+      octopUserId: '9',
+    });
+    octopState.users = [{ id: 9, username: 'alice', max_agents: 5 }];
+
+    await expect(
+      harness.services.agentGrants.createGrant(
+        'octop',
+        {
+          casdoorUserId: 'smartcore/alice',
+          expertTemplateIds: [TEMPLATE_B],
+          defaultExpertTemplateId: null,
+        },
+        'admin-1',
+      ),
+    ).rejects.toMatchObject({ reason: 'AGENT_GRANT_OPERATION_IN_PROGRESS' });
+    expect(octopState.posts).toBe(0);
+    const held = await harness.services.agentGrantOps.requireById(stale.id);
+    expect(held.status).toBe('BOOTSTRAP_PENDING');
+    expect(held.lockKey).toBe('octop:smartcore/alice');
   });
 
   it('blocks expert install when supportsInstallAsUser is false', async () => {

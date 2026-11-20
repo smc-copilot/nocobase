@@ -193,6 +193,9 @@ const zhCN: AppResource = {
     portalAgentGrantsInstallExperts: '安装专家',
     portalAgentGrantsInstallDone: '专家安装已提交',
     portalAgentGrantsDefaultExpert: '默认专家',
+    portalAgentGrantsDefaultExpertOptional:
+      '可选。不选时只创建账号，或仅安装勾选的专家，不指定默认专家。',
+    portalAgentGrantsDefaultExpertNone: '不设置',
     portalAgentGrantsUsername: '用户名',
     portalAgentGrantsDisplayName: '显示名称',
     portalAgentGrantsEmail: '邮箱',
@@ -216,7 +219,8 @@ const zhCN: AppResource = {
     portalAgentGrantsLdapRequired:
       'Octop LDAP 尚未就绪。目录账号在配置完成前不能创建。',
     portalAgentGrantsNullableHint: '留空表示 null，不是 0。',
-    portalAgentGrantsInvalidForm: '请检查角色、专家选择和密码后再提交。',
+    portalAgentGrantsInvalidForm:
+      '请检查角色、专家选择（已有账号须至少选一个）、默认专家和密码后再提交。',
     portalAgentGrantsSubmit: '创建用户',
     portalAgentGrantsUserCreated: '用户已创建',
     portalAgentGrantsCompleted: '已完成',

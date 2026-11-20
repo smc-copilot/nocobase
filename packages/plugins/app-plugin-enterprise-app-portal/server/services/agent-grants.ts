@@ -62,6 +62,16 @@ export interface OctopConnectionTest {
   readonly healthOk: boolean;
 }
 
+/**
+ * These statuses mean Octop already accepted the user. The lock can be closed
+ * once that account is gone. SUBMITTING and OUTCOME_UNKNOWN stay locked,
+ * because a timed-out create may still have succeeded.
+ */
+const ACCOUNT_GONE_LOCK_STATUSES = new Set([
+  'USER_CREATED',
+  'BOOTSTRAP_PENDING',
+]);
+
 const BLOCKED_REASONS = new Set([
   'CASDOOR_USER_NOT_AUTHORIZED',
   'OCTOP_TEMPLATE_NOT_FOUND',
@@ -263,27 +273,31 @@ export class AgentGrantsService {
     const app = await this.read.requireGrantApplication(appCode);
     const employee = await this.read.requireEmployee(input.casdoorUserId);
     const templateIds = uniqueIds(input.expertTemplateIds);
-    if (templateIds.length === 0) {
+    const defaultExpertTemplateId = input.defaultExpertTemplateId ?? null;
+    if (
+      defaultExpertTemplateId &&
+      !templateIds.includes(defaultExpertTemplateId)
+    ) {
       throw portalError(
         'FAILED_PRECONDITION',
-        'OCTOP_TEMPLATE_NOT_FOUND',
-        'At least one published expert template is required.',
+        'OCTOP_DEFAULT_EXPERT_INVALID',
+        'defaultExpertTemplateId must be one of the selected install templates.',
       );
     }
 
-    const operation = await this.operations.acquire({
-      appCode,
+    const operation = await this.acquireOperation({
+      app,
       casdoorUserId: input.casdoorUserId,
       username: normalizeOctopIdentityField(employee.name),
       actorUserId,
       selectedExpertCount: templateIds.length,
-      expertTemplateId: input.defaultExpertTemplateId ?? null,
+      expertTemplateId: defaultExpertTemplateId,
       createOptionsSnapshot: {
         role: input.role ?? 'user',
         directory: input.directory !== false,
         expertTemplateSource: 'published',
         expertTemplateIds: templateIds,
-        defaultExpertTemplateId: input.defaultExpertTemplateId ?? null,
+        defaultExpertTemplateId,
         workspaceRootDir: input.workspaceRootDir ?? null,
         tokenQuota: input.tokenQuota ?? null,
         maxAgents: input.maxAgents ?? null,
@@ -353,6 +367,13 @@ export class AgentGrantsService {
       }
 
       if (existing) {
+        if (templateIds.length === 0) {
+          throw portalError(
+            'FAILED_PRECONDITION',
+            'OCTOP_TEMPLATE_NOT_FOUND',
+            'At least one published expert template is required for existing users.',
+          );
+        }
         return await this.installForExistingUser({
           finish,
           operation,
@@ -401,6 +422,79 @@ export class AgentGrantsService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Takes the per-employee lock. When the previous operation still holds it
+   * only because Octop no longer has that account, close the old row and
+   * take the lock again. A create that is still talking to Octop keeps the 409.
+   */
+  private async acquireOperation(draft: {
+    readonly app: PortalApplicationRecord;
+    readonly casdoorUserId: string;
+    readonly username: string;
+    readonly actorUserId: string;
+    readonly selectedExpertCount: number;
+    readonly expertTemplateId: string | null;
+    readonly createOptionsSnapshot: unknown;
+  }): Promise<AgentGrantOperationRecord> {
+    const operationDraft = {
+      appCode: draft.app.appCode,
+      casdoorUserId: draft.casdoorUserId,
+      username: draft.username,
+      actorUserId: draft.actorUserId,
+      selectedExpertCount: draft.selectedExpertCount,
+      expertTemplateId: draft.expertTemplateId,
+      createOptionsSnapshot: draft.createOptionsSnapshot,
+    };
+    try {
+      return await this.operations.acquire(operationDraft);
+    } catch (error) {
+      if (reasonOf(error) !== 'AGENT_GRANT_OPERATION_IN_PROGRESS') throw error;
+      const released = await this.releaseLockForDeletedAccount(
+        draft.app,
+        draft.casdoorUserId,
+        draft.username,
+      );
+      if (!released) throw error;
+      return await this.operations.acquire(operationDraft);
+    }
+  }
+
+  /**
+   * Closes a leftover lock after an Octop administrator deletes the account.
+   * Returns false when the account is still there, the lock is a live create,
+   * or Octop cannot be read.
+   */
+  private async releaseLockForDeletedAccount(
+    app: PortalApplicationRecord,
+    casdoorUserId: string,
+    username: string,
+  ): Promise<boolean> {
+    const holding = await this.operations.findByLockKey(
+      app.appCode,
+      casdoorUserId,
+    );
+    if (!holding || !lockCanBeReleased(holding)) return false;
+    let users: readonly OctopUser[];
+    try {
+      const client = await this.openClient(app);
+      users = await client.getUsers();
+    } catch {
+      return false;
+    }
+    if (matchOctopUser(users, username)) return false;
+    const createdBefore =
+      holding.octopUserId != null ||
+      holding.status === 'USER_CREATED' ||
+      holding.status === 'BOOTSTRAP_PENDING';
+    await this.operations.transition(holding.id, {
+      status: createdBefore ? 'BOOTSTRAP_FAILED' : 'SAFE_TO_RETRY',
+      errorCode: 'OCTOP_ACCOUNT_REMOVED',
+      errorMessage:
+        'The Octop account no longer exists. The previous operation was closed so the employee can be initialized again.',
+    });
+    return true;
   }
 
   public async reconcile(
@@ -519,14 +613,9 @@ export class AgentGrantsService {
       input,
       markSubmitted,
     } = args;
+    // Octop create always uses create_default_expert=false; selected templates
+    // are installed afterwards. defaultExpertTemplateId is optional metadata.
     const defaultExpertId = input.defaultExpertTemplateId ?? null;
-    if (!defaultExpertId || !templateIds.includes(defaultExpertId)) {
-      throw portalError(
-        'FAILED_PRECONDITION',
-        'OCTOP_DEFAULT_EXPERT_INVALID',
-        'New users require a default expert selected from the install list.',
-      );
-    }
 
     const body = await this.preflightCreate(client, input, employee);
     const createMaxAgents =
@@ -560,13 +649,15 @@ export class AgentGrantsService {
       expertTemplateId: defaultExpertId,
     });
 
-    await this.installTemplatesSequentially({
-      operationId: operation.id,
-      client,
-      octopUserId: created.id,
-      templateIds,
-      templateById,
-    });
+    if (templateIds.length > 0) {
+      await this.installTemplatesSequentially({
+        operationId: operation.id,
+        client,
+        octopUserId: created.id,
+        templateIds,
+        templateById,
+      });
+    }
 
     return this.finalizeOperation(operation.id, finish);
   }
@@ -708,9 +799,9 @@ export class AgentGrantsService {
           {
             name,
             description: template.description ?? '',
-            // Published experts may default to local_shell. The install body
-            // takes this object as `backend` (POST /api/agents uses config.backend).
-            backend: dockerSandboxBackend(name),
+            // Published experts may default to local_shell. Point the install
+            // at the preconfigured Docker sandbox resource.
+            backend: dockerSandboxBackend(),
           },
         );
         assertInstallOwner(result.userId, octopUserId);
@@ -1082,6 +1173,10 @@ export class AgentGrantsService {
   }
 }
 
+function lockCanBeReleased(operation: AgentGrantOperationRecord): boolean {
+  return ACCOUNT_GONE_LOCK_STATUSES.has(operation.status);
+}
+
 function uniqueIds(values: readonly string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -1133,7 +1228,8 @@ function summarizeParentStatus(args: {
   readonly total: number;
 }): AgentGrantOperationRecord['status'] {
   const { completed, failed, skipped, pending, total } = args;
-  if (total === 0) return 'FAILED_NO_MUTATION';
+  // Zero experts is valid for create-user-only; treat as success.
+  if (total === 0) return 'COMPLETED';
   if (failed > 0 && completed + skipped > 0) return 'PARTIAL';
   if (failed > 0) return 'EXPERT_INSTALL_FAILED';
   if (pending) return 'BOOTSTRAP_PENDING';

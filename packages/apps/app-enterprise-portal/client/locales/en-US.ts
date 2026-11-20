@@ -204,6 +204,9 @@ const enUS = {
     portalAgentGrantsInstallExperts: 'Install experts',
     portalAgentGrantsInstallDone: 'Expert install submitted',
     portalAgentGrantsDefaultExpert: 'Default expert',
+    portalAgentGrantsDefaultExpertOptional:
+      'Optional. Leave unset to create the account without a default expert, or only install the selected experts.',
+    portalAgentGrantsDefaultExpertNone: 'None',
     portalAgentGrantsUsername: 'Username',
     portalAgentGrantsDisplayName: 'Display name',
     portalAgentGrantsEmail: 'Email',
@@ -230,7 +233,7 @@ const enUS = {
       'Octop LDAP is not ready. Directory accounts cannot be created until it is configured.',
     portalAgentGrantsNullableHint: 'Leave blank for null. Blank is not zero.',
     portalAgentGrantsInvalidForm:
-      'Check the role, expert selection, and password before submitting.',
+      'Check the role, expert selection (existing accounts need at least one), default expert, and password before submitting.',
     portalAgentGrantsSubmit: 'Create user',
     portalAgentGrantsUserCreated: 'User created',
     portalAgentGrantsCompleted: 'Completed',

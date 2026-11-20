@@ -329,9 +329,6 @@ export function toggleExpertTemplate(
   ) {
     defaultExpertTemplateId = null;
   }
-  if (isNewUser && expertTemplateIds.length === 1) {
-    defaultExpertTemplateId = expertTemplateIds[0] ?? null;
-  }
   return { ...draft, expertTemplateIds, defaultExpertTemplateId };
 }
 
@@ -342,14 +339,15 @@ export function buildAgentGrantCreateBody(input: {
 }): AgentGrantCreateBody | undefined {
   const { draft, isNewUser } = input;
   if (!draft.roleId) return undefined;
-  if (draft.expertTemplateIds.length === 0) return undefined;
+  // Existing accounts only install experts; new accounts may create with none.
+  if (!isNewUser && draft.expertTemplateIds.length === 0) return undefined;
   if (!draft.directory) {
     if (!draft.password || draft.password.length < 8) return undefined;
     if (draft.password !== draft.confirmPassword) return undefined;
   }
   if (isNewUser) {
     if (
-      !draft.defaultExpertTemplateId ||
+      draft.defaultExpertTemplateId &&
       !draft.expertTemplateIds.includes(draft.defaultExpertTemplateId)
     ) {
       return undefined;

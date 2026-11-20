@@ -72,6 +72,9 @@ const AGENT_GRANTS = {
   resource: { type: 'settings', id: 'enterpriseAppPortal.agentGrants' },
 } as const;
 
+/** RadioGroup sentinel for an unset optional default expert. */
+const DEFAULT_EXPERT_NONE = '__none__';
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
@@ -1159,16 +1162,28 @@ export default function PortalAgentGrantsPage(): ReactElement {
             {isNewUser ? (
               <div className='space-y-2'>
                 <Label>{t('settings.portalAgentGrantsDefaultExpert')}</Label>
+                <p className='text-xs text-muted-foreground'>
+                  {t('settings.portalAgentGrantsDefaultExpertOptional')}
+                </p>
                 <RadioGroup
-                  value={draft.defaultExpertTemplateId ?? ''}
+                  value={draft.defaultExpertTemplateId ?? DEFAULT_EXPERT_NONE}
                   onValueChange={(value) => {
                     const nextId = String(value ?? '');
                     setDraft((current) => ({
                       ...current,
-                      defaultExpertTemplateId: nextId || null,
+                      defaultExpertTemplateId:
+                        !nextId || nextId === DEFAULT_EXPERT_NONE
+                          ? null
+                          : nextId,
                     }));
                   }}
                 >
+                  <label className='flex items-center gap-2 rounded-md border p-2'>
+                    <RadioGroupItem value={DEFAULT_EXPERT_NONE} />
+                    <span className='text-sm'>
+                      {t('settings.portalAgentGrantsDefaultExpertNone')}
+                    </span>
+                  </label>
                   {draft.expertTemplateIds.map((templateId) => {
                     const template = templates.find(
                       (item) => item.id === templateId,

@@ -425,7 +425,7 @@ export const AgentGrantCreateInput: z.ZodType<{
   maxAgents: z.number().int().nullable().optional(),
   directory: z.boolean().optional(),
   password: z.string().min(8).max(128).nullable().optional(),
-  expertTemplateIds: z.array(z.string().min(1).max(128)).min(1).max(50),
+  expertTemplateIds: z.array(z.string().min(1).max(128)).max(50),
   defaultExpertTemplateId: z.string().min(1).max(128).nullable().optional(),
 });
 
