@@ -194,6 +194,7 @@ const esES: LocaleResource<typeof enUS> = {
       title: 'Editar {{name}}',
       enabled: 'Habilitado',
       done: '{{name}} guardado',
+      model: 'Modelo',
     },
     available: {
       open: 'Añadir Agent',
@@ -272,10 +273,6 @@ const esES: LocaleResource<typeof enUS> = {
     save: 'Guardar habilidades',
     descriptionOnline:
       'Manuales que el Agent lee cuando una tarea coincide con su descripción, en un entorno limitado de solo lectura en el servidor.',
-    onlineScripts:
-      'Los scripts no se ejecutan para los Agents en línea: el Agent puede leerlos, no ejecutarlos.',
-    skippedScripts: ': {{paths}}',
-    pathSeparator: ', ',
   },
   brief: {
     preview: 'Vista previa del mensaje completo',
@@ -620,6 +617,15 @@ const esES: LocaleResource<typeof enUS> = {
     pathHint:
       'El runner busca las herramientas de programación con su propio PATH. En un terminal donde funcione which codex / which claude, vuelve a ejecutar nocobase-runner service install y reinicia el servicio (o vuelve a ejecutar nocobase-runner start) para que obtenga el PATH correcto.',
     quota: {
+      ceilingReached: 'Umbral de cuota alcanzado',
+      ceilingLabel: 'Pausar al',
+      ceilingInput: 'Pausar nuevos trabajos de {{tool}} al porcentaje usado',
+      ceilingSave: 'Aplicar',
+      ceilingInvalid:
+        'Introduce un porcentaje entero entre 1 y 100 o déjalo vacío.',
+      ceilingPaused:
+        'Una ventana alcanzó el límite; el nuevo trabajo afectado espera al reinicio o a un cambio del límite.',
+
       workspaceStatus: {
         active: 'El trabajo continúa',
         ended: 'Finalizado · limpieza permitida',
@@ -650,6 +656,10 @@ const esES: LocaleResource<typeof enUS> = {
       workspaceSize: 'Tamaño del espacio de trabajo: {{value}}',
       providers_one: 'Proveedor {{count}} en cuota',
       providers_other: 'Proveedores {{count}} en cuota',
+      models_one: '{{count}} modelo sin cuota',
+      models_other: '{{count}} modelos sin cuota',
+      models_many: '{{count}} modelos sin cuota',
+      percent: '{{percent}}%',
       runColumns: {
         issue: 'Tarea / conversación',
         agent: 'Agente',
@@ -692,7 +702,7 @@ const esES: LocaleResource<typeof enUS> = {
         'Bórrela solo después de confirmar que la cuota se ha restablecido. {{target}} vuelve a recibir trabajo de inmediato; si la cuota sigue agotada, la siguiente ejecución la marca de nuevo.',
       observed: 'Último reportado {{time}}',
       usedPercent: '{{percent}}% usado',
-      ok: 'Aceptar',
+      noUsage: 'Aún no hay datos de cuota',
       hint: 'Una marca se borra sola a la hora de reinicio conocida o cuando la herramienta vuelve a informar cuota disponible. Bórrela a mano solo después de confirmar que la cuota se ha restablecido. Sólo el propietario y los administradores del entorno de ejecución pueden borrar las marcas.',
       marks_many: 'Marcas de cuota {{count}}',
       providers_many: 'Proveedores {{count}} en cuota',
@@ -773,8 +783,8 @@ const esES: LocaleResource<typeof enUS> = {
       offlineNever: 'Sin conexión',
     },
     toolUsage: {
-      label: 'Se ejecuta mediante herramienta de codificación',
-      item: '{{tool}} {{used}}/{{limit}}',
+      short: 'Ejecuciones {{used}}/{{limit}}',
+      hint: 'Como máximo {{limit}} ejecuciones de {{tool}} a la vez; {{used}} en curso',
     },
     toolSlots: {
       label: 'Límites por herramienta de codificación',
@@ -914,6 +924,8 @@ const esES: LocaleResource<typeof enUS> = {
       show: 'Versión {{version}}: hay un entorno de ejecución más nuevo disponible',
       available: 'Actualización disponible',
       badge: 'Actualizable',
+      latest: 'Actual',
+      installed: 'Versión {{version}}',
       title: 'Un entorno de ejecución más nuevo para {{name}}',
       description:
         'Instalado {{version}}, esta aplicación sirve para {{latest}}.',
@@ -985,6 +997,23 @@ const esES: LocaleResource<typeof enUS> = {
     },
   },
   chat: {
+    thinking: {
+      levels: {
+        'provider-default': 'Predeterminado',
+        none: 'Desactivado',
+        minimal: 'Mínimo',
+        low: 'Bajo',
+        medium: 'Medio',
+        high: 'Alto',
+        xhigh: 'Muy alto',
+      },
+      adjusted:
+        'Este modelo no admite el nivel de razonamiento «{{requested}}»; en esta respuesta se usó «{{used}}».',
+      adjustedToDefault:
+        'Este modelo no admite el nivel de razonamiento «{{requested}}»; en esta respuesta se usó el valor predeterminado del proveedor.',
+      warning:
+        'Es posible que el modelo no haya aplicado el nivel de razonamiento «{{level}}» en esta respuesta.',
+    },
     // Keep new guidance available in English until this locale is translated.
     executionFailed:
       'La ejecución falló. Revisa la conversación guardada antes de reintentar.',
@@ -1314,8 +1343,6 @@ const esES: LocaleResource<typeof enUS> = {
     binaryFile: 'Archivo binario, {{size}}. No se puede editar aquí.',
     executable: 'Ejecutable',
     scriptBadge: 'Guión',
-    scriptsNote:
-      'Tiene scripts: los Agents en línea pueden leerlos pero nunca ejecutarlos',
     compatibility: 'Compatibilidad: {{value}}',
     fileContent: 'Contenido de {{path}}',
     export: 'Exportar',
@@ -1347,8 +1374,7 @@ const esES: LocaleResource<typeof enUS> = {
       name: 'Nombre',
       renameTitle: 'Cambiar el nombre de "{{name}}"',
       conventional: {
-        scripts:
-          'Los Agents de código pueden ejecutarse. Los Agents en línea solo lo leen.',
+        scripts: 'Código que los Agents pueden ejecutar.',
         references: 'Los Agents de documentación leen cuando la necesitan.',
         assets: 'Plantillas, imágenes y otros recursos.',
       },

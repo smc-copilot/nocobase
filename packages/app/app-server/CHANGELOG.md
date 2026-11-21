@@ -1,5 +1,78 @@
 # @nocobase/app-server
 
+## 5.0.0-beta.8
+
+### Minor Changes
+
+- a727ebe: Preinstall plugins with their Skills, unregister them while retaining the development dependency, and use plugin remove for a complete uninstall. Create apps from Professional and Enterprise template packages by alias. Default preinstalls Web Push and its Skill for opt-in registration. Default preinstalls SQLite, PostgreSQL, MySQL, SQL Server and Oracle as development dependencies. Source configuration promotes the selected driver. Configuration checks, migrations and builds report missing production driver declarations and how to fix them. The application upgrade Skill covers Community to Professional or Enterprise and Professional to Enterprise while preserving existing plugin registrations and database choices.
+
+### Patch Changes
+
+- e830c36: Read embedded applications' names and versions from dist/package.json for browser configuration and OpenAPI documents when the root manifest is absent.
+- b83a645: Default missing applied migration sources to warnings instead of errors, with an `onMissingSource: 'error'` option for strict validation. Downgrades within participating packages still fail. Preserve missing migration history and report warnings in database commands and startup logs. Rollback validates only its target batch and lists every missing or irreversible migration before executing any down operation, with recovery guidance.
+
+  Compare migration filename timestamps for downgrade detection independently of parameter target hashes. Validate applications with applied history even when all migration directories have disappeared, while continuing to skip empty applications.
+
+  An explicitly configured migration directory that no longer exists is now checked against the migration history when tasks run, rather than rejected while planning: an application with history follows the missing-source policy, while a mistyped path on an application that never migrated still fails before any storage is touched.
+
+- Updated dependencies [b737800]
+- Updated dependencies [b83a645]
+  - @nocobase/db@1.0.0-beta.29
+  - @nocobase/db-mssql@0.1.0-beta.6
+  - @nocobase/db-mysql@0.1.0-beta.5
+  - @nocobase/db-oracle@0.1.0-beta.5
+  - @nocobase/db-postgres@0.1.0-beta.5
+  - @nocobase/db-sqlite@0.1.0-beta.6
+
+## 5.0.0-beta.7
+
+### Patch Changes
+
+- 38854ec: Keep internal HTTP and WebSocket forwarding connected directly to the configured upstream when an environment proxy is enabled.
+- 8339722: Pass the incoming request to standalone proxy target resolution so applications can route HTTP and WebSocket traffic to the appropriate upstream.
+
+## 5.0.0-beta.6
+
+### Minor Changes
+
+- 3112daa: Derive dedicated CLI operation keys from explicitly marked OpenAPI header schemas. The CLI generates or reuses a key, preserves it in success and failure output, and reports uncertain results without replaying writes. Upgrade the CLI and server together for operation-key commands. Online shells expose authorized commands but refuse unsupported writes before sending. Ordinary headers and existing commands retain their behavior.
+
+### Patch Changes
+
+- 3112daa: Generate CLI operation keys in the existing web client's timestamp.UUID format so native mutation receipts accept default calls. Require declared length bounds to allow 50-character keys, reject incompatible UUID-only schemas, and document the native 24-hour retry window without changing server receipt validation.
+
+## 5.0.0-beta.5
+
+### Minor Changes
+
+- 44bf26a: Allow plugins to contribute an application-local synchronous ID implementation with asynchronous initialization while retaining the host ID provider and public service token. Select and cache the implementation on first generation, preserving early-resolved references without per-ID container lookups. Document initialization ordering and plugin-owned cleanup.
+
+### Patch Changes
+
+- 1952789: Update authentication, editor, and validation dependencies to patched releases.
+
+## 5.0.0-beta.4
+
+### Minor Changes
+
+- d88875e: Configure per-disk upload limits through Drive, validate issue, comment and conversation attachments with shared File helpers, and use the same limits for issue, comment and conversation upload checks and messages.
+
+  Conversation attachment size errors now use `FILE_TOO_LARGE` in the `file` domain instead of `UPLOAD_TOO_LARGE` in `agents`. Online Agent attachment reading follows the stored disk limit.
+
+  Upload limits are embedded in the page’s public configuration, so client startup requires no separate upload-policy request.
+
+### Patch Changes
+
+- Updated dependencies [d88875e]
+- Updated dependencies [57912f1]
+  - @nocobase/drive@0.1.0-beta.8
+  - @nocobase/db@1.0.0-beta.28
+  - @nocobase/db-mssql@0.1.0-beta.5
+  - @nocobase/db-mysql@0.1.0-beta.5
+  - @nocobase/db-oracle@0.1.0-beta.5
+  - @nocobase/db-postgres@0.1.0-beta.5
+  - @nocobase/db-sqlite@0.1.0-beta.6
+
 ## 5.0.0-beta.3
 
 ### Minor Changes
