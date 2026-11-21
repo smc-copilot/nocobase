@@ -84,6 +84,8 @@
   "create-app": { "en": "Create app", "zh": "创建应用" },
   "templates": { "en": "App templates", "zh": "应用模板" },
   "app-template": { "en": "App templates", "zh": "应用模板" },
+  "app-meeting": { "en": "Meeting", "zh": "会议" },
+  "meeting": { "en": "Meeting", "zh": "会议" },
   "app-template-default": { "en": "App templates", "zh": "应用模板" },
   "app-template-examples": { "en": "App templates", "zh": "应用模板" },
   "examples": { "en": "App templates", "zh": "应用模板" },
