@@ -365,6 +365,15 @@ export function buildAgentGrantCreateBody(input: {
     ? parseOptionalNumber(draft.tokenQuota)
     : null;
   if (maxAgents === undefined || tokenQuota === undefined) return undefined;
+  // New users: selection must fit the quota written on create.
+  // Existing users: quota lives on the Octop account; do not send role defaults.
+  if (
+    isNewUser &&
+    maxAgents != null &&
+    draft.expertTemplateIds.length > maxAgents
+  ) {
+    return undefined;
+  }
 
   const body: AgentGrantCreateBody = {
     casdoorUserId: input.casdoorUserId,
@@ -372,8 +381,8 @@ export function buildAgentGrantCreateBody(input: {
     workspaceRootDir: draft.workspaceEnabled
       ? blankToNull(draft.workspaceRootDir)
       : null,
-    tokenQuota,
-    maxAgents,
+    tokenQuota: isNewUser ? tokenQuota : null,
+    maxAgents: isNewUser ? maxAgents : null,
     directory: draft.directory,
     expertTemplateIds: [...draft.expertTemplateIds],
     defaultExpertTemplateId: isNewUser ? draft.defaultExpertTemplateId : null,

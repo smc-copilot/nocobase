@@ -444,6 +444,9 @@ export class AgentGrantsService {
       employee,
       defaultExpertId,
     );
+    const createMaxAgents =
+      typeof body.max_agents === 'number' ? body.max_agents : null;
+    this.assertMaxAgents(createMaxAgents, 0, templateIds.length);
     markSubmitted();
     await this.operations.transition(operation.id, {
       status: 'SUBMITTING',
@@ -602,7 +605,9 @@ export class AgentGrantsService {
       });
     }
 
-    this.assertMaxAgents(input.maxAgents, owned.length, toInstall.length);
+    // Append must use the target account quota, not role defaults from the
+    // request body (PRD: do not rewrite existing user resource policies).
+    this.assertMaxAgents(existing.maxAgents, owned.length, toInstall.length);
 
     await this.installTemplatesSequentially({
       operationId: operation.id,

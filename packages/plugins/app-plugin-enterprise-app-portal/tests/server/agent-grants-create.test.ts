@@ -16,6 +16,7 @@ interface OctopUserRow {
   id: number;
   username: string;
   disabled?: boolean;
+  max_agents?: number | null;
 }
 
 const octopState: {
@@ -156,7 +157,7 @@ describe('agent grant create', () => {
   });
 
   it('installs for an existing account without POST /api/users', async () => {
-    octopState.users = [{ id: 9, username: 'alice' }];
+    octopState.users = [{ id: 9, username: 'alice', max_agents: 2 }];
     const created = await harness.services.agentGrants.createGrant(
       'octop',
       {
@@ -170,6 +171,59 @@ describe('agent grant create', () => {
     expect(octopState.installs).toBe(1);
     expect(created.operationMode).toBe('INSTALL_ONLY');
     expect(created.status).toBe('COMPLETED');
+  });
+
+  it('appends using the Octop account max_agents, not request body maxAgents', async () => {
+    // Account already has TEMPLATE (see /api/agents mock). Quota on the user is 2;
+    // a stale role-default maxAgents=1 in the body must not block the second install.
+    octopState.users = [{ id: 9, username: 'alice', max_agents: 2 }];
+    const created = await harness.services.agentGrants.createGrant(
+      'octop',
+      {
+        casdoorUserId: 'smartcore/alice',
+        expertTemplateIds: [TEMPLATE_B],
+        defaultExpertTemplateId: null,
+        maxAgents: 1,
+      },
+      'admin-1',
+    );
+    expect(octopState.posts).toBe(0);
+    expect(octopState.installs).toBe(1);
+    expect(created.status).toBe('COMPLETED');
+  });
+
+  it('blocks append when the Octop account max_agents is already full', async () => {
+    octopState.users = [{ id: 9, username: 'alice', max_agents: 1 }];
+    await expect(
+      harness.services.agentGrants.createGrant(
+        'octop',
+        {
+          casdoorUserId: 'smartcore/alice',
+          expertTemplateIds: [TEMPLATE_B],
+          defaultExpertTemplateId: null,
+          maxAgents: 99,
+        },
+        'admin-1',
+      ),
+    ).rejects.toMatchObject({ reason: 'OCTOP_MAX_AGENTS_EXCEEDED' });
+    expect(octopState.installs).toBe(0);
+  });
+
+  it('blocks create when selected experts exceed the create max_agents', async () => {
+    await expect(
+      harness.services.agentGrants.createGrant(
+        'octop',
+        {
+          casdoorUserId: 'smartcore/alice',
+          expertTemplateIds: [TEMPLATE, TEMPLATE_B],
+          defaultExpertTemplateId: TEMPLATE,
+          maxAgents: 1,
+        },
+        'admin-1',
+      ),
+    ).rejects.toMatchObject({ reason: 'OCTOP_MAX_AGENTS_EXCEEDED' });
+    expect(octopState.posts).toBe(0);
+    expect(octopState.installs).toBe(0);
   });
 
   it('blocks a disabled existing account', async () => {

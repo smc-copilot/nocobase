@@ -141,12 +141,31 @@ describe('agent grant presentation', () => {
         draft: {
           ...draft,
           defaultExpertTemplateId: null,
+          maxAgentsEnabled: true,
+          maxAgents: '1',
+          tokenQuotaEnabled: true,
+          tokenQuota: '10',
         },
       }),
     ).toMatchObject({
       defaultExpertTemplateId: null,
       expertTemplateIds: ['tpl-1'],
+      maxAgents: null,
+      tokenQuota: null,
     });
+    expect(
+      buildAgentGrantCreateBody({
+        casdoorUserId: 'org/alice',
+        isNewUser: true,
+        draft: {
+          ...draft,
+          maxAgentsEnabled: true,
+          maxAgents: '1',
+          expertTemplateIds: ['tpl-1', 'tpl-2'],
+          defaultExpertTemplateId: 'tpl-1',
+        },
+      }),
+    ).toBeUndefined();
     expect(
       roleDraftFields({
         id: 'expert',

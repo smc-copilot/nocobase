@@ -25,6 +25,8 @@ export interface OctopUser {
   readonly displayName: string | null;
   readonly email: string | null;
   readonly role: string | null;
+  /** Account resource policy; null means unlimited. */
+  readonly maxAgents: number | null;
   /** ISO-8601 create time from Octop `created_at` (unix seconds). */
   readonly createdAt: string | null;
 }
@@ -596,6 +598,7 @@ function parseUser(value: unknown): OctopUser | undefined {
   const id = readId(record.id);
   const username = readString(record.username);
   if (!id || !username) return undefined;
+  const policies = asRecord(record.policies) ?? {};
   return {
     id,
     username,
@@ -604,6 +607,7 @@ function parseUser(value: unknown): OctopUser | undefined {
     displayName: readString(record.display_name),
     email: readString(record.email),
     role: readString(record.role),
+    maxAgents: readNumber(policies.max_agents ?? record.max_agents),
     createdAt: readUnixTimestamp(record.created_at),
   };
 }
