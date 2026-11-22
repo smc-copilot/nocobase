@@ -237,6 +237,9 @@ const zhCN: AppResource = {
     portalAgentGrantsFailed: '无法读取或创建专家授权。',
     portalAgentGrantsReadOnly: '当前仅可查看；创建用户需要配置权限。',
     portalAgentGrantsEnabled: '启用专家授权',
+    portalAgentGrantsSupportsInstallAsUser: '启用 as_user 代装专家',
+    portalAgentGrantsSupportsInstallAsUserHint:
+      '仅在确认该 Octop 实例已正确处理 ?as_user=、专家归属目标员工而非管理员后再开启。默认关闭。',
     portalAgentGrantsApiBaseUrl: '管理 API 地址',
     portalAgentGrantsApiAuthMode: '管理 API 认证',
     portalAgentGrantsBearerEnv: 'Bearer Token 环境变量',

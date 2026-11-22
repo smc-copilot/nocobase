@@ -140,6 +140,29 @@ describeMigration('enterprise_app_portal_202611222000_agent_grants_v1_1', {
   },
 });
 
+describeMigration(
+  'enterprise_app_portal_202611222100_supports_install_as_user',
+  {
+    sources: [
+      source(
+        '@superice/app-plugin-enterprise-app-portal',
+        '../../database/migrations',
+      ),
+    ],
+    up: async ({ expectCollection }) => {
+      await expectCollection('enterprisePortalApplications').toHaveField(
+        'supportsInstallAsUser',
+        { type: 'boolean', nullable: false },
+      );
+    },
+    down: async ({ expectCollection }) => {
+      await expectCollection('enterprisePortalApplications').not.toHaveField(
+        'supportsInstallAsUser',
+      );
+    },
+  },
+);
+
 describeMigration('enterprise_app_portal_202611200001_create_collections', {
   sources: [
     source(

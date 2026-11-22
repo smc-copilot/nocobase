@@ -19,6 +19,7 @@ export interface ResolvedOctopConnection {
 
 export interface OctopInstanceFields {
   readonly agentGrantsEnabled?: boolean;
+  readonly supportsInstallAsUser?: boolean;
   readonly apiBaseUrl?: string | null;
   readonly apiAuthMode?: OctopApiAuthMode | null;
   readonly apiTokenEnv?: string | null;

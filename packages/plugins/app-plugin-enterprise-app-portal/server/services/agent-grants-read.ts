@@ -18,6 +18,7 @@ export interface AgentGrantApplicationView {
   readonly casdoorAppKey: string | null;
   readonly enabled: boolean;
   readonly agentGrantsEnabled: boolean;
+  readonly supportsInstallAsUser: boolean;
   readonly apiBaseUrl: string | null;
   readonly apiAuthMode: string | null;
   readonly apiTokenEnv: string | null;
@@ -298,6 +299,7 @@ function toApplicationView(
     casdoorAppKey: row.casdoorAppKey,
     enabled: row.enabled,
     agentGrantsEnabled: row.agentGrantsEnabled,
+    supportsInstallAsUser: row.supportsInstallAsUser,
     apiBaseUrl: row.apiBaseUrl,
     apiAuthMode: row.apiAuthMode,
     apiTokenEnv: row.apiTokenEnv,

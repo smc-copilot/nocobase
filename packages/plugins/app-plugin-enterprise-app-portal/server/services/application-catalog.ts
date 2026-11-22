@@ -33,6 +33,7 @@ export interface PortalApplicationInput {
   readonly enabled?: boolean;
   readonly sortOrder?: number;
   readonly agentGrantsEnabled?: boolean;
+  readonly supportsInstallAsUser?: boolean;
   readonly apiBaseUrl?: string | null;
   readonly apiAuthMode?: OctopApiAuthMode | null;
   readonly apiTokenEnv?: string | null;
@@ -59,6 +60,7 @@ export interface PortalApplicationRecord {
   readonly enabled: boolean;
   readonly sortOrder: number;
   readonly agentGrantsEnabled: boolean;
+  readonly supportsInstallAsUser: boolean;
   readonly apiBaseUrl: string | null;
   readonly apiAuthMode: string | null;
   readonly apiTokenEnv: string | null;
@@ -92,6 +94,7 @@ function toRecord(row: Record<string, unknown>): PortalApplicationRecord {
     enabled: toBool(row.enabled),
     sortOrder: Number(row.sortOrder ?? 0),
     agentGrantsEnabled: toBool(row.agentGrantsEnabled),
+    supportsInstallAsUser: toBool(row.supportsInstallAsUser),
     apiBaseUrl: blankToNull(row.apiBaseUrl),
     apiAuthMode: blankToNull(row.apiAuthMode),
     apiTokenEnv: blankToNull(row.apiTokenEnv),
@@ -205,6 +208,7 @@ export class ApplicationCatalogService {
         enabled: input.enabled ?? true,
         sortOrder: input.sortOrder ?? 0,
         agentGrantsEnabled: input.agentGrantsEnabled ?? false,
+        supportsInstallAsUser: input.supportsInstallAsUser ?? false,
         apiBaseUrl,
         apiAuthMode: input.apiAuthMode ?? null,
         apiTokenEnv: input.apiTokenEnv ?? null,
@@ -258,6 +262,7 @@ export class ApplicationCatalogService {
         enabled: next.enabled,
         sortOrder: next.sortOrder,
         agentGrantsEnabled: next.agentGrantsEnabled,
+        supportsInstallAsUser: next.supportsInstallAsUser,
         apiBaseUrl: next.apiBaseUrl,
         apiAuthMode: next.apiAuthMode,
         apiTokenEnv: next.apiTokenEnv,

@@ -47,6 +47,7 @@ interface CatalogApplication {
   readonly enabled: boolean;
   readonly sortOrder: number;
   readonly agentGrantsEnabled?: boolean;
+  readonly supportsInstallAsUser?: boolean;
   readonly apiBaseUrl?: string | null;
   readonly apiAuthMode?: string | null;
   readonly apiTokenEnv?: string | null;
@@ -58,6 +59,7 @@ type AgentAuthMode = 'bearer_env' | 'password_login_env';
 
 interface AgentGrantDraft {
   readonly agentGrantsEnabled?: boolean;
+  readonly supportsInstallAsUser?: boolean;
   readonly apiBaseUrl?: string;
   readonly apiAuthMode?: AgentAuthMode;
   readonly apiTokenEnv?: string;
@@ -235,6 +237,14 @@ export default function PortalCatalogPage(): ReactElement {
     return row.local?.agentGrantsEnabled === true;
   };
 
+  const agentSupportsInstallAsUser = (row: MergedRow): boolean => {
+    const draft = agentDrafts[row.casdoor.name];
+    if (draft?.supportsInstallAsUser !== undefined) {
+      return draft.supportsInstallAsUser;
+    }
+    return row.local?.supportsInstallAsUser === true;
+  };
+
   const agentText = (
     row: MergedRow,
     field: 'apiBaseUrl' | 'apiTokenEnv' | 'apiUsernameEnv' | 'apiPasswordEnv',
@@ -263,6 +273,7 @@ export default function PortalCatalogPage(): ReactElement {
   ):
     | {
         readonly enabled: boolean;
+        readonly supportsInstallAsUser: boolean;
         readonly apiBaseUrl: string;
         readonly apiAuthMode: AgentAuthMode;
         readonly apiTokenEnv: string | null;
@@ -271,6 +282,7 @@ export default function PortalCatalogPage(): ReactElement {
       }
     | undefined => {
     const enabled = agentEnabled(row);
+    const supportsInstallAsUser = agentSupportsInstallAsUser(row);
     const apiBaseUrl = normalizeApiBaseUrl(agentText(row, 'apiBaseUrl'));
     const apiAuthMode = agentMode(row);
     const apiTokenEnv = emptyToNull(agentText(row, 'apiTokenEnv'));
@@ -308,6 +320,7 @@ export default function PortalCatalogPage(): ReactElement {
     }
     return {
       enabled,
+      supportsInstallAsUser,
       apiBaseUrl,
       apiAuthMode,
       apiTokenEnv,
@@ -328,6 +341,7 @@ export default function PortalCatalogPage(): ReactElement {
         method: 'PUT',
         json: {
           agentGrantsEnabled: payload.enabled,
+          supportsInstallAsUser: payload.supportsInstallAsUser,
           apiBaseUrl: emptyToNull(payload.apiBaseUrl),
           apiAuthMode: payload.apiAuthMode,
           apiTokenEnv: payload.apiTokenEnv,
@@ -690,6 +704,28 @@ export default function PortalCatalogPage(): ReactElement {
                         {t('settings.portalAgentGrantsEnabled')}
                       </Label>
                     </div>
+                    <div className='flex items-center gap-2'>
+                      <Checkbox
+                        id='agent-grants-as-user-drawer'
+                        checked={agentSupportsInstallAsUser(configRow)}
+                        disabled={
+                          !canConfigureAgentGrants ||
+                          drawerBusy ||
+                          !agentEnabled(configRow)
+                        }
+                        onCheckedChange={(checked) =>
+                          setAgentDraft(configRow.casdoor.name, {
+                            supportsInstallAsUser: checked === true,
+                          })
+                        }
+                      />
+                      <Label htmlFor='agent-grants-as-user-drawer'>
+                        {t('settings.portalAgentGrantsSupportsInstallAsUser')}
+                      </Label>
+                    </div>
+                    <p className='text-xs text-muted-foreground'>
+                      {t('settings.portalAgentGrantsSupportsInstallAsUserHint')}
+                    </p>
                     <div className='grid gap-3'>
                       <div className='grid gap-1.5'>
                         <Label htmlFor='agent-api-drawer'>

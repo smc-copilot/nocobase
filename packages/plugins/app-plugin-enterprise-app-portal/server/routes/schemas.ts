@@ -54,6 +54,7 @@ export const CatalogCreateInput: z.ZodType<{
   enabled?: boolean;
   sortOrder?: number;
   agentGrantsEnabled?: boolean;
+  supportsInstallAsUser?: boolean;
   apiBaseUrl?: string | null;
   apiAuthMode?: (typeof OCTOP_API_AUTH_MODES)[number] | null;
   apiTokenEnv?: string | null;
@@ -79,6 +80,7 @@ export const CatalogCreateInput: z.ZodType<{
   enabled: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
   agentGrantsEnabled: z.boolean().optional(),
+  supportsInstallAsUser: z.boolean().optional(),
   apiBaseUrl: z.string().max(512).nullable().optional(),
   apiAuthMode: z.enum(OCTOP_API_AUTH_MODES).nullable().optional(),
   apiTokenEnv: envName.nullable().optional(),
@@ -99,6 +101,7 @@ export const CatalogUpdateInput: z.ZodType<{
   enabled?: boolean;
   sortOrder?: number;
   agentGrantsEnabled?: boolean;
+  supportsInstallAsUser?: boolean;
   apiBaseUrl?: string | null;
   apiAuthMode?: (typeof OCTOP_API_AUTH_MODES)[number] | null;
   apiTokenEnv?: string | null;
@@ -117,6 +120,7 @@ export const CatalogUpdateInput: z.ZodType<{
   enabled: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
   agentGrantsEnabled: z.boolean().optional(),
+  supportsInstallAsUser: z.boolean().optional(),
   apiBaseUrl: z.string().max(512).nullable().optional(),
   apiAuthMode: z.enum(OCTOP_API_AUTH_MODES).nullable().optional(),
   apiTokenEnv: envName.nullable().optional(),
@@ -157,6 +161,7 @@ export const CatalogApplicationSchema: z.ZodType<
     enabled: z.boolean(),
     sortOrder: z.number(),
     agentGrantsEnabled: z.boolean(),
+    supportsInstallAsUser: z.boolean(),
     apiBaseUrl: z.string().nullable(),
     apiAuthMode: z.string().nullable(),
     apiTokenEnv: z.string().nullable(),
@@ -383,6 +388,7 @@ export const AgentGrantOperationParam: z.ZodType<{ operationId: string }> =
 
 export const OctopInstanceConfigInput: z.ZodType<{
   agentGrantsEnabled: boolean;
+  supportsInstallAsUser: boolean;
   apiBaseUrl: string | null;
   apiAuthMode: (typeof OCTOP_API_AUTH_MODES)[number] | null;
   apiTokenEnv: string | null;
@@ -390,6 +396,7 @@ export const OctopInstanceConfigInput: z.ZodType<{
   apiPasswordEnv: string | null;
 }> = z.strictObject({
   agentGrantsEnabled: z.boolean(),
+  supportsInstallAsUser: z.boolean(),
   apiBaseUrl: z.string().max(512).nullable(),
   apiAuthMode: z.enum(OCTOP_API_AUTH_MODES).nullable(),
   apiTokenEnv: envName.nullable(),
@@ -431,6 +438,7 @@ export const AgentGrantApplicationSchema: z.ZodType<AgentGrantApplicationView> =
       casdoorAppKey: z.string().nullable(),
       enabled: z.boolean(),
       agentGrantsEnabled: z.boolean(),
+      supportsInstallAsUser: z.boolean(),
       apiBaseUrl: z.string().nullable(),
       apiAuthMode: z.string().nullable(),
       apiTokenEnv: z.string().nullable(),

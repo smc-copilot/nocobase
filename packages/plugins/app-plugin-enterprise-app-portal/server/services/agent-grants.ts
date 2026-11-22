@@ -23,7 +23,6 @@ import {
 } from './octop-instance-config.js';
 import type {
   OctopAgent,
-  OctopCreateUserResult,
   OctopManagementClient,
   OctopPublishedExpert,
   OctopRole,
@@ -48,6 +47,7 @@ export interface AgentGrantCreateInput {
 
 export interface OctopInstanceConfigInput {
   readonly agentGrantsEnabled: boolean;
+  readonly supportsInstallAsUser: boolean;
   readonly apiBaseUrl: string | null;
   readonly apiAuthMode: OctopApiAuthMode | null;
   readonly apiTokenEnv: string | null;
@@ -71,14 +71,16 @@ const BLOCKED_REASONS = new Set([
   'OCTOP_USERNAME_AMBIGUOUS',
   'OCTOP_DEFAULT_EXPERT_INVALID',
   'OCTOP_MAX_AGENTS_EXCEEDED',
+  'OCTOP_AS_USER_NOT_SUPPORTED',
+  'OCTOP_ACCOUNT_DISABLED',
   'PASSWORD_CONFIRM_MISMATCH',
   'PASSWORD_TOO_WEAK',
 ]);
 
 /**
- * Creates one Octop user (when missing) and installs selected published experts.
- * Default expert is pushed only on new-user create. Existing users get install-only.
- * Passwords and tokens are never written into operations or audit.
+ * Creates one Octop user (when missing) and installs selected published experts
+ * via admin token + `as_user`. Never installs without `as_user`. Passwords and
+ * tokens are never written into operations or audit.
  */
 export class AgentGrantsService {
   public constructor(
@@ -134,6 +136,7 @@ export class AgentGrantsService {
       result: 'success',
       metadata: {
         agentGrantsEnabled: input.agentGrantsEnabled,
+        supportsInstallAsUser: input.supportsInstallAsUser,
         apiAuthMode: input.apiAuthMode,
         apiTokenEnv: input.apiTokenEnv,
         apiUsernameEnv: input.apiUsernameEnv,
@@ -322,6 +325,14 @@ export class AgentGrantsService {
           'PERMISSION_DENIED',
           'CASDOOR_USER_NOT_AUTHORIZED',
           'Casdoor does not allow this employee to use the application.',
+        );
+      }
+
+      if (!app.supportsInstallAsUser) {
+        throw portalError(
+          'FAILED_PRECONDITION',
+          'OCTOP_AS_USER_NOT_SUPPORTED',
+          'This Octop instance has not enabled install-as-user. Enable supportsInstallAsUser only after verifying as_user ownership.',
         );
       }
 
@@ -516,12 +527,7 @@ export class AgentGrantsService {
       );
     }
 
-    const body = await this.preflightCreate(
-      client,
-      input,
-      employee,
-      defaultExpertId,
-    );
+    const body = await this.preflightCreate(client, input, employee);
     const createMaxAgents =
       typeof body.max_agents === 'number' ? body.max_agents : null;
     this.assertMaxAgents(createMaxAgents, 0, templateIds.length);
@@ -548,39 +554,16 @@ export class AgentGrantsService {
     await this.operations.transition(operation.id, {
       status: 'USER_CREATED',
       octopUserId: created.id,
-      agentId: created.defaultExpert?.agentId ?? null,
-      bootstrapStatus: created.defaultExpert?.bootstrapStatus ?? null,
+      agentId: null,
+      bootstrapStatus: null,
       expertTemplateId: defaultExpertId,
     });
 
-    const items = await this.operations.listExpertItems(operation.id);
-    const defaultItem = items.find(
-      (item) => item.expertTemplateId === defaultExpertId,
-    );
-    if (defaultItem) {
-      const defaultStatus = classifyDefaultExpert(created.defaultExpert);
-      await this.operations.updateExpertItem(defaultItem.id, {
-        status: defaultStatus,
-        agentId: created.defaultExpert?.agentId ?? null,
-        bootstrapPending:
-          created.defaultExpert?.bootstrapStatus === 'pending' ||
-          defaultStatus === 'BOOTSTRAP_PENDING',
-        errorCode: created.defaultExpert?.errorCode ?? null,
-        errorMessage: created.defaultExpert?.errorMessage ?? null,
-        startedAt: new Date(),
-        completedAt:
-          defaultStatus === 'COMPLETED' || defaultStatus === 'FAILED'
-            ? new Date()
-            : null,
-      });
-    }
-
-    const remaining = templateIds.filter((id) => id !== defaultExpertId);
     await this.installTemplatesSequentially({
       operationId: operation.id,
       client,
       octopUserId: created.id,
-      templateIds: remaining,
+      templateIds,
       templateById,
     });
 
@@ -717,25 +700,39 @@ export class AgentGrantsService {
         startedAt: new Date(),
       });
       try {
-        const result = await client.installExpertToUser(
+        const result = await client.installPublishedExpertForUser(
           octopUserId,
           templateId,
           {
             name: template.name ?? templateId,
             description: template.description ?? '',
+            // Agent Grants only assigns docker sandbox; published experts may
+            // default to local_shell and fail target-user policy without this.
+            backend: { type: 'docker' },
           },
+        );
+        assertInstallOwner(result.userId, octopUserId);
+        const verified = await this.verifyInstalledAgent(
+          client,
+          octopUserId,
+          templateId,
+          result.agentId,
         );
         await this.operations.updateExpertItem(item.id, {
           status: result.alreadyInstalled
             ? 'ALREADY_INSTALLED'
-            : result.bootstrapPending
+            : verified.bootstrapPending || result.bootstrapPending
               ? 'BOOTSTRAP_PENDING'
               : 'COMPLETED',
-          agentId: result.agentId,
-          bootstrapPending: result.bootstrapPending,
+          agentId: verified.agentId ?? result.agentId,
+          bootstrapPending:
+            verified.bootstrapPending || result.bootstrapPending,
           errorCode: null,
           errorMessage: null,
-          completedAt: result.bootstrapPending ? null : new Date(),
+          completedAt:
+            verified.bootstrapPending || result.bootstrapPending
+              ? null
+              : new Date(),
         });
       } catch (error) {
         if (isExpertAlreadyInstalled(error)) {
@@ -748,6 +745,24 @@ export class AgentGrantsService {
           continue;
         }
         if (isOutcomeUnknown(error) || isExpertOutcomeUnknown(error)) {
+          const reconciled = await this.reconcileExpertInstall(
+            client,
+            octopUserId,
+            templateId,
+          );
+          if (reconciled) {
+            await this.operations.updateExpertItem(item.id, {
+              status: reconciled.bootstrapPending
+                ? 'BOOTSTRAP_PENDING'
+                : 'COMPLETED',
+              agentId: reconciled.agentId,
+              bootstrapPending: reconciled.bootstrapPending,
+              errorCode: null,
+              errorMessage: null,
+              completedAt: reconciled.bootstrapPending ? null : new Date(),
+            });
+            continue;
+          }
           await this.operations.updateExpertItem(item.id, {
             status: 'OUTCOME_UNKNOWN',
             errorCode: reasonOf(error),
@@ -762,6 +777,75 @@ export class AgentGrantsService {
           completedAt: new Date(),
         });
       }
+    }
+  }
+
+  private async verifyInstalledAgent(
+    client: OctopManagementClient,
+    octopUserId: string,
+    templateId: string,
+    agentId: string,
+  ): Promise<{
+    readonly agentId: string | null;
+    readonly bootstrapPending: boolean;
+  }> {
+    const agents = await client.getAgents('all');
+    const match =
+      agents.find(
+        (agent) =>
+          agent.agentId === agentId &&
+          agent.kind === 'expert' &&
+          sameOctopUserId(agent.userId, octopUserId),
+      ) ??
+      agents.find(
+        (agent) =>
+          agent.kind === 'expert' &&
+          agent.publishedExpertId === templateId &&
+          sameOctopUserId(agent.userId, octopUserId),
+      );
+    if (!match) {
+      throw portalError(
+        'FAILED_PRECONDITION',
+        'OCTOP_AGENT_OWNER_MISMATCH',
+        'Octop Agent Owner does not match the target employee after install.',
+      );
+    }
+    if (match.publishedExpertId && match.publishedExpertId !== templateId) {
+      throw portalError(
+        'FAILED_PRECONDITION',
+        'OCTOP_AGENT_OWNER_MISMATCH',
+        'Octop Agent published_expert_id does not match the installed template.',
+      );
+    }
+    return {
+      agentId: match.agentId,
+      bootstrapPending: match.bootstrapPending,
+    };
+  }
+
+  private async reconcileExpertInstall(
+    client: OctopManagementClient,
+    octopUserId: string,
+    templateId: string,
+  ): Promise<{
+    readonly agentId: string;
+    readonly bootstrapPending: boolean;
+  } | null> {
+    try {
+      const agents = await client.getAgents('all');
+      const match = agents.find(
+        (agent) =>
+          agent.kind === 'expert' &&
+          agent.publishedExpertId === templateId &&
+          sameOctopUserId(agent.userId, octopUserId),
+      );
+      if (!match?.agentId) return null;
+      return {
+        agentId: match.agentId,
+        bootstrapPending: match.bootstrapPending,
+      };
+    } catch {
+      return null;
     }
   }
 
@@ -815,7 +899,6 @@ export class AgentGrantsService {
       readonly displayName: string;
       readonly email: string;
     },
-    defaultExpertId: string,
   ): Promise<Record<string, unknown>> {
     const directory = input.directory !== false;
     if (!directory) {
@@ -877,8 +960,8 @@ export class AgentGrantsService {
       maxAgents:
         input.maxAgents === undefined ? role.maxAgents : input.maxAgents,
       allowedBackendTypes: ['docker'],
-      createDefaultExpert: true,
-      expertTemplateId: defaultExpertId,
+      createDefaultExpert: false,
+      expertTemplateId: null,
     });
   }
 
@@ -1009,13 +1092,26 @@ function uniqueIds(values: readonly string[]): string[] {
   return result;
 }
 
-function classifyDefaultExpert(
-  expert: OctopCreateUserResult['defaultExpert'],
-): 'COMPLETED' | 'BOOTSTRAP_PENDING' | 'FAILED' {
-  if (!expert?.agentId) return 'FAILED';
-  if (expert.bootstrapStatus === 'pending') return 'BOOTSTRAP_PENDING';
-  if (expert.errorCode) return 'FAILED';
-  return 'COMPLETED';
+function sameOctopUserId(
+  left: string | null | undefined,
+  right: string | number,
+): boolean {
+  if (left == null || left === '') return false;
+  return Number(left) === Number(right);
+}
+
+function assertInstallOwner(
+  resultUserId: string | null,
+  targetUserId: string,
+): void {
+  if (resultUserId == null || resultUserId === '') return;
+  if (!sameOctopUserId(resultUserId, targetUserId)) {
+    throw portalError(
+      'FAILED_PRECONDITION',
+      'OCTOP_AGENT_OWNER_MISMATCH',
+      'Octop Agent Owner does not match the target employee.',
+    );
+  }
 }
 
 function classifyExpertBootstrap(

@@ -97,6 +97,8 @@ export interface OctopCreateUserResult {
 export interface OctopExpertInstallBody {
   readonly name: string;
   readonly description: string;
+  /** Octop backend object, e.g. `{ type: 'docker' }`. */
+  readonly backend?: Readonly<Record<string, unknown>>;
 }
 
 export interface OctopExpertInstallResult {
@@ -104,6 +106,8 @@ export interface OctopExpertInstallResult {
   readonly name: string;
   readonly state: string;
   readonly publishedExpertId: string;
+  /** Octop user id that owns the agent when the API returns it. */
+  readonly userId: string | null;
   readonly bootstrapPending: boolean;
   readonly alreadyInstalled: boolean;
 }
@@ -270,21 +274,33 @@ export class OctopManagementClient {
   }
 
   /**
-   * Creates an expert for a target user from a published template.
-   * Matches Octop Expert Market "Create" semantics for an admin actor.
+   * Installs a published expert for a target Octop user with the admin token
+   * and required `as_user` query. Never omits `as_user` (old Octop builds that
+   * ignore the query would otherwise create the agent under the admin).
    */
-  public async installExpertToUser(
-    userId: string,
-    expertId: string,
+  public async installPublishedExpertForUser(
+    targetUserId: string | number,
+    expertTemplateId: string,
     body: OctopExpertInstallBody,
   ): Promise<OctopExpertInstallResult> {
+    const asUser = String(targetUserId).trim();
+    if (!asUser) {
+      throw octopError(
+        'INVALID_ARGUMENT',
+        'OCTOP_EXPERT_INSTALL_REJECTED',
+        'as_user requires a non-empty Octop user id.',
+      );
+    }
+    const json: Record<string, unknown> = {
+      name: body.name,
+      description: body.description,
+    };
+    if (body.backend) json.backend = body.backend;
     const payload = await this.request({
       method: 'POST',
-      path: `/api/users/${encodeURIComponent(userId)}/experts/published/${encodeURIComponent(expertId)}/install`,
-      json: {
-        name: body.name,
-        description: body.description,
-      },
+      path: `/api/experts/published/${encodeURIComponent(expertTemplateId)}/install`,
+      query: { as_user: asUser },
+      json,
       mutation: true,
       failureReason: 'OCTOP_EXPERT_INSTALL_REJECTED',
       acceptStatuses: [200, 201],
@@ -299,7 +315,7 @@ export class OctopManagementClient {
     }
     const agentId = readString(record.agent_id) ?? '';
     const publishedExpertId =
-      readString(record.published_expert_id) ?? expertId;
+      readString(record.published_expert_id) ?? expertTemplateId;
     if (!agentId) {
       throw octopError(
         'UNAVAILABLE',
@@ -312,6 +328,7 @@ export class OctopManagementClient {
       name: readString(record.name) ?? body.name,
       state: readString(record.state) ?? 'unknown',
       publishedExpertId,
+      userId: readId(record.user_id),
       bootstrapPending: record.bootstrap_pending === true,
       alreadyInstalled:
         record.already_installed === true || payloadWasAlreadyInstalled(record),
@@ -399,22 +416,31 @@ export class OctopManagementClient {
   }
 
   private transportError(hints: RequestHints, error: unknown): Error {
+    const expertMutation = hints.mutation && isExpertInstallPath(hints.path);
     if (isTimeout(error)) {
       return octopError(
         'UNAVAILABLE',
         hints.mutation
-          ? 'OCTOP_USER_CREATE_OUTCOME_UNKNOWN'
+          ? expertMutation
+            ? 'OCTOP_EXPERT_INSTALL_OUTCOME_UNKNOWN'
+            : 'OCTOP_USER_CREATE_OUTCOME_UNKNOWN'
           : 'OCTOP_API_TIMEOUT',
         hints.mutation
-          ? 'The Octop create request timed out. The outcome is unknown and was not retried.'
+          ? expertMutation
+            ? 'The Octop expert install timed out. The outcome is unknown and was not retried.'
+            : 'The Octop create request timed out. The outcome is unknown and was not retried.'
           : 'The Octop API request timed out.',
       );
     }
     if (hints.mutation) {
       return octopError(
         'UNAVAILABLE',
-        'OCTOP_USER_CREATE_OUTCOME_UNKNOWN',
-        'The Octop create request failed before a response. The outcome is unknown and was not retried.',
+        expertMutation
+          ? 'OCTOP_EXPERT_INSTALL_OUTCOME_UNKNOWN'
+          : 'OCTOP_USER_CREATE_OUTCOME_UNKNOWN',
+        expertMutation
+          ? 'The Octop expert install failed before a response. The outcome is unknown and was not retried.'
+          : 'The Octop create request failed before a response. The outcome is unknown and was not retried.',
       );
     }
     return octopError(
@@ -431,10 +457,15 @@ export class OctopManagementClient {
   ): Error {
     const code = readOctopCode(payload);
     if (hints.mutation && (status === 408 || status === 504)) {
+      const expertMutation = isExpertInstallPath(hints.path);
       return octopError(
         'UNAVAILABLE',
-        'OCTOP_USER_CREATE_OUTCOME_UNKNOWN',
-        'The Octop create request timed out. The outcome is unknown and was not retried.',
+        expertMutation
+          ? 'OCTOP_EXPERT_INSTALL_OUTCOME_UNKNOWN'
+          : 'OCTOP_USER_CREATE_OUTCOME_UNKNOWN',
+        expertMutation
+          ? 'The Octop expert install timed out. The outcome is unknown and was not retried.'
+          : 'The Octop create request timed out. The outcome is unknown and was not retried.',
       );
     }
     if (status === 408 || status === 504) {
@@ -477,10 +508,15 @@ export class OctopManagementClient {
       );
     }
     if (hints.mutation && status >= 500) {
+      const expertMutation = isExpertInstallPath(hints.path);
       return octopError(
         'UNAVAILABLE',
-        'OCTOP_USER_CREATE_OUTCOME_UNKNOWN',
-        'The Octop create request failed without a confirmed result. It was not retried.',
+        expertMutation
+          ? 'OCTOP_EXPERT_INSTALL_OUTCOME_UNKNOWN'
+          : 'OCTOP_USER_CREATE_OUTCOME_UNKNOWN',
+        expertMutation
+          ? 'The Octop expert install failed without a confirmed result. It was not retried.'
+          : 'The Octop create request failed without a confirmed result. It was not retried.',
         { httpStatus: status },
       );
     }
@@ -527,6 +563,10 @@ export class OctopManagementClient {
       return null;
     }
   }
+}
+
+function isExpertInstallPath(path: string): boolean {
+  return path.includes('/experts/published/') && path.endsWith('/install');
 }
 
 function octopError(

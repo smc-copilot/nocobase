@@ -252,6 +252,9 @@ const enUS = {
     portalAgentGrantsReadOnly:
       'You can view Agent Grants but need configure permission to create a user.',
     portalAgentGrantsEnabled: 'Enable Agent Grants',
+    portalAgentGrantsSupportsInstallAsUser: 'Enable install-as-user (as_user)',
+    portalAgentGrantsSupportsInstallAsUserHint:
+      'Enable only after this Octop instance is verified to honor ?as_user= and create agents under the target employee — not the admin. Default is off.',
     portalAgentGrantsApiBaseUrl: 'Management API base URL',
     portalAgentGrantsApiAuthMode: 'Management API auth',
     portalAgentGrantsBearerEnv: 'Bearer token env',
