@@ -1,0 +1,43 @@
+{
+  "created_user": {
+    "id": 24,
+    "username": "nb-golden-mwqmo6e9",
+    "role": "user",
+    "display_name": "NB Golden Probe",
+    "has_password": false,
+    "sso_linked": false,
+    "directory": true,
+    "mfa_active": false,
+    "disabled": false,
+    "login_failed_count": 0,
+    "login_locked": false,
+    "login_locked_until": 0,
+    "login_retry_after_seconds": 0,
+    "created_at": 1795278843,
+    "last_login_at": null,
+    "permissions": [
+      "agent_plugins",
+      "connector_builtin",
+      "connector_enabled",
+      "experts",
+      "mbti",
+      "memory",
+      "skill_builtin",
+      "skill_packages",
+      "skills",
+      "subagents",
+      "tasks",
+      "token_usage",
+      "tools"
+    ],
+    "role_name": "用户",
+    "avatar_icon": null,
+    "avatar_url": null,
+    "workspace_root_dir": null,
+    "token_quota": null,
+    "max_agents": 1,
+    "allowed_backend_types": ["docker"],
+    "email": null
+  },
+  "total": 3
+}

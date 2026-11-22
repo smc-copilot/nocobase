@@ -34,10 +34,27 @@ function resolveCasdoorOAuthConfig():
   return { issuer, clientId, clientSecret };
 }
 
+/** Loopback + public hostname so local 127.0.0.1 and app.superic.com both pass auth CSRF. */
+function resolveTrustedOrigins(): string[] {
+  const port =
+    process.env.APP_SERVER_PORT?.trim() ||
+    process.env.APP_PORT?.trim() ||
+    '13000';
+  const origins = [
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`,
+    `http://app.superic.com:${port}`,
+  ];
+  const publicOrigin = process.env.APP_PUBLIC_ORIGIN?.trim();
+  if (publicOrigin) origins.push(publicOrigin.replace(/\/$/, ''));
+  return [...new Set(origins)];
+}
+
 const auth: AppConfigFactory<AuthConfig> = defineAuthConfig({
   defaults: () => {
     const casdoor = resolveCasdoorOAuthConfig();
     return {
+      trustedOrigins: resolveTrustedOrigins(),
       plugins: [
         username({ displayUsername: false }),
         apiKey(),

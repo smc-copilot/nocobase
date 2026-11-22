@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { APP_TYPES, AUTO_LAUNCH_MODES, CASDOOR_AUTH_MODES } from '../config.js';
+import {
+  APP_TYPES,
+  AUTO_LAUNCH_MODES,
+  CASDOOR_AUTH_MODES,
+  OCTOP_API_AUTH_MODES,
+} from '../config.js';
 import type {
   AuthorizedApplicationView,
   LaunchResult,
@@ -15,6 +20,13 @@ import type {
   CasdoorUserView,
 } from '../services/casdoor-management-client.js';
 import type { UserApplicationGrants } from '../services/casdoor-application-grants.js';
+import type {
+  AgentGrantApplicationView,
+  AgentGrantCreateOptions,
+  AuthorizedEmployeeView,
+  EmployeeOctopState,
+} from '../services/agent-grants-read.js';
+import type { OctopPublishedExpert } from '../services/octop-management-client.js';
 
 export const AppCodeParam: z.ZodType<{ appCode: string }> = z.object({
   appCode: z
@@ -22,6 +34,11 @@ export const AppCodeParam: z.ZodType<{ appCode: string }> = z.object({
     .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
     .max(64),
 });
+
+const envName = z
+  .string()
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/u)
+  .max(128);
 
 export const CatalogCreateInput: z.ZodType<{
   appCode: string;
@@ -36,6 +53,12 @@ export const CatalogCreateInput: z.ZodType<{
   casdoorAppKey?: string | null;
   enabled?: boolean;
   sortOrder?: number;
+  agentGrantsEnabled?: boolean;
+  apiBaseUrl?: string | null;
+  apiAuthMode?: (typeof OCTOP_API_AUTH_MODES)[number] | null;
+  apiTokenEnv?: string | null;
+  apiUsernameEnv?: string | null;
+  apiPasswordEnv?: string | null;
 }> = z.strictObject({
   appCode: z
     .string()
@@ -55,6 +78,12 @@ export const CatalogCreateInput: z.ZodType<{
   casdoorAppKey: z.string().max(128).nullable().optional(),
   enabled: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
+  agentGrantsEnabled: z.boolean().optional(),
+  apiBaseUrl: z.string().max(512).nullable().optional(),
+  apiAuthMode: z.enum(OCTOP_API_AUTH_MODES).nullable().optional(),
+  apiTokenEnv: envName.nullable().optional(),
+  apiUsernameEnv: envName.nullable().optional(),
+  apiPasswordEnv: envName.nullable().optional(),
 });
 
 export const CatalogUpdateInput: z.ZodType<{
@@ -69,6 +98,12 @@ export const CatalogUpdateInput: z.ZodType<{
   casdoorAppKey?: string | null;
   enabled?: boolean;
   sortOrder?: number;
+  agentGrantsEnabled?: boolean;
+  apiBaseUrl?: string | null;
+  apiAuthMode?: (typeof OCTOP_API_AUTH_MODES)[number] | null;
+  apiTokenEnv?: string | null;
+  apiUsernameEnv?: string | null;
+  apiPasswordEnv?: string | null;
 }> = z.strictObject({
   name: z.string().min(1).max(128).optional(),
   appType: z.enum(APP_TYPES).optional(),
@@ -81,6 +116,12 @@ export const CatalogUpdateInput: z.ZodType<{
   casdoorAppKey: z.string().max(128).nullable().optional(),
   enabled: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
+  agentGrantsEnabled: z.boolean().optional(),
+  apiBaseUrl: z.string().max(512).nullable().optional(),
+  apiAuthMode: z.enum(OCTOP_API_AUTH_MODES).nullable().optional(),
+  apiTokenEnv: envName.nullable().optional(),
+  apiUsernameEnv: envName.nullable().optional(),
+  apiPasswordEnv: envName.nullable().optional(),
 });
 
 export const PreferencesInput: z.ZodType<{
@@ -115,6 +156,12 @@ export const CatalogApplicationSchema: z.ZodType<
     casdoorAppKey: z.string().nullable(),
     enabled: z.boolean(),
     sortOrder: z.number(),
+    agentGrantsEnabled: z.boolean(),
+    apiBaseUrl: z.string().nullable(),
+    apiAuthMode: z.string().nullable(),
+    apiTokenEnv: z.string().nullable(),
+    apiUsernameEnv: z.string().nullable(),
+    apiPasswordEnv: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -307,3 +354,209 @@ export const CasdoorUserGrantsSchema: z.ZodType<UserApplicationGrants> = z
     ),
   })
   .meta({ ref: 'EnterpriseAppPortalCasdoorUserGrants' });
+
+export const AgentGrantEmployeeParam: z.ZodType<{
+  appCode: string;
+  owner: string;
+  name: string;
+}> = z.object({
+  appCode: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
+    .max(64),
+  owner: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[^/]+$/u),
+  name: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[^/]+$/u),
+});
+
+export const AgentGrantOperationParam: z.ZodType<{ operationId: string }> =
+  z.object({
+    operationId: z.string().uuid(),
+  });
+
+export const OctopInstanceConfigInput: z.ZodType<{
+  agentGrantsEnabled: boolean;
+  apiBaseUrl: string | null;
+  apiAuthMode: (typeof OCTOP_API_AUTH_MODES)[number] | null;
+  apiTokenEnv: string | null;
+  apiUsernameEnv: string | null;
+  apiPasswordEnv: string | null;
+}> = z.strictObject({
+  agentGrantsEnabled: z.boolean(),
+  apiBaseUrl: z.string().max(512).nullable(),
+  apiAuthMode: z.enum(OCTOP_API_AUTH_MODES).nullable(),
+  apiTokenEnv: envName.nullable(),
+  apiUsernameEnv: envName.nullable(),
+  apiPasswordEnv: envName.nullable(),
+});
+
+export const AgentGrantCreateInput: z.ZodType<{
+  casdoorUserId: string;
+  displayName?: string | null;
+  email?: string | null;
+  role?: string;
+  permissions?: string[];
+  workspaceRootDir?: string | null;
+  tokenQuota?: number | null;
+  maxAgents?: number | null;
+  allowedBackendTypes?: string[];
+  createDefaultExpert?: boolean;
+  expertTemplateId?: string | null;
+}> = z.strictObject({
+  casdoorUserId: z
+    .string()
+    .regex(/^[^/]+\/[^/]+$/u)
+    .max(128),
+  displayName: z.string().max(128).nullable().optional(),
+  email: z.string().max(255).nullable().optional(),
+  role: z.string().min(1).max(64).optional(),
+  permissions: z.array(z.string().min(1).max(128)).max(200).optional(),
+  workspaceRootDir: z.string().max(512).nullable().optional(),
+  tokenQuota: z.number().int().nullable().optional(),
+  maxAgents: z.number().int().nullable().optional(),
+  allowedBackendTypes: z.array(z.string().min(1).max(64)).max(20).optional(),
+  createDefaultExpert: z.boolean().optional(),
+  expertTemplateId: z.string().min(1).max(128).nullable().optional(),
+});
+
+export const AgentGrantApplicationSchema: z.ZodType<AgentGrantApplicationView> =
+  z
+    .object({
+      appCode: z.string(),
+      name: z.string(),
+      appType: z.literal('octop'),
+      casdoorAppKey: z.string().nullable(),
+      enabled: z.boolean(),
+      agentGrantsEnabled: z.boolean(),
+      apiBaseUrl: z.string().nullable(),
+      apiAuthMode: z.string().nullable(),
+      apiTokenEnv: z.string().nullable(),
+      apiUsernameEnv: z.string().nullable(),
+      apiPasswordEnv: z.string().nullable(),
+    })
+    .meta({ ref: 'EnterpriseAppPortalAgentGrantApplication' });
+
+export const AuthorizedEmployeeSchema: z.ZodType<AuthorizedEmployeeView> = z
+  .object({
+    casdoorUserId: z.string(),
+    username: z.string(),
+    displayName: z.string(),
+    email: z.string(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalAuthorizedEmployee' });
+
+export const EmployeeOctopStateSchema: z.ZodType<EmployeeOctopState> = z
+  .object({
+    casdoorUserId: z.string(),
+    username: z.string(),
+    accountExists: z.boolean(),
+    disabled: z.boolean(),
+    octopUserId: z.string().nullable(),
+    experts: z.array(
+      z.object({
+        agentId: z.string(),
+        publishedExpertId: z.string().nullable(),
+        name: z.string().nullable(),
+        state: z.string().nullable(),
+        bootstrapPending: z.boolean(),
+        kind: z.string().nullable(),
+      }),
+    ),
+  })
+  .meta({ ref: 'EnterpriseAppPortalEmployeeOctopState' });
+
+export const PublishedExpertSchema: z.ZodType<OctopPublishedExpert> = z
+  .object({
+    id: z.string(),
+    slug: z.string().nullable(),
+    name: z.string().nullable(),
+    description: z.string().nullable(),
+    creatorUsername: z.string().nullable(),
+    iconUrl: z.string().nullable(),
+    updatedAt: z.string().nullable(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalPublishedExpert' });
+
+export const AgentGrantCreateOptionsSchema: z.ZodType<AgentGrantCreateOptions> =
+  z
+    .object({
+      roles: z.array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          systemRole: z.string().nullable(),
+          permissions: z.array(z.string()),
+          maxAgents: z.number().nullable(),
+          allowedBackendTypes: z.array(z.string()),
+        }),
+      ),
+      permissions: z.array(
+        z.object({
+          key: z.string(),
+          category: z.string().nullable(),
+          label: z.string().nullable(),
+        }),
+      ),
+      ldapConfigured: z.boolean(),
+      supportedBackendTypes: z.array(z.string()),
+      directoryLocked: z.literal(true),
+      expertTemplateSource: z.literal('published'),
+    })
+    .meta({ ref: 'EnterpriseAppPortalAgentGrantCreateOptions' });
+
+export const OctopConnectionTestSchema: z.ZodType<{
+  ok: true;
+  authMode: (typeof OCTOP_API_AUTH_MODES)[number];
+  healthOk: boolean;
+}> = z
+  .object({
+    ok: z.literal(true),
+    authMode: z.enum(OCTOP_API_AUTH_MODES),
+    healthOk: z.boolean(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalOctopConnectionTest' });
+
+export const AgentGrantOperationSchema: z.ZodType<{
+  id: string;
+  appCode: string;
+  casdoorUserId: string;
+  username: string;
+  actorUserId: string;
+  status: string;
+  expertTemplateId: string | null;
+  createOptionsSnapshot: Record<string, unknown>;
+  octopUserId: string | null;
+  agentId: string | null;
+  bootstrapStatus: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  startedAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}> = z
+  .object({
+    id: z.string(),
+    appCode: z.string(),
+    casdoorUserId: z.string(),
+    username: z.string(),
+    actorUserId: z.string(),
+    status: z.string(),
+    expertTemplateId: z.string().nullable(),
+    createOptionsSnapshot: z.record(z.string(), z.unknown()),
+    octopUserId: z.string().nullable(),
+    agentId: z.string().nullable(),
+    bootstrapStatus: z.string().nullable(),
+    errorCode: z.string().nullable(),
+    errorMessage: z.string().nullable(),
+    startedAt: z.string(),
+    updatedAt: z.string(),
+    completedAt: z.string().nullable(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalAgentGrantOperation' });

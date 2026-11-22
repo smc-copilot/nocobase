@@ -2,9 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import type { DatabaseManager } from '@nocobase/db';
 
-import type { PortalAppType } from '../config.js';
+import type { OctopApiAuthMode, PortalAppType } from '../config.js';
 import { APP_TYPES } from '../config.js';
 import { portalError } from '../errors.js';
+import {
+  assertOctopApiBaseUrl,
+  formatOctopApiBaseUrl,
+  type OctopUrlGuardOptions,
+} from './octop-url-guard.js';
 import {
   assertPublicHttpsUrl,
   composeLaunchUrl,
@@ -27,6 +32,12 @@ export interface PortalApplicationInput {
   readonly casdoorAppKey?: string | null;
   readonly enabled?: boolean;
   readonly sortOrder?: number;
+  readonly agentGrantsEnabled?: boolean;
+  readonly apiBaseUrl?: string | null;
+  readonly apiAuthMode?: OctopApiAuthMode | null;
+  readonly apiTokenEnv?: string | null;
+  readonly apiUsernameEnv?: string | null;
+  readonly apiPasswordEnv?: string | null;
 }
 
 export type PortalApplicationPatch = Partial<
@@ -47,6 +58,12 @@ export interface PortalApplicationRecord {
   readonly casdoorAppKey: string | null;
   readonly enabled: boolean;
   readonly sortOrder: number;
+  readonly agentGrantsEnabled: boolean;
+  readonly apiBaseUrl: string | null;
+  readonly apiAuthMode: string | null;
+  readonly apiTokenEnv: string | null;
+  readonly apiUsernameEnv: string | null;
+  readonly apiPasswordEnv: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -74,9 +91,20 @@ function toRecord(row: Record<string, unknown>): PortalApplicationRecord {
     casdoorAppKey: strOrNull(row.casdoorAppKey),
     enabled: toBool(row.enabled),
     sortOrder: Number(row.sortOrder ?? 0),
+    agentGrantsEnabled: toBool(row.agentGrantsEnabled),
+    apiBaseUrl: blankToNull(row.apiBaseUrl),
+    apiAuthMode: blankToNull(row.apiAuthMode),
+    apiTokenEnv: blankToNull(row.apiTokenEnv),
+    apiUsernameEnv: blankToNull(row.apiUsernameEnv),
+    apiPasswordEnv: blankToNull(row.apiPasswordEnv),
     createdAt: toDate(row.createdAt),
     updatedAt: toDate(row.updatedAt),
   };
+}
+
+function blankToNull(value: unknown): string | null {
+  const text = strOrNull(value);
+  return text && text.trim() ? text : null;
 }
 
 export class ApplicationCatalogService {
@@ -89,6 +117,8 @@ export class ApplicationCatalogService {
       readonly allowHttp?: boolean;
       readonly allowPrivateDns?: boolean;
     } = () => ({}),
+    private readonly octopAllowlist: () => readonly string[] = () => [],
+    private readonly octopUrlOptions: () => OctopUrlGuardOptions = () => ({}),
   ) {}
 
   public async list(): Promise<readonly PortalApplicationRecord[]> {
@@ -146,6 +176,7 @@ export class ApplicationCatalogService {
         'appCode "admin" is reserved.',
       );
     }
+    const apiBaseUrl = await this.normalizeApiBaseUrl(input.apiBaseUrl);
     await this.validateUrls(input);
     if (await this.getByCode(input.appCode)) {
       throw portalError(
@@ -173,6 +204,12 @@ export class ApplicationCatalogService {
         casdoorAppKey: input.casdoorAppKey ?? null,
         enabled: input.enabled ?? true,
         sortOrder: input.sortOrder ?? 0,
+        agentGrantsEnabled: input.agentGrantsEnabled ?? false,
+        apiBaseUrl,
+        apiAuthMode: input.apiAuthMode ?? null,
+        apiTokenEnv: input.apiTokenEnv ?? null,
+        apiUsernameEnv: input.apiUsernameEnv ?? null,
+        apiPasswordEnv: input.apiPasswordEnv ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -192,6 +229,9 @@ export class ApplicationCatalogService {
     actorId: string | null,
   ): Promise<PortalApplicationRecord> {
     const current = await this.requireByCode(appCode);
+    const apiBaseUrl = await this.normalizeApiBaseUrl(
+      patch.apiBaseUrl === undefined ? current.apiBaseUrl : patch.apiBaseUrl,
+    );
     const next = {
       ...current,
       ...patch,
@@ -199,6 +239,7 @@ export class ApplicationCatalogService {
       targetPath: patch.targetPath ?? current.targetPath,
       healthUrl:
         patch.healthUrl === undefined ? current.healthUrl : patch.healthUrl,
+      apiBaseUrl,
     };
     await this.validateUrls(next);
     await this.database()
@@ -216,6 +257,12 @@ export class ApplicationCatalogService {
         casdoorAppKey: next.casdoorAppKey,
         enabled: next.enabled,
         sortOrder: next.sortOrder,
+        agentGrantsEnabled: next.agentGrantsEnabled,
+        apiBaseUrl: next.apiBaseUrl,
+        apiAuthMode: next.apiAuthMode,
+        apiTokenEnv: next.apiTokenEnv,
+        apiUsernameEnv: next.apiUsernameEnv,
+        apiPasswordEnv: next.apiPasswordEnv,
         updatedAt: new Date(),
       })
       .where('appCode', '=', appCode)
@@ -245,5 +292,19 @@ export class ApplicationCatalogService {
     if (input.healthUrl) {
       await assertPublicHttpsUrl(input.healthUrl, this.allowlist(), guard);
     }
+  }
+
+  /**
+   * Management API URLs use the Octop allowlist, not the employee launch guard.
+   */
+  private async normalizeApiBaseUrl(
+    raw: string | null | undefined,
+  ): Promise<string | null> {
+    if (!raw || !raw.trim()) return null;
+    const url = await assertOctopApiBaseUrl(raw, this.octopAllowlist(), {
+      ...this.octopUrlOptions(),
+      ...(this.lookup ? { lookup: this.lookup } : {}),
+    });
+    return formatOctopApiBaseUrl(url);
   }
 }

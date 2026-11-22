@@ -1,0 +1,31 @@
+{
+  "ok": true,
+  "started_at": 1795137161,
+  "db": true,
+  "users_loaded": 2,
+  "agents_running": 2,
+  "channels": [
+    {
+      "id": "octop-dashboard",
+      "type": "dashboard",
+      "connected": false,
+      "last_inbound_at": null,
+      "last_outbound_at": null,
+      "reconnect_count": 0,
+      "last_reconnect_at": null,
+      "dropped_duplicate": 0,
+      "dropped_stale": 0
+    },
+    {
+      "id": "octop-cli",
+      "type": "cli",
+      "connected": false,
+      "last_inbound_at": null,
+      "last_outbound_at": null,
+      "reconnect_count": 0,
+      "last_reconnect_at": null,
+      "dropped_duplicate": 0,
+      "dropped_stale": 0
+    }
+  ]
+}

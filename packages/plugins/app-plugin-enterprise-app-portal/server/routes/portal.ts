@@ -18,6 +18,7 @@ import {
   SETTINGS_CATALOG,
 } from '../config.js';
 import type { EnterprisePortalServices } from '../services/composition.js';
+import { registerAgentGrantRoutes } from './agent-grants.js';
 import type { AccessIdentity } from '../services/casdoor-application-access.js';
 import type { PortalApplicationRecord } from '../services/application-catalog.js';
 import {
@@ -511,5 +512,10 @@ export function createPortalRouter(
     },
   );
 
+  registerAgentGrantRoutes(router, {
+    services,
+    permit,
+    identityOf,
+  });
   return router;
 }

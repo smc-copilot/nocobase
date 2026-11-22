@@ -2,6 +2,7 @@ export const ERROR_DOMAIN = 'enterpriseAppPortal';
 export const SETTINGS_CATALOG = 'enterpriseAppPortal.catalog';
 export const SETTINGS_AUDIT = 'enterpriseAppPortal.audit';
 export const SETTINGS_CASDOOR = 'enterpriseAppPortal.casdoor';
+export const SETTINGS_AGENT_GRANTS = 'enterpriseAppPortal.agentGrants';
 export const PORTAL_SETTINGS_SECTION = 'enterprise-app-portal';
 
 export const APP_TYPES = ['octop', 'weknora', 'nocobase', 'https'] as const;
@@ -24,6 +25,48 @@ export type AccessSource = (typeof ACCESS_SOURCES)[number];
 
 export const CASDOOR_AUTH_MODES = ['query', 'clientCredentials'] as const;
 export type CasdoorManagementAuth = (typeof CASDOOR_AUTH_MODES)[number];
+
+export const OCTOP_API_AUTH_MODES = [
+  'bearer_env',
+  'password_login_env',
+] as const;
+export type OctopApiAuthMode = (typeof OCTOP_API_AUTH_MODES)[number];
+
+/** Comma-separated Octop management API host allowlist (no secrets). */
+export const OCTOP_API_HOST_ALLOWLIST_ENV = 'OCTOP_API_HOST_ALLOWLIST';
+/** When true, allowlisted Octop API hosts may use http://. */
+export const OCTOP_API_ALLOW_HTTP_ENV = 'OCTOP_API_ALLOW_HTTP';
+/** When true, skip private/link-local DNS rejection for allowlisted Octop API hosts. */
+export const OCTOP_API_ALLOW_PRIVATE_DNS_ENV = 'OCTOP_API_ALLOW_PRIVATE_DNS';
+
+export const AGENT_GRANT_STATUSES = [
+  'PREFLIGHTING',
+  'SUBMITTING',
+  'ACCOUNT_EXISTS',
+  'USER_CREATED',
+  'BOOTSTRAP_PENDING',
+  'COMPLETED',
+  'BOOTSTRAP_FAILED',
+  'FAILED_NO_MUTATION',
+  'OUTCOME_UNKNOWN',
+  'ACCOUNT_EXISTS_UNATTRIBUTED',
+  'SAFE_TO_RETRY',
+  'MANUAL_REVIEW',
+  'BLOCKED',
+] as const;
+export type AgentGrantStatus = (typeof AGENT_GRANT_STATUSES)[number];
+
+/** Statuses that release the per-employee create lock. */
+export const AGENT_GRANT_TERMINAL_STATUSES = [
+  'ACCOUNT_EXISTS',
+  'COMPLETED',
+  'BOOTSTRAP_FAILED',
+  'FAILED_NO_MUTATION',
+  'ACCOUNT_EXISTS_UNATTRIBUTED',
+  'SAFE_TO_RETRY',
+  'MANUAL_REVIEW',
+  'BLOCKED',
+] as const;
 
 /** Casdoor Permission.name prefix. The remainder is the Casdoor application name. */
 export const DEFAULT_CASDOOR_PERMISSION_PREFIX = 'nocobase-portal-app-';
@@ -113,6 +156,17 @@ export interface EnterpriseAppPortalConfig {
    * Use only on trusted intranet deployments.
    */
   readonly launchAllowPrivateDns?: boolean;
+  /**
+   * Hosts the deployment trusts for server-side Octop management API calls.
+   * Independent of `launchHostAllowlist`. Empty denies every API URL.
+   */
+  readonly octopApiHostAllowlist?: readonly string[];
+  /** When true, allowlisted Octop API hosts may use `http://`. */
+  readonly octopApiAllowHttp?: boolean;
+  /**
+   * When true, skip private/link-local DNS rejection for allowlisted Octop API hosts.
+   */
+  readonly octopApiAllowPrivateDns?: boolean;
   readonly health?: {
     readonly timeoutMs?: number;
     readonly concurrency?: number;

@@ -132,14 +132,24 @@ describe('System settings navigation', () => {
 
   it('groups modules into categories, opens a tabbed module on its first readable tab and hides empty categories', () => {
     const routes = resolve();
+    const business = [
+      ['settingsPortalCasdoorConnection', '/settings/portal-casdoor'],
+      ['settingsPortalCasdoorGrants', '/settings/portal-grants'],
+      ['settingsPortalAgentGrants', '/settings/portal-agent-grants'],
+      ['settingsPortalCatalog', '/settings/portal-catalog'],
+    ];
+    const system = [['settingsPortalAudit', '/settings/portal-audit']];
     expect(catalog(routes)).toEqual([
       [
         'settingsAccount',
         [
           ['settingsUsers', '/settings/users'],
+          ['settingsIdentityBindings', '/settings/identity-bindings'],
           ['permissionManagement', '/settings/roles'],
         ],
       ],
+      ['settingsBusiness', business],
+      ['settingsSystem', system],
     ]);
     const roles = find(routes, 'settingsRoles');
     expect(catalog(routes, new Set([routeKey(roles)]))).toEqual([
@@ -147,14 +157,25 @@ describe('System settings navigation', () => {
         'settingsAccount',
         [
           ['settingsUsers', '/settings/users'],
+          ['settingsIdentityBindings', '/settings/identity-bindings'],
           ['permissionManagement', '/settings/default-access'],
         ],
       ],
+      ['settingsBusiness', business],
+      ['settingsSystem', system],
     ]);
     const denied = new Set(
-      ['settingsUsers', 'settingsRoles', 'settingsDefaultAccess'].map((name) =>
-        routeKey(find(routes, name)),
-      ),
+      [
+        'settingsUsers',
+        'settingsIdentityBindings',
+        'settingsRoles',
+        'settingsDefaultAccess',
+        'settingsPortalCasdoorConnection',
+        'settingsPortalCasdoorGrants',
+        'settingsPortalAgentGrants',
+        'settingsPortalCatalog',
+        'settingsPortalAudit',
+      ].map((name) => routeKey(find(routes, name))),
     );
     expect(catalog(routes, denied)).toEqual([]);
     // Without a module to open, the sidebar entry disappears too.
@@ -192,7 +213,10 @@ describe('System settings navigation', () => {
     );
     expect(catalog(routes).at(-1)).toEqual([
       'settingsSystem',
-      [['notificationManagement', '/settings/notifications/logs']],
+      [
+        ['settingsPortalAudit', '/settings/portal-audit'],
+        ['notificationManagement', '/settings/notifications/logs'],
+      ],
     ]);
     expect(buildRouteNavigation(routes, new Set())).toHaveLength(1);
     expect(selectedNavigationId(routes, '/settings/notifications/logs')).toBe(

@@ -10,9 +10,43 @@ function Clear-AgentEnvOverrides {
       'DB_DIALECT', 'DB_STORAGE', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USER',
       'DB_USERNAME', 'DB_PASSWORD', 'DB_TABLE_PREFIX', 'DB_FILENAME',
       'PROXY_TARGET_URL', 'DEBUG', 'APP_VITE_DEV_PORT', 'APP_VITE_DEV_URL',
-      'APP_SERVER_PORT', 'NOCOBASE_STRICT_STARTUP', 'BETTER_AUTH_URL'
+      'APP_SERVER_PORT', 'APP_PUBLIC_ORIGIN', 'NOCOBASE_STRICT_STARTUP', 'BETTER_AUTH_URL'
     )) {
     Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+  }
+}
+
+function Read-DotEnvValue {
+  param([string]$Path, [string]$Key)
+  if (-not (Test-Path $Path)) { return $null }
+  foreach ($line in Get-Content $Path) {
+    if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
+    $name, $value = $line -split '=', 2
+    if ($name.Trim() -eq $Key) { return $value.Trim().Trim('"').Trim("'") }
+  }
+  return $null
+}
+
+# Export app .env into this process so child Node sees OCTOP_* / CASDOOR_* etc.
+# (Standalone config loads .env for AppConfig, but plugins that read process.env need this.)
+function Import-AppDotEnv {
+  param([string]$Path)
+  if (-not (Test-Path $Path)) { return }
+  foreach ($line in Get-Content $Path) {
+    if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
+    $name, $value = $line -split '=', 2
+    $name = $name.Trim()
+    if (-not $name) { continue }
+    $value = $value.Trim()
+    if (
+      ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+      ($value.StartsWith("'") -and $value.EndsWith("'"))
+    ) {
+      $value = $value.Substring(1, $value.Length - 2)
+    } elseif ($value -match '^(.*?)\s+#') {
+      $value = $Matches[1].TrimEnd()
+    }
+    Set-Item -Path "Env:$name" -Value $value
   }
 }
 
@@ -70,13 +104,22 @@ if (-not (Test-Path (Join-Path $AppRoot '.env'))) {
   throw '[start-dev] Missing .env.'
 }
 
+Import-AppDotEnv -Path (Join-Path $AppRoot '.env')
+$localEnv = Join-Path $AppRoot '.env.local'
+if (Test-Path $localEnv) { Import-AppDotEnv -Path $localEnv }
+
 $ViteHost = '127.0.0.1'
 $VitePort = 5173
 $ServerPort = 13000
 $BasePath = '/main'
+$PublicOrigin = Read-DotEnvValue -Path (Join-Path $AppRoot '.env') -Key 'APP_PUBLIC_ORIGIN'
+if (-not $PublicOrigin) {
+  $PublicOrigin = "http://127.0.0.1:${ServerPort}"
+}
+$PublicOrigin = $PublicOrigin.TrimEnd('/')
 $ViteUrl = "http://${ViteHost}:${VitePort}${BasePath}/"
 $HealthUrl = "http://127.0.0.1:${ServerPort}${BasePath}/api/healthz"
-$AppUrl = "http://127.0.0.1:${ServerPort}${BasePath}/"
+$AppUrl = "${PublicOrigin}${BasePath}/"
 $ViteLog = Join-Path $AppRoot 'storage/vite-dev.log'
 $ServerLog = Join-Path $AppRoot 'storage/server-dev.log'
 

@@ -87,6 +87,75 @@ export class CasdoorApplicationGrants {
     return this.guard((client) => client.listApplications(input));
   }
 
+  public async findUser(
+    casdoorUserId: string,
+  ): Promise<CasdoorUserView | undefined> {
+    const userId = requireUserId(casdoorUserId);
+    const name = userId.slice(userId.indexOf('/') + 1);
+    return this.guard(async (client) => {
+      const listed = await client.listUsers({
+        organization: client.organization(),
+        query: name,
+        page: 1,
+        pageSize: 50,
+      });
+      return listed.users.find(
+        (user) => user.id === userId || `${user.owner}/${user.name}` === userId,
+      );
+    });
+  }
+
+  /**
+   * Employees Casdoor enforce allows for one application.
+   * Direct permission users and inherited group or role grants both qualify.
+   * Forbidden and deleted users are omitted. A missing or disabled permission
+   * yields an empty list. Enforce is the authority; a deny or an unreadable
+   * decision excludes the employee.
+   */
+  public async listApplicationUsers(
+    applicationName: string,
+  ): Promise<readonly CasdoorUserView[]> {
+    return this.guard(async (client) => {
+      const permissions = await client.listPermissions(
+        client.permissionOwner(),
+      );
+      const permission = namespaced(client, permissions).find(
+        (entry) =>
+          applicationNameFromPermission(
+            client.permissionNamePrefix(),
+            entry.name,
+          ) === applicationName,
+      );
+      if (!permission || !permission.isEnabled) return [];
+      const users: CasdoorUserView[] = [];
+      const pageSize = 100;
+      for (let page = 1; page <= 20; page += 1) {
+        const listed = await client.listUsers({
+          organization: client.organization(),
+          page,
+          pageSize,
+        });
+        for (const user of listed.users) {
+          if (user.isForbidden || user.isDeleted) continue;
+          const id = user.id.includes('/')
+            ? user.id
+            : `${user.owner}/${user.name}`;
+          const decision = await client.enforce({
+            permissionId: permissionId(permission),
+            subject: id,
+            resource: applicationName,
+            action: READ_ACTION,
+          });
+          if (decision !== 'allow') continue;
+          users.push(user);
+        }
+        if (listed.users.length < pageSize) break;
+      }
+      users.sort((left, right) => left.name.localeCompare(right.name));
+      return users;
+    });
+  }
+
   public async list(casdoorUserId: string): Promise<UserApplicationGrants> {
     return this.guard(async (client) => {
       const userId = requireUserId(casdoorUserId);
@@ -132,19 +201,6 @@ export class CasdoorApplicationGrants {
           );
         }
       }
-      if (desired.length > 0) {
-        const known = await client.listApplications();
-        const names = new Set(known.applications.map((app) => app.name));
-        for (const name of desired) {
-          if (!names.has(name)) {
-            throw portalError(
-              'INVALID_ARGUMENT',
-              'APPLICATION_UNKNOWN',
-              `Casdoor has no application named ${name}.`,
-            );
-          }
-        }
-      }
       const permissions = await client.listPermissions(
         client.permissionOwner(),
       );
@@ -157,8 +213,27 @@ export class CasdoorApplicationGrants {
         );
         if (applicationName) byName.set(applicationName, permission);
       }
-      const desiredSet = new Set(desired);
-      for (const applicationName of desired) {
+      const knownNames = new Set(
+        (await client.listApplications()).applications.map((app) => app.name),
+      );
+      // Casdoor renames leave stale permission names in the UI selection. Drop
+      // those (they are revoked below) but still reject brand-new unknown names.
+      const desiredKnown: string[] = [];
+      for (const name of desired) {
+        if (knownNames.has(name)) {
+          desiredKnown.push(name);
+          continue;
+        }
+        const stale = byName.get(name);
+        if (stale?.users.includes(userId)) continue;
+        throw portalError(
+          'INVALID_ARGUMENT',
+          'APPLICATION_UNKNOWN',
+          `Casdoor has no application named ${name}.`,
+        );
+      }
+      const desiredSet = new Set(desiredKnown);
+      for (const applicationName of desiredKnown) {
         const existing = byName.get(applicationName);
         if (!existing) {
           await this.addGrant(client, userId, applicationName);

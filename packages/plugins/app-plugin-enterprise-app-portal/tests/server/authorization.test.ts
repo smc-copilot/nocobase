@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { EnterprisePortalAuthorizationProvider } from '../../server/authorization.js';
 import {
   PORTAL_SETTINGS_SECTION,
+  SETTINGS_AGENT_GRANTS,
   SETTINGS_AUDIT,
   SETTINGS_CASDOOR,
   SETTINGS_CATALOG,
@@ -39,6 +40,12 @@ describe('portal authz.settings registration', () => {
       authz.resourceTypes
         .get('settings')
         .items?.get(SETTINGS_CASDOOR)
+        ?.actions.map((entry) => entry.name),
+    ).toEqual(['read', 'configure']);
+    expect(
+      authz.resourceTypes
+        .get('settings')
+        .items?.get(SETTINGS_AGENT_GRANTS)
         ?.actions.map((entry) => entry.name),
     ).toEqual(['read', 'configure']);
   });

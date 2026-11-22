@@ -1,0 +1,18 @@
+[
+  {
+    "agent_id": "5MT7KQ",
+    "owner_username": "admin",
+    "kind": "expert",
+    "state": "running",
+    "bootstrap_pending": true,
+    "published_expert_id": null
+  },
+  {
+    "agent_id": "E3WCWE",
+    "owner_username": "SMC-SZ-HR15563",
+    "kind": "expert",
+    "state": "running",
+    "bootstrap_pending": false,
+    "published_expert_id": "01M7VWN48SJ8R4GCFEF5SPK9ZR"
+  }
+]

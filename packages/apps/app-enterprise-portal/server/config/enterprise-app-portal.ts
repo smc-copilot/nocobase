@@ -1,6 +1,8 @@
 import {
   defineAppConfig,
+  envBoolean,
   envString,
+  envStrings,
   type AppConfigFactory,
 } from '@nocobase/app-server/config';
 import {
@@ -10,6 +12,9 @@ import {
   CASDOOR_ENDPOINT_ENV,
   CASDOOR_ORGANIZATION_ENV,
   CASDOOR_PERMISSION_OWNER_ENV,
+  OCTOP_API_ALLOW_HTTP_ENV,
+  OCTOP_API_ALLOW_PRIVATE_DNS_ENV,
+  OCTOP_API_HOST_ALLOWLIST_ENV,
   type EnterpriseAppPortalConfig,
 } from '@superice/app-plugin-enterprise-app-portal/server';
 
@@ -17,6 +22,10 @@ import {
  * Isolation default: `contractFixture` so local screenshots can show authorized
  * cards without a live Casdoor. Production must set `access.source` to a proven
  * Casdoor contract or leave it `unconfigured` (fail closed).
+ *
+ * Octop management API hosts are never hard-coded here: set
+ * `OCTOP_API_HOST_ALLOWLIST` in the application `.env`. An empty allowlist
+ * rejects every management API URL.
  */
 const enterpriseAppPortal: AppConfigFactory<EnterpriseAppPortalConfig> =
   defineAppConfig({
@@ -24,11 +33,13 @@ const enterpriseAppPortal: AppConfigFactory<EnterpriseAppPortalConfig> =
       launchHostAllowlist: [
         'copilot.superic.com',
         'superic.com',
-        'app.superice.com',
         'app.superic.com',
       ],
       launchAllowHttp: true,
       launchAllowPrivateDns: true,
+      octopApiHostAllowlist: [],
+      octopApiAllowHttp: false,
+      octopApiAllowPrivateDns: false,
       access: {
         source: 'managementApi',
         managementApi: {
@@ -84,6 +95,21 @@ const enterpriseAppPortal: AppConfigFactory<EnterpriseAppPortalConfig> =
             'Casdoor application client secret used for management API calls. Never commit it.',
         },
       ),
+      [OCTOP_API_HOST_ALLOWLIST_ENV]: envStrings('octopApiHostAllowlist', ',', {
+        required: false,
+        description:
+          'Comma-separated hostnames trusted for Octop management API calls. Distinct from launchHostAllowlist. Empty rejects every API URL.',
+      }),
+      [OCTOP_API_ALLOW_HTTP_ENV]: envBoolean('octopApiAllowHttp', {
+        required: false,
+        description:
+          'When true, allowlisted Octop API hosts may use http://. Default false.',
+      }),
+      [OCTOP_API_ALLOW_PRIVATE_DNS_ENV]: envBoolean('octopApiAllowPrivateDns', {
+        required: false,
+        description:
+          'When true, skip private/link-local DNS rejection for allowlisted Octop API hosts. Default false.',
+      }),
     },
   });
 

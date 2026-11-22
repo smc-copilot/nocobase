@@ -140,7 +140,7 @@ function createStore() {
     }
     return Response.json({ status: 'error', msg: 'unexpected' });
   };
-  return { permissions, posts, fetchImpl };
+  return { applications, permissions, posts, fetchImpl };
 }
 
 function grantsFor(store: ReturnType<typeof createStore>) {
@@ -246,6 +246,51 @@ describe('CasdoorApplicationGrants', () => {
       grants.replace('smartcore/alice', ['missing']),
     ).rejects.toMatchObject({ reason: 'APPLICATION_UNKNOWN' });
     expect(store.posts).toEqual([]);
+  });
+
+  it('drops renamed Casdoor apps still on the user and keeps known ones', async () => {
+    const store = createStore();
+    store.permissions.push({
+      owner: 'smartcore',
+      name: 'nocobase-portal-app-octop',
+      displayName: 'octop',
+      users: ['smartcore/alice'],
+      groups: [],
+      roles: [],
+      resources: ['octop'],
+      actions: ['Read'],
+      resourceType: 'Application',
+      effect: 'Allow',
+      state: 'Approved',
+      isEnabled: true,
+    });
+    store.applications.splice(0, store.applications.length, {
+      name: 'octop-uat',
+      displayName: 'Octop UAT',
+      organization: 'smartcore',
+      owner: 'admin',
+    });
+    const grants = grantsFor(store);
+    const view = await grants.replace('smartcore/alice', [
+      'octop',
+      'octop-uat',
+    ]);
+    expect(view.grants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          applicationName: 'octop-uat',
+          source: 'direct',
+          enforced: true,
+        }),
+      ]),
+    );
+    expect(view.grants.some((grant) => grant.applicationName === 'octop')).toBe(
+      false,
+    );
+    const stale = store.permissions.find(
+      (permission) => permission.name === 'nocobase-portal-app-octop',
+    );
+    expect(stale?.users).toEqual([]);
   });
 
   it('fails closed when Casdoor is not configured', async () => {

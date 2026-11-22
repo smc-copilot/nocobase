@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "has_bind_password": true,
+  "display_name": "OA",
+  "warnings": ["cleartext_ldap", "no_admin_groups"]
+}

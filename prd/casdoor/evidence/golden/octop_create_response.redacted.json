@@ -1,0 +1,19 @@
+{
+  "http_status": 201,
+  "body": {
+    "id": 24,
+    "username": "nb-golden-mwqmo6e9",
+    "directory": true,
+    "has_password": false,
+    "default_expert": {
+      "requested": true,
+      "source": "published",
+      "template_id": "01M7SH5HEGK5VC8MR87F2T185F",
+      "status": "created",
+      "agent_id": "8NVXZ8",
+      "bootstrap_status": "pending",
+      "error_code": null,
+      "error_message": null
+    }
+  }
+}

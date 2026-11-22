@@ -47,9 +47,14 @@ const enUS = {
     refreshFromCasdoor: 'Refresh from Casdoor',
     casdoorAppKey: 'Casdoor app',
     notInPortal: 'Not in portal',
+    imported: 'Imported',
     importToPortal: 'Import',
     removeFromPortal: 'Disable in portal',
     enableInPortal: 'Enable in portal',
+    configure: 'Configure',
+    configureDrawerTitle: 'Application configuration',
+    agentGrantsOnlyOctop:
+      'Management API settings and connection tests apply to Octop applications only.',
     sortOrder: 'Sort',
     appCode: 'App code',
     appName: 'Name',
@@ -134,8 +139,106 @@ const enUS = {
       'You can view grants but need configure permission to save.',
     grantsSaved: 'Application grants saved',
     grantsFailed: 'Unable to load or save application grants.',
+    grantsStaleTitle: 'Stale Casdoor application names',
+    grantsStaleHint:
+      'Direct grants still include applications Casdoor no longer has: {{names}}. Saving will revoke those grants; check the new application name instead (for example octop-uat after a rename).',
     grantDirect: 'Direct grant',
     grantInherited: 'Inherited (cannot revoke here)',
+  },
+  settings: {
+    ...systemEnUS.settings,
+    portalAgentGrants: 'Agent grants',
+    portalAgentGrantsDescription:
+      'Create an Octop directory user and an optional published expert for one authorized employee. Tokens stay on the server.',
+    portalAgentGrantsApplications: 'Octop applications',
+    portalAgentGrantsEmployees: 'Authorized employees',
+    portalAgentGrantsTemplates: 'Published templates',
+    portalAgentGrantsEmptyApplications:
+      'No Octop application has Agent Grants enabled.',
+    portalAgentGrantsSelectApplication: 'Select an Octop application.',
+    portalAgentGrantsSelectEmployee: 'Select one employee.',
+    portalAgentGrantsSelectTemplate: 'Select one published template.',
+    portalAgentGrantsSearchTemplates: 'Search templates',
+    portalAgentGrantsNoTemplates: 'This instance has no published templates.',
+    portalAgentGrantsAccountExists:
+      'This employee already has an account on this Octop instance. This action will not create a user.',
+    portalAgentGrantsAccountMissing: 'No Octop account on this instance.',
+    portalAgentGrantsAccountDisabled:
+      'The Octop account exists and is disabled. Agent Grants will not create a replacement.',
+    portalAgentGrantsOctopUserId: 'Octop user ID',
+    portalAgentGrantsInstalledExperts: 'Installed experts',
+    portalAgentGrantsNoExperts: 'No installed experts.',
+    portalAgentGrantsAgentId: 'Agent ID',
+    portalAgentGrantsPublishedExpertId: 'Published template ID',
+    portalAgentGrantsExpertState: 'State',
+    portalAgentGrantsBootstrapPending: 'Expert initialization in progress',
+    portalAgentGrantsCreate: 'Create expert',
+    portalAgentGrantsCreateTitle: 'Create Octop user',
+    portalAgentGrantsUsername: 'Username',
+    portalAgentGrantsDisplayName: 'Display name',
+    portalAgentGrantsEmail: 'Email',
+    portalAgentGrantsDirectoryLocked: 'Directory account',
+    portalAgentGrantsDirectoryNote:
+      'Directory login stays on. This version does not create a local Octop password.',
+    portalAgentGrantsRole: 'Role',
+    portalAgentGrantsPermissions: 'Permissions',
+    portalAgentGrantsMaxAgents: 'Max agents',
+    portalAgentGrantsTokenQuota: 'Token quota',
+    portalAgentGrantsWorkspaceRoot: 'Workspace root',
+    portalAgentGrantsBackendTypes: 'Allowed backend types',
+    portalAgentGrantsCreateDefaultExpert: 'Create default expert',
+    portalAgentGrantsBoundTemplate: 'Bound published template',
+    portalAgentGrantsNoBoundTemplate:
+      'Select a published template before creating a default expert.',
+    portalAgentGrantsLdapRequired:
+      'Octop LDAP is not ready. Directory accounts cannot be created until it is configured.',
+    portalAgentGrantsNullableHint: 'Leave blank for null. Blank is not zero.',
+    portalAgentGrantsSubmit: 'Create user',
+    portalAgentGrantsUserCreated: 'User created',
+    portalAgentGrantsCompleted: 'Completed',
+    portalAgentGrantsBootstrapFailed: 'Expert initialization failed',
+    portalAgentGrantsOutcomeUnknown: 'Outcome unknown',
+    portalAgentGrantsOutcomeUnknownHint:
+      'The create request did not return a confirmed result. Reconcile reads Octop and does not send another create.',
+    portalAgentGrantsReconcile: 'Reconcile',
+    portalAgentGrantsRefreshStatus: 'Refresh status',
+    portalAgentGrantsGrantDirect: 'Direct',
+    portalAgentGrantsGrantInherited: 'Inherited',
+    portalAgentGrantsForbidden: 'Forbidden',
+    portalAgentGrantsTemplateId: 'Template ID',
+    portalAgentGrantsPublisher: 'Publisher',
+    portalAgentGrantsUpdatedAt: 'Updated',
+    portalAgentGrantsFailed: 'Unable to load or create the Agent Grant.',
+    portalAgentGrantsReadOnly:
+      'You can view Agent Grants but need configure permission to create a user.',
+    portalAgentGrantsEnabled: 'Enable Agent Grants',
+    portalAgentGrantsApiBaseUrl: 'Management API base URL',
+    portalAgentGrantsApiAuthMode: 'Management API auth',
+    portalAgentGrantsBearerEnv: 'Bearer token env',
+    portalAgentGrantsPasswordLoginEnv: 'Password login env',
+    portalAgentGrantsApiTokenEnv: 'Token env name',
+    portalAgentGrantsApiUsernameEnv: 'Username env name',
+    portalAgentGrantsApiPasswordEnv: 'Password env name',
+    portalAgentGrantsEnvNameHint:
+      'Enter server environment variable names only (for example OCTOP_API_TOKEN_99170). This page never shows or stores token or password values. Use the API origin without a trailing /api.',
+    portalAgentGrantsConfigSaved: 'Agent Grants connection saved',
+    portalAgentGrantsConfigFailed:
+      'Unable to save the Agent Grants connection.',
+    portalAgentGrantsNeedApiUrl:
+      'Enter an http(s) management API origin before enabling Agent Grants (for example https://ai.superic.com:8091, without /api).',
+    portalAgentGrantsNeedEnvName:
+      'Enter a valid environment variable name (letters, digits, underscore). Do not paste a token or password into this form; put the real value in the application .env.',
+    portalAgentGrantsSaveBeforeTest:
+      'Enable Agent Grants and save successfully before testing the connection.',
+    portalAgentGrantsTestConnection: 'Test management connection',
+    portalAgentGrantsConnectionOk: 'Octop management connection succeeded',
+    portalAgentGrantsConnectionFailed:
+      'Unable to reach the Octop management API.',
+    portalAgentGrantsOptionsFailed:
+      'Unable to load roles or permissions. Creating is blocked.',
+    portalAgentGrantsLookupFailed:
+      'Unable to read the Octop account. Creating is blocked.',
+    portalAgentGrantsNoAdminRole: 'Administrator roles are not available here.',
   },
 };
 

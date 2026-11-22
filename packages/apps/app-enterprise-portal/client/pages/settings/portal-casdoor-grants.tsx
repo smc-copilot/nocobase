@@ -539,12 +539,25 @@ export default function PortalCasdoorGrantsPage(): ReactElement {
     if (missing.length > 0) void refreshGrantsForUsers(missing);
   };
 
+  const knownApplicationNames = useMemo(
+    () => new Set(applications.map((app) => app.name)),
+    [applications],
+  );
+
+  const staleDirectNames = useMemo(
+    () => [...directNames].filter((name) => !knownApplicationNames.has(name)),
+    [directNames, knownApplicationNames],
+  );
+
   const save = async () => {
     if (selectedUsers.length === 0 || !canConfigure) return;
     setBusy('save');
     setActionError(undefined);
     try {
-      const applicationNames = [...directNames];
+      // Drop renamed/deleted Casdoor apps still present on the user's grants.
+      const applicationNames = [...directNames].filter((name) =>
+        knownApplicationNames.has(name),
+      );
       const nextMap = new Map(grantsByUser);
       for (const user of selectedUsers) {
         const result = await api.request<{
@@ -796,6 +809,16 @@ export default function PortalCasdoorGrantsPage(): ReactElement {
             <p className='text-xs text-muted-foreground'>
               {t('portal.grantsBatchHint')}
             </p>
+          ) : null}
+          {staleDirectNames.length > 0 ? (
+            <Alert>
+              <AlertTitle>{t('portal.grantsStaleTitle')}</AlertTitle>
+              <AlertDescription>
+                {t('portal.grantsStaleHint', {
+                  names: staleDirectNames.join(', '),
+                })}
+              </AlertDescription>
+            </Alert>
           ) : null}
           {selectedUsers.length === 0 ? (
             <p className='text-sm text-muted-foreground'>

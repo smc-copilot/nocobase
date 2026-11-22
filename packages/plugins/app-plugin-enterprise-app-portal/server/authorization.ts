@@ -7,6 +7,7 @@ import { ServiceProvider } from '@nocobase/service-provider';
 
 import {
   PORTAL_SETTINGS_SECTION,
+  SETTINGS_AGENT_GRANTS,
   SETTINGS_AUDIT,
   SETTINGS_CASDOOR,
   SETTINGS_CATALOG,
@@ -42,6 +43,17 @@ export function registerPortalSettings(authz: AppAuthorization): void {
       id: SETTINGS_AUDIT,
       title: 'Portal access audit',
       actions: [{ name: 'read', title: 'View portal access audit events' }],
+    },
+    {
+      id: SETTINGS_AGENT_GRANTS,
+      title: 'Octop agent grants',
+      actions: [
+        { name: 'read', title: 'View Octop agent grant state' },
+        {
+          name: 'configure',
+          title: 'Configure Octop instances and create agent grants',
+        },
+      ],
     },
   ] as const;
   for (const item of items) {

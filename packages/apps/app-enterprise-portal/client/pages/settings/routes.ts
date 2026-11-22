@@ -8,6 +8,7 @@ import {
   ScrollText,
   Cable,
   Table2,
+  Bot,
 } from 'lucide-react';
 import {
   defineAppRoutes,
@@ -108,6 +109,23 @@ const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
     },
     breadcrumb: { title: 'settings.portalCasdoorGrants' },
     componentLoader: () => import('./portal-casdoor-grants.js'),
+  },
+  {
+    parent: 'settingsBusiness',
+    name: 'settingsPortalAgentGrants',
+    path: '/portal-agent-grants',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.agentGrants' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalAgentGrants',
+      description: 'settings.portalAgentGrantsDescription',
+      icon: Bot,
+    },
+    breadcrumb: { title: 'settings.portalAgentGrants' },
+    componentLoader: () => import('./portal-agent-grants.js'),
   },
   {
     parent: 'settingsBusiness',
