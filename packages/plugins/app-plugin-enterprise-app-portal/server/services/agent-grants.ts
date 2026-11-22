@@ -173,6 +173,84 @@ export class AgentGrantsService {
     return this.operations.listExpertItems(operationId);
   }
 
+  /**
+   * Revokes the direct Casdoor application grant for an unsynced employee.
+   * Does not delete the Casdoor user or touch Octop. Inherited-only access is
+   * rejected; if access remains via group/role after revoke, stillAuthorized
+   * is true.
+   */
+  public async revokeUnsyncedEmployeeGrant(
+    appCode: string,
+    casdoorUserId: string,
+    actorUserId: string,
+  ): Promise<{
+    readonly casdoorUserId: string;
+    readonly applicationName: string;
+    readonly stillAuthorized: boolean;
+  }> {
+    const app = await this.read.requireGrantApplication(appCode);
+    if (!app.casdoorAppKey) {
+      throw portalError(
+        'FAILED_PRECONDITION',
+        'OCTOP_API_NOT_CONFIGURED',
+        'This Octop application has no Casdoor application key.',
+      );
+    }
+    const state = await this.read.getEmployeeOctopState(appCode, casdoorUserId);
+    if (state.accountExists) {
+      throw portalError(
+        'FAILED_PRECONDITION',
+        'OCTOP_ACCOUNT_EXISTS',
+        'Synced Octop accounts cannot be removed from this list. Revoke only unsynced employees.',
+      );
+    }
+    const current = await this.grants.list(casdoorUserId);
+    const target = current.grants.find(
+      (grant) => grant.applicationName === app.casdoorAppKey && grant.enforced,
+    );
+    if (!target) {
+      throw portalError(
+        'NOT_FOUND',
+        'APPLICATION_GRANT_NOT_FOUND',
+        'This employee is not authorized for the application.',
+      );
+    }
+    if (target.source !== 'direct') {
+      throw portalError(
+        'FAILED_PRECONDITION',
+        'GRANT_INHERITED',
+        'This employee inherits the application through a Casdoor group or role. Remove that membership instead.',
+      );
+    }
+    const remainingDirect = current.grants
+      .filter(
+        (grant) =>
+          grant.source === 'direct' &&
+          grant.applicationName !== app.casdoorAppKey,
+      )
+      .map((grant) => grant.applicationName);
+    const after = await this.grants.replace(casdoorUserId, remainingDirect);
+    const stillAuthorized = after.grants.some(
+      (grant) => grant.applicationName === app.casdoorAppKey && grant.enforced,
+    );
+    await this.audit.record({
+      actorUserId,
+      appCode,
+      action: 'agentGrant.revokeUnsynced',
+      result: 'success',
+      metadata: {
+        casdoorUserId,
+        applicationName: app.casdoorAppKey,
+        stillAuthorized,
+      },
+    });
+    return {
+      casdoorUserId,
+      applicationName: app.casdoorAppKey,
+      stillAuthorized,
+    };
+  }
+
   public async createGrant(
     appCode: string,
     input: AgentGrantCreateInput,

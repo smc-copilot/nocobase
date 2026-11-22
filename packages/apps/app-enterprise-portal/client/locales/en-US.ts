@@ -166,6 +166,15 @@ const enUS = {
     portalAgentGrantsColumnAccount: 'Account',
     portalAgentGrantsColumnSync: 'Account sync',
     portalAgentGrantsColumnExperts: 'Authorized experts',
+    portalAgentGrantsColumnActions: 'Actions',
+    portalAgentGrantsRemove: 'Remove',
+    portalAgentGrantsRemoveTitle: 'Remove unsynced employee',
+    portalAgentGrantsRemoveHint:
+      "This revokes the employee's direct grant for the selected Octop application. It does not delete the Casdoor account and does not change synced Octop users.",
+    portalAgentGrantsRemoveDone: 'Application grant removed',
+    portalAgentGrantsRemoveStillAuthorized:
+      'The direct grant was removed, but the employee still inherits access through a Casdoor group or role. Adjust that membership in Casdoor.',
+    portalAgentGrantsRemoveFailed: 'Failed to remove the application grant',
     portalAgentGrantsAccountExists:
       'This employee already has an account on this Octop instance. This action will not create a user, and default expert stays empty.',
     portalAgentGrantsAccountExistsShort: 'Synced',

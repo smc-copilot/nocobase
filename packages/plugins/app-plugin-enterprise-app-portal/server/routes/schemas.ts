@@ -515,6 +515,18 @@ export const AgentGrantCreateOptionsSchema: z.ZodType<AgentGrantCreateOptions> =
     })
     .meta({ ref: 'EnterpriseAppPortalAgentGrantCreateOptions' });
 
+export const AgentGrantRevokeUnsyncedSchema: z.ZodType<{
+  casdoorUserId: string;
+  applicationName: string;
+  stillAuthorized: boolean;
+}> = z
+  .object({
+    casdoorUserId: z.string(),
+    applicationName: z.string(),
+    stillAuthorized: z.boolean(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalAgentGrantRevokeUnsynced' });
+
 export const OctopConnectionTestSchema: z.ZodType<{
   ok: true;
   authMode: (typeof OCTOP_API_AUTH_MODES)[number];

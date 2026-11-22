@@ -36,11 +36,12 @@ import {
   TableHeader,
   TableRow,
 } from '#components/ui/table';
-import { SettingsError, SettingsLoading } from './shared.js';
+import { ConfirmAction, SettingsError, SettingsLoading } from './shared.js';
 import { useSettingsData } from './hooks.js';
 import {
   agentGrantApplicationPath,
   agentGrantApplicationsPath,
+  agentGrantEmployeeRevokePath,
   agentGrantOctopStatePath,
   agentGrantOperationPath,
   agentGrantReconcilePath,
@@ -336,6 +337,8 @@ export default function PortalAgentGrantsPage(): ReactElement {
   const [draft, setDraft] = useState<CreateDraft>(() => emptyCreateDraft());
   const [submitting, setSubmitting] = useState(false);
   const [operation, setOperation] = useState<AgentGrantOperation>();
+  const [removeTarget, setRemoveTarget] = useState<AgentGrantEmployee>();
+  const [removing, setRemoving] = useState(false);
 
   const applicationsQuery = useSettingsData<{ data: readonly unknown[] }>(
     agentGrantApplicationsPath(),
@@ -529,6 +532,40 @@ export default function PortalAgentGrantsPage(): ReactElement {
       });
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function confirmRemoveEmployee(): Promise<void> {
+    if (!removeTarget || !appCode) return;
+    setRemoving(true);
+    try {
+      const response = await api.request<unknown>({
+        method: 'DELETE',
+        path: agentGrantEmployeeRevokePath(appCode, removeTarget.id),
+      });
+      const payload = asRecord(asRecord(response)?.data);
+      const stillAuthorized = payload?.stillAuthorized === true;
+      const removedId = removeTarget.id;
+      setRemoveTarget(undefined);
+      if (employeeId === removedId) {
+        setEmployeeId('');
+        setOctopState(undefined);
+        setOperation(undefined);
+      }
+      employeesQuery.reload();
+      toaster.show({
+        type: stillAuthorized ? 'warning' : 'success',
+        title: stillAuthorized
+          ? t('settings.portalAgentGrantsRemoveStillAuthorized')
+          : t('settings.portalAgentGrantsRemoveDone'),
+      });
+    } catch (error) {
+      toaster.show({
+        type: 'error',
+        title: errorMessage(error, t('settings.portalAgentGrantsRemoveFailed')),
+      });
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -733,6 +770,11 @@ export default function PortalAgentGrantsPage(): ReactElement {
                     <TableHead>
                       {t('settings.portalAgentGrantsColumnExperts')}
                     </TableHead>
+                    {canConfigure ? (
+                      <TableHead className='w-24'>
+                        {t('settings.portalAgentGrantsColumnActions')}
+                      </TableHead>
+                    ) : null}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -787,6 +829,24 @@ export default function PortalAgentGrantsPage(): ReactElement {
                             '—'
                           )}
                         </TableCell>
+                        {canConfigure ? (
+                          <TableCell>
+                            {!employee.accountExists ? (
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='sm'
+                                className='text-destructive'
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setRemoveTarget(employee);
+                                }}
+                              >
+                                {t('settings.portalAgentGrantsRemove')}
+                              </Button>
+                            ) : null}
+                          </TableCell>
+                        ) : null}
                       </TableRow>
                     );
                   })}
@@ -1151,6 +1211,24 @@ export default function PortalAgentGrantsPage(): ReactElement {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmAction
+        open={removeTarget !== undefined}
+        title={t('settings.portalAgentGrantsRemoveTitle')}
+        description={
+          removeTarget
+            ? `${t('settings.portalAgentGrantsRemoveHint')} (${removeTarget.displayName})`
+            : t('settings.portalAgentGrantsRemoveHint')
+        }
+        confirmLabel={t('settings.portalAgentGrantsRemove')}
+        busy={removing}
+        onCancel={() => {
+          if (!removing) setRemoveTarget(undefined);
+        }}
+        onConfirm={() => {
+          void confirmRemoveEmployee();
+        }}
+      />
     </PageContainer>
   );
 }

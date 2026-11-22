@@ -406,15 +406,30 @@ export function agentGrantApplicationPath(
   return `${AGENT_GRANTS_ROOT}/applications/${encodeURIComponent(appCode)}/${suffix}`;
 }
 
-/** Casdoor user id is `{owner}/{name}` and the state route splits those segments. */
-export function agentGrantOctopStatePath(
+function agentGrantEmployeePath(
   appCode: string,
   casdoorUserId: string,
 ): string {
   const slash = casdoorUserId.indexOf('/');
   const owner = slash >= 0 ? casdoorUserId.slice(0, slash) : 'unknown';
   const name = slash >= 0 ? casdoorUserId.slice(slash + 1) : casdoorUserId;
-  return `${agentGrantApplicationPath(appCode, 'employees')}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/octopState`;
+  return `${agentGrantApplicationPath(appCode, 'employees')}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+}
+
+/** Casdoor user id is `{owner}/{name}` and the state route splits those segments. */
+export function agentGrantOctopStatePath(
+  appCode: string,
+  casdoorUserId: string,
+): string {
+  return `${agentGrantEmployeePath(appCode, casdoorUserId)}/octopState`;
+}
+
+/** DELETE path to revoke the direct Casdoor grant for an unsynced employee. */
+export function agentGrantEmployeeRevokePath(
+  appCode: string,
+  casdoorUserId: string,
+): string {
+  return agentGrantEmployeePath(appCode, casdoorUserId);
 }
 
 export function agentGrantOperationPath(operationId: string): string {

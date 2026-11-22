@@ -155,6 +155,15 @@ const zhCN: AppResource = {
     portalAgentGrantsColumnAccount: '账号名',
     portalAgentGrantsColumnSync: '账号同步',
     portalAgentGrantsColumnExperts: '授权专家',
+    portalAgentGrantsColumnActions: '操作',
+    portalAgentGrantsRemove: '移除',
+    portalAgentGrantsRemoveTitle: '移除未同步员工',
+    portalAgentGrantsRemoveHint:
+      '将撤销该员工对当前 Octop 应用的直接授权。不会删除 Casdoor 账号，也不会影响已同步的 Octop 用户。',
+    portalAgentGrantsRemoveDone: '已移除应用授权',
+    portalAgentGrantsRemoveStillAuthorized:
+      '直接授权已移除，但该员工仍通过组或角色继承访问。请在 Casdoor 中调整组或角色。',
+    portalAgentGrantsRemoveFailed: '移除应用授权失败',
     portalAgentGrantsAccountExists:
       '该员工在当前 Octop 实例中已经存在账号，本次不创建用户，默认专家为空。',
     portalAgentGrantsAccountExistsShort: '已同步',

@@ -26,6 +26,7 @@ import {
   AgentGrantExpertItemSchema,
   AgentGrantOperationParam,
   AgentGrantOperationSchema,
+  AgentGrantRevokeUnsyncedSchema,
   AppCodeParam,
   AuthorizedEmployeeSchema,
   CatalogApplicationSchema,
@@ -231,6 +232,40 @@ export function registerAgentGrantRoutes(
         data: await services().agentGrantsRead.getEmployeeOctopState(
           appCode,
           `${owner}/${name}`,
+        ),
+      });
+    },
+  );
+
+  router.delete(
+    '/agentGrants/applications/:appCode/employees/:owner/:name',
+    configure,
+    describeRoute({
+      tags,
+      summary:
+        'Revoke the direct Casdoor application grant for an unsynced employee',
+      operationId: 'enterpriseAppPortalRevokeUnsyncedAgentGrantEmployee',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_AGENT_GRANTS}\` configure. Only employees without an Octop account may be removed. Inherited group or role grants are rejected. Does not delete the Casdoor user.`,
+      responses: {
+        200: dataResponse(AgentGrantRevokeUnsyncedSchema),
+        ...apiErrorResponses,
+        400: apiErrorResponse(
+          400,
+          'The employee is synced (`OCTOP_ACCOUNT_EXISTS`) or only inherits the grant (`GRANT_INHERITED`).',
+        ),
+        404: apiErrorResponse(404),
+      },
+    }),
+    apiValidator('param', AgentGrantEmployeeParam),
+    async (context) => {
+      const { appCode, owner, name } = context.req.valid('param');
+      const actor = options.identityOf(context);
+      return context.json({
+        data: await services().agentGrants.revokeUnsyncedEmployeeGrant(
+          appCode,
+          `${owner}/${name}`,
+          actor.userId,
         ),
       });
     },
