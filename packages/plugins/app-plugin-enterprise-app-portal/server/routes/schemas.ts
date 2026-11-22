@@ -399,31 +399,27 @@ export const OctopInstanceConfigInput: z.ZodType<{
 
 export const AgentGrantCreateInput: z.ZodType<{
   casdoorUserId: string;
-  displayName?: string | null;
-  email?: string | null;
   role?: string;
-  permissions?: string[];
   workspaceRootDir?: string | null;
   tokenQuota?: number | null;
   maxAgents?: number | null;
-  allowedBackendTypes?: string[];
-  createDefaultExpert?: boolean;
-  expertTemplateId?: string | null;
+  directory?: boolean;
+  password?: string | null;
+  expertTemplateIds: string[];
+  defaultExpertTemplateId?: string | null;
 }> = z.strictObject({
   casdoorUserId: z
     .string()
     .regex(/^[^/]+\/[^/]+$/u)
     .max(128),
-  displayName: z.string().max(128).nullable().optional(),
-  email: z.string().max(255).nullable().optional(),
   role: z.string().min(1).max(64).optional(),
-  permissions: z.array(z.string().min(1).max(128)).max(200).optional(),
   workspaceRootDir: z.string().max(512).nullable().optional(),
   tokenQuota: z.number().int().nullable().optional(),
   maxAgents: z.number().int().nullable().optional(),
-  allowedBackendTypes: z.array(z.string().min(1).max(64)).max(20).optional(),
-  createDefaultExpert: z.boolean().optional(),
-  expertTemplateId: z.string().min(1).max(128).nullable().optional(),
+  directory: z.boolean().optional(),
+  password: z.string().min(8).max(128).nullable().optional(),
+  expertTemplateIds: z.array(z.string().min(1).max(128)).min(1).max(50),
+  defaultExpertTemplateId: z.string().min(1).max(128).nullable().optional(),
 });
 
 export const AgentGrantApplicationSchema: z.ZodType<AgentGrantApplicationView> =
@@ -449,6 +445,20 @@ export const AuthorizedEmployeeSchema: z.ZodType<AuthorizedEmployeeView> = z
     username: z.string(),
     displayName: z.string(),
     email: z.string(),
+    accountExists: z.boolean(),
+    octopUserId: z.string().nullable(),
+    disabled: z.boolean(),
+    syncedAt: z.string().nullable(),
+    experts: z.array(
+      z.object({
+        agentId: z.string(),
+        publishedExpertId: z.string().nullable(),
+        name: z.string().nullable(),
+        state: z.string().nullable(),
+        bootstrapPending: z.boolean(),
+        kind: z.string().nullable(),
+      }),
+    ),
   })
   .meta({ ref: 'EnterpriseAppPortalAuthorizedEmployee' });
 
@@ -494,19 +504,13 @@ export const AgentGrantCreateOptionsSchema: z.ZodType<AgentGrantCreateOptions> =
           systemRole: z.string().nullable(),
           permissions: z.array(z.string()),
           maxAgents: z.number().nullable(),
+          tokenQuota: z.number().nullable(),
+          workspaceRootDir: z.string().nullable(),
           allowedBackendTypes: z.array(z.string()),
         }),
       ),
-      permissions: z.array(
-        z.object({
-          key: z.string(),
-          category: z.string().nullable(),
-          label: z.string().nullable(),
-        }),
-      ),
       ldapConfigured: z.boolean(),
-      supportedBackendTypes: z.array(z.string()),
-      directoryLocked: z.literal(true),
+      allowedBackendTypes: z.tuple([z.literal('docker')]),
       expertTemplateSource: z.literal('published'),
     })
     .meta({ ref: 'EnterpriseAppPortalAgentGrantCreateOptions' });
@@ -530,6 +534,11 @@ export const AgentGrantOperationSchema: z.ZodType<{
   username: string;
   actorUserId: string;
   status: string;
+  operationMode: string | null;
+  selectedExpertCount: number;
+  completedExpertCount: number;
+  failedExpertCount: number;
+  skippedExpertCount: number;
   expertTemplateId: string | null;
   createOptionsSnapshot: Record<string, unknown>;
   octopUserId: string | null;
@@ -548,6 +557,11 @@ export const AgentGrantOperationSchema: z.ZodType<{
     username: z.string(),
     actorUserId: z.string(),
     status: z.string(),
+    operationMode: z.string().nullable(),
+    selectedExpertCount: z.number().int(),
+    completedExpertCount: z.number().int(),
+    failedExpertCount: z.number().int(),
+    skippedExpertCount: z.number().int(),
     expertTemplateId: z.string().nullable(),
     createOptionsSnapshot: z.record(z.string(), z.unknown()),
     octopUserId: z.string().nullable(),
@@ -560,3 +574,31 @@ export const AgentGrantOperationSchema: z.ZodType<{
     completedAt: z.string().nullable(),
   })
   .meta({ ref: 'EnterpriseAppPortalAgentGrantOperation' });
+
+export const AgentGrantExpertItemSchema: z.ZodType<{
+  id: string;
+  operationId: string;
+  expertTemplateId: string;
+  expertName: string;
+  status: string;
+  agentId: string | null;
+  bootstrapPending: boolean | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}> = z
+  .object({
+    id: z.string(),
+    operationId: z.string(),
+    expertTemplateId: z.string(),
+    expertName: z.string(),
+    status: z.string(),
+    agentId: z.string().nullable(),
+    bootstrapPending: z.boolean().nullable(),
+    errorCode: z.string().nullable(),
+    errorMessage: z.string().nullable(),
+    startedAt: z.string().nullable(),
+    completedAt: z.string().nullable(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalAgentGrantExpertItem' });

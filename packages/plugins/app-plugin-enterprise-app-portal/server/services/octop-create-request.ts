@@ -1,13 +1,14 @@
 /**
  * Frozen Octop `POST /api/users` allowlist from the 2026-11-21 probe.
- * Unknown keys are dropped. `password` is never copied. v1 forces directory
- * accounts and the published expert source.
+ * Unknown keys are dropped. Confirm password is never copied.
+ * Password is only kept when directory=false.
  */
 export const OCTOP_CREATE_FIELD_ALLOWLIST = [
   'username',
   'display_name',
   'email',
   'directory',
+  'password',
   'role',
   'role_name',
   'permissions',
@@ -24,6 +25,8 @@ export interface OctopCreateBodyInput {
   readonly username: string;
   readonly displayName: string | null;
   readonly email: string | null;
+  readonly directory: boolean;
+  readonly password?: string | null;
   readonly role: string;
   readonly roleName: string;
   readonly permissions: readonly string[];
@@ -35,14 +38,23 @@ export interface OctopCreateBodyInput {
   readonly expertTemplateId: string | null;
 }
 
+/** Trim and lowercase Octop username / email before create or display. */
+export function normalizeOctopIdentityField(
+  value: string | null | undefined,
+): string {
+  return (value ?? '').trim().toLowerCase();
+}
+
 export function buildOctopUserCreateBody(
   input: OctopCreateBodyInput,
 ): Record<string, unknown> {
+  const username = normalizeOctopIdentityField(input.username);
+  const email = normalizeOctopIdentityField(input.email);
   const body: Record<string, unknown> = {
-    username: input.username,
+    username,
     display_name: input.displayName,
-    email: input.email,
-    directory: true,
+    email: email === '' ? null : email,
+    directory: input.directory,
     role: input.role,
     role_name: input.roleName,
     permissions: [...input.permissions],
@@ -53,6 +65,9 @@ export function buildOctopUserCreateBody(
     create_default_expert: input.createDefaultExpert,
     expert_template_source: 'published',
   };
+  if (!input.directory && input.password) {
+    body.password = input.password;
+  }
   if (input.createDefaultExpert) {
     body.expert_template_id = input.expertTemplateId;
   }
@@ -60,8 +75,9 @@ export function buildOctopUserCreateBody(
 }
 
 /**
- * Copies only frozen create fields. `directory` and `expert_template_source`
- * are forced. `password` and any other key are omitted.
+ * Copies only frozen create fields. `expert_template_source` is forced to
+ * published. Confirm password and other unknown keys are omitted. Password is
+ * dropped when directory is true.
  */
 export function allowlistOctopCreateFields(
   raw: Readonly<Record<string, unknown>>,
@@ -72,11 +88,14 @@ export function allowlistOctopCreateFields(
       result[key] = raw[key];
     }
   }
-  result.directory = true;
+  const directory = result.directory === true;
+  result.directory = directory;
   result.expert_template_source = 'published';
   if (result.create_default_expert === false) {
     delete result.expert_template_id;
   }
-  delete result.password;
+  if (directory) {
+    delete result.password;
+  }
   return result;
 }

@@ -12,7 +12,10 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { Hono } from 'hono';
 
 import { SETTINGS_AGENT_GRANTS } from '../config.js';
-import type { AgentGrantOperationRecord } from '../services/agent-grant-operations.js';
+import type {
+  AgentGrantExpertItemRecord,
+  AgentGrantOperationRecord,
+} from '../services/agent-grant-operations.js';
 import type { EnterprisePortalServices } from '../services/composition.js';
 import type { PortalApplicationRecord } from '../services/application-catalog.js';
 import {
@@ -20,6 +23,7 @@ import {
   AgentGrantCreateInput,
   AgentGrantCreateOptionsSchema,
   AgentGrantEmployeeParam,
+  AgentGrantExpertItemSchema,
   AgentGrantOperationParam,
   AgentGrantOperationSchema,
   AppCodeParam,
@@ -57,6 +61,11 @@ function serializeOperation(record: AgentGrantOperationRecord) {
     username: record.username,
     actorUserId: record.actorUserId,
     status: record.status,
+    operationMode: record.operationMode,
+    selectedExpertCount: record.selectedExpertCount,
+    completedExpertCount: record.completedExpertCount,
+    failedExpertCount: record.failedExpertCount,
+    skippedExpertCount: record.skippedExpertCount,
     expertTemplateId: record.expertTemplateId,
     createOptionsSnapshot: record.createOptionsSnapshot,
     octopUserId: record.octopUserId,
@@ -66,6 +75,22 @@ function serializeOperation(record: AgentGrantOperationRecord) {
     errorMessage: record.errorMessage,
     startedAt: record.startedAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+    completedAt: record.completedAt ? record.completedAt.toISOString() : null,
+  };
+}
+
+function serializeExpertItem(record: AgentGrantExpertItemRecord) {
+  return {
+    id: record.id,
+    operationId: record.operationId,
+    expertTemplateId: record.expertTemplateId,
+    expertName: record.expertName,
+    status: record.status,
+    agentId: record.agentId,
+    bootstrapPending: record.bootstrapPending,
+    errorCode: record.errorCode,
+    errorMessage: record.errorMessage,
+    startedAt: record.startedAt ? record.startedAt.toISOString() : null,
     completedAt: record.completedAt ? record.completedAt.toISOString() : null,
   };
 }
@@ -239,10 +264,10 @@ export function registerAgentGrantRoutes(
     read,
     describeRoute({
       tags,
-      summary: 'List roles, permissions, and LDAP readiness for a create form',
+      summary: 'List roles and LDAP readiness for the simplified create form',
       operationId: 'enterpriseAppPortalGetAgentGrantCreateOptions',
       ...cliRoute(false),
-      description: `Requires \`${SETTINGS_AGENT_GRANTS}\` read. Roles with system role admin are omitted. Directory mode is locked on.`,
+      description: `Requires \`${SETTINGS_AGENT_GRANTS}\` read. Roles with system role admin are omitted. Permissions inherit from the selected role. Backend type is fixed to docker.`,
       responses: {
         200: dataResponse(AgentGrantCreateOptionsSchema),
         ...apiErrorResponses,
@@ -263,16 +288,17 @@ export function registerAgentGrantRoutes(
     configure,
     describeRoute({
       tags,
-      summary: 'Create an Octop directory user and optional default expert',
+      summary:
+        'Create an Octop user with a default expert, or install experts for an existing user',
       operationId: 'enterpriseAppPortalCreateAgentGrant',
       ...cliRoute(false),
-      description: `Requires \`${SETTINGS_AGENT_GRANTS}\` configure. The username comes from Casdoor. Directory is forced on and no password is sent. A timed-out create is not retried.`,
+      description: `Requires \`${SETTINGS_AGENT_GRANTS}\` configure. Username, display name, and email are resolved from Casdoor. Permissions inherit from the selected role. Backend type is fixed to docker. Default expert is only sent for new users. Confirm password is never accepted. A timed-out create is not retried.`,
       responses: {
         200: dataResponse(AgentGrantOperationSchema),
         ...apiErrorResponses,
         409: apiErrorResponse(
           409,
-          'The Octop account already exists (`OCTOP_ACCOUNT_EXISTS`) or another create holds the lock (`AGENT_GRANT_OPERATION_IN_PROGRESS`).',
+          'Another create holds the lock (`AGENT_GRANT_OPERATION_IN_PROGRESS`).',
         ),
       },
     }),
@@ -309,6 +335,33 @@ export function registerAgentGrantRoutes(
         context.req.valid('param').operationId,
       );
       return context.json({ data: serializeOperation(operation) });
+    },
+  );
+
+  router.get(
+    '/agentGrants/operations/:operationId/expertItems',
+    read,
+    describeRoute({
+      tags,
+      summary: 'List expert items for one agent grant operation',
+      operationId: 'enterpriseAppPortalListAgentGrantExpertItems',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_AGENT_GRANTS}\` read.`,
+      responses: {
+        200: listResponse(AgentGrantExpertItemSchema),
+        ...apiErrorResponses,
+        404: apiErrorResponse(404),
+      },
+    }),
+    apiValidator('param', AgentGrantOperationParam),
+    async (context) => {
+      const items = await services().agentGrants.listExpertItems(
+        context.req.valid('param').operationId,
+      );
+      return context.json({
+        data: items.map(serializeExpertItem),
+        meta: { total: items.length },
+      });
     },
   );
 

@@ -25,6 +25,8 @@ export interface OctopUser {
   readonly displayName: string | null;
   readonly email: string | null;
   readonly role: string | null;
+  /** ISO-8601 create time from Octop `created_at` (unix seconds). */
+  readonly createdAt: string | null;
 }
 
 export interface OctopAgent {
@@ -45,6 +47,8 @@ export interface OctopRole {
   readonly systemRole: string | null;
   readonly permissions: readonly string[];
   readonly maxAgents: number | null;
+  readonly tokenQuota: number | null;
+  readonly workspaceRootDir: string | null;
   readonly allowedBackendTypes: readonly string[];
 }
 
@@ -88,6 +92,20 @@ export interface OctopCreateUserResult {
   readonly defaultExpert: OctopDefaultExpert | null;
 }
 
+export interface OctopExpertInstallBody {
+  readonly name: string;
+  readonly description: string;
+}
+
+export interface OctopExpertInstallResult {
+  readonly agentId: string;
+  readonly name: string;
+  readonly state: string;
+  readonly publishedExpertId: string;
+  readonly bootstrapPending: boolean;
+  readonly alreadyInstalled: boolean;
+}
+
 interface RequestHints {
   readonly method: 'GET' | 'POST';
   readonly path: string;
@@ -97,6 +115,8 @@ interface RequestHints {
   readonly failureReason: string;
   /** When true, a 404 resolves as null instead of throwing. */
   readonly allowNotFound?: boolean;
+  /** Extra success statuses beyond the default 2xx range. */
+  readonly acceptStatuses?: readonly number[];
 }
 
 /**
@@ -247,6 +267,55 @@ export class OctopManagementClient {
     };
   }
 
+  /**
+   * Creates an expert for a target user from a published template.
+   * Matches Octop Expert Market "Create" semantics for an admin actor.
+   */
+  public async installExpertToUser(
+    userId: string,
+    expertId: string,
+    body: OctopExpertInstallBody,
+  ): Promise<OctopExpertInstallResult> {
+    const payload = await this.request({
+      method: 'POST',
+      path: `/api/users/${encodeURIComponent(userId)}/experts/published/${encodeURIComponent(expertId)}/install`,
+      json: {
+        name: body.name,
+        description: body.description,
+      },
+      mutation: true,
+      failureReason: 'OCTOP_EXPERT_INSTALL_REJECTED',
+      acceptStatuses: [200, 201],
+    });
+    const record = asRecord(payload);
+    if (!record) {
+      throw octopError(
+        'UNAVAILABLE',
+        'OCTOP_EXPERT_INSTALL_OUTCOME_UNKNOWN',
+        'Octop accepted the expert create request but returned no agent record.',
+      );
+    }
+    const agentId = readString(record.agent_id) ?? '';
+    const publishedExpertId =
+      readString(record.published_expert_id) ?? expertId;
+    if (!agentId) {
+      throw octopError(
+        'UNAVAILABLE',
+        'OCTOP_EXPERT_INSTALL_OUTCOME_UNKNOWN',
+        'Octop accepted the expert create request but returned no agent id.',
+      );
+    }
+    return {
+      agentId,
+      name: readString(record.name) ?? body.name,
+      state: readString(record.state) ?? 'unknown',
+      publishedExpertId,
+      bootstrapPending: record.bootstrap_pending === true,
+      alreadyInstalled:
+        record.already_installed === true || payloadWasAlreadyInstalled(record),
+    };
+  }
+
   public async login(username: string, password: string): Promise<string> {
     const payload = await this.request({
       method: 'POST',
@@ -297,6 +366,7 @@ export class OctopManagementClient {
     if (hints.allowNotFound && response.status === 404) return null;
     const payload = await this.readBody(response);
     if (response.status >= 200 && response.status < 300) return payload;
+    if (hints.acceptStatuses?.includes(response.status)) return payload;
     throw this.httpError(hints, response.status, payload);
   }
 
@@ -380,6 +450,18 @@ export class OctopManagementClient {
         { httpStatus: status, octopCode: code },
       );
     }
+    if (
+      hints.mutation &&
+      (code === 'OCTOP_EXPERT_ALREADY_INSTALLED' ||
+        code === 'EXPERT_ALREADY_INSTALLED')
+    ) {
+      return octopError(
+        'ALREADY_EXISTS',
+        'OCTOP_EXPERT_ALREADY_INSTALLED',
+        'This published expert is already installed for the target user.',
+        { httpStatus: status, octopCode: code },
+      );
+    }
     if (hints.mutation && status === 422) {
       const details = readValidationDetails(payload);
       return octopError(
@@ -419,8 +501,10 @@ export class OctopManagementClient {
     if (hints.mutation) {
       return octopError(
         'FAILED_PRECONDITION',
-        'OCTOP_USER_CREATE_REJECTED',
-        'Octop rejected the user create request without an unknown outcome.',
+        hints.failureReason,
+        hints.path.includes('/experts/')
+          ? 'Octop rejected the expert create request without an unknown outcome.'
+          : 'Octop rejected the user create request without an unknown outcome.',
         { httpStatus: status, ...(code ? { octopCode: code } : {}) },
       );
     }
@@ -520,7 +604,26 @@ function parseUser(value: unknown): OctopUser | undefined {
     displayName: readString(record.display_name),
     email: readString(record.email),
     role: readString(record.role),
+    createdAt: readUnixTimestamp(record.created_at),
   };
+}
+
+/** Octop returns unix seconds; accept ms or ISO strings as well. */
+function readUnixTimestamp(value: unknown): string | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    const ms = value > 1e12 ? value : value * 1000;
+    const date = new Date(ms);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber) && asNumber > 0) {
+      return readUnixTimestamp(asNumber);
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  return null;
 }
 
 function parseAgent(value: unknown): OctopAgent | undefined {
@@ -557,6 +660,10 @@ function parseRole(value: unknown): OctopRole | undefined {
   if (!id) return undefined;
   const policies = asRecord(record.policies) ?? {};
   const maxAgents = readNumber(policies.max_agents ?? record.max_agents);
+  const tokenQuota = readNumber(policies.token_quota ?? record.token_quota);
+  const workspaceRootDir =
+    readString(policies.workspace_root_dir) ??
+    readString(record.workspace_root_dir);
   const backends =
     policies.allowed_backend_types ?? record.allowed_backend_types;
   return {
@@ -565,6 +672,8 @@ function parseRole(value: unknown): OctopRole | undefined {
     systemRole: readString(record.system_role),
     permissions: readStrings(record.permissions),
     maxAgents,
+    tokenQuota,
+    workspaceRootDir,
     allowedBackendTypes: readStrings(backends),
   };
 }
@@ -647,6 +756,14 @@ function readOctopCode(payload: unknown): string | undefined {
   const nested = asRecord(record.error);
   if (nested && typeof nested.code === 'string') return nested.code;
   return typeof record.code === 'string' ? record.code : undefined;
+}
+
+function payloadWasAlreadyInstalled(record: Record<string, unknown>): boolean {
+  return (
+    record.already_installed === true ||
+    record.alreadyInstalled === true ||
+    readString(record.status)?.toLowerCase() === 'already_installed'
+  );
 }
 
 function readToken(payload: unknown): string | undefined {

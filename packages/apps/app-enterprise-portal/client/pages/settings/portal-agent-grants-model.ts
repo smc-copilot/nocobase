@@ -15,7 +15,16 @@ export interface AgentGrantEmployee {
   readonly email: string;
   readonly isForbidden: boolean;
   readonly grantSource?: 'direct' | 'inherited';
+  /** Octop account presence from the employees list enrichment. */
+  readonly accountExists: boolean;
+  readonly octopUserId: string | null;
+  readonly disabled: boolean;
+  /** Octop account create time (ISO-8601), null when unsynced. */
+  readonly syncedAt: string | null;
+  readonly experts: readonly InstalledExpert[];
 }
+
+export type EmployeeSyncFilter = 'all' | 'unsynced' | 'synced';
 
 export interface InstalledExpert {
   readonly agentId: string;
@@ -51,22 +60,21 @@ export interface AgentGrantRole {
   readonly allowedBackendTypes: readonly string[];
 }
 
-export interface AgentGrantPermission {
-  readonly key: string;
-  readonly category: string;
-  readonly label: string;
-}
-
 export interface AgentGrantCreateOptions {
   readonly roles: readonly AgentGrantRole[];
-  readonly permissions: readonly AgentGrantPermission[];
   readonly ldapConfigured: boolean;
-  readonly backendTypes: readonly string[];
+  readonly allowedBackendTypes: readonly ['docker'];
+  readonly expertTemplateSource: 'published';
 }
 
 export interface AgentGrantOperation {
   readonly id: string;
   readonly status: string;
+  readonly operationMode: string | null;
+  readonly selectedExpertCount: number;
+  readonly completedExpertCount: number;
+  readonly failedExpertCount: number;
+  readonly skippedExpertCount: number;
   readonly bootstrapStatus: string | null;
   readonly agentId: string | null;
   readonly publishedExpertId: string | null;
@@ -75,31 +83,59 @@ export interface AgentGrantOperation {
   readonly errorMessage: string | null;
 }
 
+export interface CreateDraft {
+  readonly roleId: string;
+  readonly directory: boolean;
+  readonly password: string;
+  readonly confirmPassword: string;
+  readonly workspaceEnabled: boolean;
+  readonly workspaceRootDir: string;
+  readonly tokenQuotaEnabled: boolean;
+  readonly tokenQuota: string;
+  readonly maxAgentsEnabled: boolean;
+  readonly maxAgents: string;
+  readonly expertTemplateIds: readonly string[];
+  readonly defaultExpertTemplateId: string | null;
+}
+
 export type AgentGrantResultKind =
   | 'USER_CREATED'
   | 'BOOTSTRAP_PENDING'
   | 'COMPLETED'
+  | 'PARTIAL'
   | 'BOOTSTRAP_FAILED'
   | 'OUTCOME_UNKNOWN'
   | 'ACCOUNT_EXISTS'
   | 'OTHER';
 
+export type AccountSyncStatus =
+  | 'NOT_CREATED'
+  | 'SYNCED_DIRECTORY'
+  | 'CREATED_LOCAL'
+  | 'DISABLED'
+  | 'LOOKUP_FAILED';
+
 /**
- * Body for `POST .../grants`. Matches the server strict schema:
- * directory mode, username, and template source are applied on the server.
+ * Body for `POST .../grants`. Identity fields are resolved on the server.
+ * Confirm password is never sent. Permissions inherit from the role server-side.
  */
 export interface AgentGrantCreateBody {
   readonly casdoorUserId: string;
-  readonly displayName: string | null;
-  readonly email: string | null;
   readonly role: string;
-  readonly permissions: readonly string[];
   readonly workspaceRootDir: string | null;
   readonly tokenQuota: number | null;
   readonly maxAgents: number | null;
-  readonly allowedBackendTypes: readonly string[];
-  readonly createDefaultExpert: boolean;
-  readonly expertTemplateId?: string;
+  readonly directory: boolean;
+  readonly password?: string;
+  readonly expertTemplateIds: readonly string[];
+  readonly defaultExpertTemplateId: string | null;
+}
+
+/** Username / email sent to Octop: trim + lowercase. */
+export function normalizeOctopIdentityField(
+  value: string | null | undefined,
+): string {
+  return (value ?? '').trim().toLowerCase();
 }
 
 /** Octop apps with Agent Grants enabled. WeKnora and every other app type stay out. */
@@ -127,6 +163,9 @@ export function agentGrantResultKind(operation: {
   if (status === 'ACCOUNT_EXISTS' || status === 'ACCOUNT_EXISTS_UNATTRIBUTED') {
     return 'ACCOUNT_EXISTS';
   }
+  if (status === 'PARTIAL' || status === 'EXPERT_INSTALL_FAILED') {
+    return 'PARTIAL';
+  }
   if (status === 'BOOTSTRAP_PENDING' || operation.bootstrapStatus === 'pending')
     return 'BOOTSTRAP_PENDING';
   if (status === 'COMPLETED') return 'COMPLETED';
@@ -134,13 +173,16 @@ export function agentGrantResultKind(operation: {
   return 'OTHER';
 }
 
-/** A pending expert keeps the pending label even when Octop state reads completed. */
+/**
+ * Pending bootstrap keeps a dedicated label. The agent id is already persisted
+ * on Octop; pending only means workspace/bootstrap has not finished.
+ */
 export function expertStatusText(
   expert: { readonly state: string; readonly bootstrapPending: boolean },
   pendingLabel: string,
 ): string {
   if (expert.bootstrapPending) return pendingLabel;
-  return expert.state;
+  return expert.state || '—';
 }
 
 export function selectableRoles<
@@ -177,6 +219,29 @@ export function filterPublishedTemplates<
   );
 }
 
+export function installedTemplateIds(
+  experts: readonly InstalledExpert[],
+): ReadonlySet<string> {
+  return new Set(
+    experts
+      .map((expert) => expert.publishedExpertId)
+      .filter((id): id is string => Boolean(id)),
+  );
+}
+
+export function accountSyncStatus(state: {
+  readonly lookupFailed?: boolean;
+  readonly accountExists: boolean;
+  readonly disabled: boolean;
+  readonly directory?: boolean;
+}): AccountSyncStatus {
+  if (state.lookupFailed) return 'LOOKUP_FAILED';
+  if (!state.accountExists) return 'NOT_CREATED';
+  if (state.disabled) return 'DISABLED';
+  if (state.directory === false) return 'CREATED_LOCAL';
+  return 'SYNCED_DIRECTORY';
+}
+
 function blankToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;
@@ -190,64 +255,133 @@ export function parseOptionalNumber(value: string): number | null | undefined {
   return Number(trimmed);
 }
 
-/** Fields that follow the selected role. Permissions are replaced, not merged. */
-export function roleDraftFields(
-  role: AgentGrantRole | undefined,
-  options: Pick<AgentGrantCreateOptions, 'permissions' | 'backendTypes'>,
-): {
+/** Visible policy fields that follow the selected role. Backend stays docker. */
+export function roleDraftFields(role: AgentGrantRole | undefined): {
   readonly roleId: string;
-  readonly permissions: readonly string[];
   readonly maxAgents: string;
   readonly tokenQuota: string;
   readonly workspaceRootDir: string;
-  readonly allowedBackendTypes: readonly string[];
+  readonly maxAgentsEnabled: boolean;
+  readonly tokenQuotaEnabled: boolean;
+  readonly workspaceEnabled: boolean;
 } {
-  const allowed = new Set(options.permissions.map((item) => item.key));
-  const backends = new Set(options.backendTypes);
   return {
     roleId: role?.id ?? '',
-    permissions: (role?.permissions ?? []).filter((key) => allowed.has(key)),
     maxAgents: numberField(role?.maxAgents ?? null),
     tokenQuota: numberField(role?.tokenQuota ?? null),
     workspaceRootDir: role?.workspaceRootDir ?? '',
-    allowedBackendTypes: (role?.allowedBackendTypes ?? []).filter((type) =>
-      backends.has(type),
-    ),
+    maxAgentsEnabled: role?.maxAgents != null,
+    tokenQuotaEnabled: role?.tokenQuota != null,
+    workspaceEnabled: Boolean(role?.workspaceRootDir),
   };
+}
+
+export function emptyCreateDraft(roleId = ''): CreateDraft {
+  return {
+    roleId,
+    directory: true,
+    password: '',
+    confirmPassword: '',
+    workspaceEnabled: false,
+    workspaceRootDir: '',
+    tokenQuotaEnabled: false,
+    tokenQuota: '',
+    maxAgentsEnabled: false,
+    maxAgents: '',
+    expertTemplateIds: [],
+    defaultExpertTemplateId: null,
+  };
+}
+
+export function withRoleDefaults(
+  draft: CreateDraft,
+  role: AgentGrantRole | undefined,
+): CreateDraft {
+  const fields = roleDraftFields(role);
+  return {
+    ...draft,
+    roleId: fields.roleId,
+    workspaceEnabled: fields.workspaceEnabled,
+    workspaceRootDir: fields.workspaceRootDir,
+    tokenQuotaEnabled: fields.tokenQuotaEnabled,
+    tokenQuota: fields.tokenQuota,
+    maxAgentsEnabled: fields.maxAgentsEnabled,
+    maxAgents: fields.maxAgents,
+  };
+}
+
+export function toggleExpertTemplate(
+  draft: CreateDraft,
+  templateId: string,
+  checked: boolean,
+  isNewUser: boolean,
+): CreateDraft {
+  const selected = new Set(draft.expertTemplateIds);
+  if (checked) selected.add(templateId);
+  else selected.delete(templateId);
+  const expertTemplateIds = [...selected];
+  let defaultExpertTemplateId = draft.defaultExpertTemplateId;
+  if (!isNewUser) {
+    defaultExpertTemplateId = null;
+  } else if (
+    defaultExpertTemplateId &&
+    !selected.has(defaultExpertTemplateId)
+  ) {
+    defaultExpertTemplateId = null;
+  }
+  if (isNewUser && expertTemplateIds.length === 1) {
+    defaultExpertTemplateId = expertTemplateIds[0] ?? null;
+  }
+  return { ...draft, expertTemplateIds, defaultExpertTemplateId };
 }
 
 export function buildAgentGrantCreateBody(input: {
   readonly casdoorUserId: string;
-  readonly displayName: string;
-  readonly email: string;
-  readonly roleId: string;
-  readonly permissions: readonly string[];
-  readonly maxAgents: string;
-  readonly tokenQuota: string;
-  readonly workspaceRootDir: string;
-  readonly allowedBackendTypes: readonly string[];
-  readonly createDefaultExpert: boolean;
-  readonly expertTemplateId?: string;
+  readonly isNewUser: boolean;
+  readonly draft: CreateDraft;
 }): AgentGrantCreateBody | undefined {
-  const maxAgents = parseOptionalNumber(input.maxAgents);
-  const tokenQuota = parseOptionalNumber(input.tokenQuota);
+  const { draft, isNewUser } = input;
+  if (!draft.roleId) return undefined;
+  if (draft.expertTemplateIds.length === 0) return undefined;
+  if (!draft.directory) {
+    if (!draft.password || draft.password.length < 8) return undefined;
+    if (draft.password !== draft.confirmPassword) return undefined;
+  }
+  if (isNewUser) {
+    if (
+      !draft.defaultExpertTemplateId ||
+      !draft.expertTemplateIds.includes(draft.defaultExpertTemplateId)
+    ) {
+      return undefined;
+    }
+  } else if (draft.defaultExpertTemplateId) {
+    return undefined;
+  }
+
+  const maxAgents = draft.maxAgentsEnabled
+    ? parseOptionalNumber(draft.maxAgents)
+    : null;
+  const tokenQuota = draft.tokenQuotaEnabled
+    ? parseOptionalNumber(draft.tokenQuota)
+    : null;
   if (maxAgents === undefined || tokenQuota === undefined) return undefined;
-  if (!input.roleId) return undefined;
-  if (input.createDefaultExpert && !input.expertTemplateId) return undefined;
+
   const body: AgentGrantCreateBody = {
     casdoorUserId: input.casdoorUserId,
-    displayName: blankToNull(input.displayName),
-    email: blankToNull(input.email),
-    role: input.roleId,
-    permissions: [...input.permissions],
-    workspaceRootDir: blankToNull(input.workspaceRootDir),
+    role: draft.roleId,
+    workspaceRootDir: draft.workspaceEnabled
+      ? blankToNull(draft.workspaceRootDir)
+      : null,
     tokenQuota,
     maxAgents,
-    allowedBackendTypes: [...input.allowedBackendTypes],
-    createDefaultExpert: input.createDefaultExpert,
+    directory: draft.directory,
+    expertTemplateIds: [...draft.expertTemplateIds],
+    defaultExpertTemplateId: isNewUser ? draft.defaultExpertTemplateId : null,
   };
-  if (!input.createDefaultExpert) return body;
-  return { ...body, expertTemplateId: input.expertTemplateId };
+  if (!draft.directory) {
+    return { ...body, password: draft.password };
+  }
+  return body;
 }
 
 const AGENT_GRANTS_ROOT = 'enterpriseAppPortal/agentGrants';

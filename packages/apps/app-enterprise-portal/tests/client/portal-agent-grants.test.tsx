@@ -4,7 +4,7 @@ import {
   authorizationClientToken,
 } from '@nocobase/app-plugin-authorization/client';
 import { answerApi, renderWithApp } from '@nocobase/app-testing/client';
-import { screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
@@ -15,10 +15,12 @@ import {
   agentGrantOctopStatePath,
   agentGrantResultKind,
   buildAgentGrantCreateBody,
+  emptyCreateDraft,
   expertStatusText,
   roleDraftFields,
   selectAgentGrantApplications,
   selectableRoles,
+  toggleExpertTemplate,
 } from '../../client/pages/settings/portal-agent-grants-model.js';
 
 const copy = enUS.settings;
@@ -75,6 +77,7 @@ describe('agent grant presentation', () => {
     expect(
       agentGrantResultKind({ status: 'COMPLETED', bootstrapStatus: null }),
     ).toBe('COMPLETED');
+    expect(agentGrantResultKind({ status: 'PARTIAL' })).toBe('PARTIAL');
     expect(agentGrantResultKind({ status: 'ACCOUNT_EXISTS' })).toBe(
       'ACCOUNT_EXISTS',
     );
@@ -92,106 +95,82 @@ describe('agent grant presentation', () => {
     ).toBe('completed');
   });
 
-  it('sends only the server create fields and replaces permissions with the role', () => {
+  it('builds the simplified create body and keeps default expert empty for existing users', () => {
+    const draft = toggleExpertTemplate(
+      {
+        ...emptyCreateDraft('user'),
+        maxAgentsEnabled: false,
+        tokenQuotaEnabled: false,
+        workspaceEnabled: false,
+      },
+      'tpl-1',
+      true,
+      true,
+    );
     const body = buildAgentGrantCreateBody({
       casdoorUserId: 'org/alice',
-      displayName: 'Alice',
-      email: '',
-      roleId: 'user',
-      permissions: ['experts'],
-      maxAgents: '',
-      tokenQuota: '',
-      workspaceRootDir: '',
-      allowedBackendTypes: ['docker'],
-      createDefaultExpert: true,
-      expertTemplateId: 'tpl-1',
+      isNewUser: true,
+      draft,
     });
     expect(body).toEqual({
       casdoorUserId: 'org/alice',
-      displayName: 'Alice',
-      email: null,
       role: 'user',
-      permissions: ['experts'],
       workspaceRootDir: null,
       tokenQuota: null,
       maxAgents: null,
-      allowedBackendTypes: ['docker'],
-      createDefaultExpert: true,
-      expertTemplateId: 'tpl-1',
+      directory: true,
+      expertTemplateIds: ['tpl-1'],
+      defaultExpertTemplateId: 'tpl-1',
     });
     expect(body && Object.keys(body)).not.toEqual(
       expect.arrayContaining([
-        'password',
+        'confirmPassword',
         'apiToken',
         'secret',
         'username',
-        'directory',
-        'roleName',
-        'expertTemplateSource',
+        'displayName',
+        'email',
+        'permissions',
+        'allowedBackendTypes',
       ]),
     );
     expect(
       buildAgentGrantCreateBody({
         casdoorUserId: 'org/alice',
-        displayName: 'Alice',
-        email: '',
-        roleId: 'user',
-        permissions: [],
-        maxAgents: '1',
-        tokenQuota: '',
-        workspaceRootDir: '',
-        allowedBackendTypes: [],
-        createDefaultExpert: false,
+        isNewUser: false,
+        draft: {
+          ...draft,
+          defaultExpertTemplateId: null,
+        },
       }),
-    ).not.toHaveProperty('expertTemplateId');
-    const catalog = {
-      permissions: [
-        { key: 'experts', category: 'agent', label: 'Experts' },
-        { key: 'workspace', category: 'agent', label: 'Workspace' },
-      ],
-      backendTypes: ['docker'],
-    };
+    ).toMatchObject({
+      defaultExpertTemplateId: null,
+      expertTemplateIds: ['tpl-1'],
+    });
     expect(
-      roleDraftFields(
-        {
-          id: 'user',
-          name: 'User',
-          systemRole: 'user',
-          permissions: ['experts'],
-          maxAgents: 1,
-          tokenQuota: null,
-          workspaceRootDir: null,
-          allowedBackendTypes: ['docker'],
-        },
-        catalog,
-      ).permissions,
-    ).toEqual(['experts']);
-    expect(
-      roleDraftFields(
-        {
-          id: 'expert',
-          name: 'Expert',
-          systemRole: 'expert',
-          permissions: ['workspace', 'not-in-catalog'],
-          maxAgents: 2,
-          tokenQuota: null,
-          workspaceRootDir: '/work',
-          allowedBackendTypes: ['docker', 'unknown'],
-        },
-        catalog,
-      ),
+      roleDraftFields({
+        id: 'expert',
+        name: 'Expert',
+        systemRole: 'expert',
+        permissions: ['workspace'],
+        maxAgents: 2,
+        tokenQuota: null,
+        workspaceRootDir: '/work',
+        allowedBackendTypes: ['docker'],
+      }),
     ).toMatchObject({
       roleId: 'expert',
-      permissions: ['workspace'],
       maxAgents: '2',
       workspaceRootDir: '/work',
-      allowedBackendTypes: ['docker'],
+      workspaceEnabled: true,
+      maxAgentsEnabled: true,
+      tokenQuotaEnabled: false,
     });
   });
 });
 
 describe('agent grants page', () => {
-  it('single-selects an employee, hides WeKnora, and keeps pending distinct from completed', async () => {
+  it('single-selects an employee in the table and opens the simplified dialog', async () => {
     const user = userEvent.setup();
     const calls: { method: string; path: string; json?: unknown }[] = [];
     await renderWithApp(<PortalAgentGrantsPage />, {
@@ -271,12 +250,30 @@ describe('agent grants page', () => {
                 username: 'alice',
                 displayName: 'Alice',
                 email: 'alice@example.com',
+                accountExists: false,
+                octopUserId: null,
+                disabled: false,
+                syncedAt: null,
+                experts: [],
               },
               {
                 casdoorUserId: 'org/bob',
                 username: 'bob',
                 displayName: 'Bob',
                 email: 'bob@example.com',
+                accountExists: true,
+                octopUserId: '22',
+                disabled: false,
+                syncedAt: '2026-11-21T08:00:00.000Z',
+                experts: [
+                  {
+                    agentId: 'agt-1',
+                    publishedExpertId: 'tpl-9',
+                    name: 'Helper',
+                    state: 'running',
+                    bootstrapPending: true,
+                  },
+                ],
               },
             ],
           };
@@ -288,6 +285,13 @@ describe('agent grants page', () => {
                 id: 'tpl-1',
                 name: 'Published Helper',
                 description: 'A published expert',
+                creatorUsername: 'admin',
+                updatedAt: '2026-11-21T00:00:00.000Z',
+              },
+              {
+                id: 'tpl-2',
+                name: 'Ops Expert',
+                description: 'Ops',
                 creatorUsername: 'admin',
                 updatedAt: '2026-11-21T00:00:00.000Z',
               },
@@ -319,12 +323,8 @@ describe('agent grants page', () => {
                   allowedBackendTypes: ['docker'],
                 },
               ],
-              permissions: [
-                { key: 'experts', category: 'agent', label: 'Experts' },
-              ],
               ldapConfigured: true,
-              supportedBackendTypes: ['docker'],
-              directoryLocked: true,
+              allowedBackendTypes: ['docker'],
               expertTemplateSource: 'published',
             },
           };
@@ -334,6 +334,11 @@ describe('agent grants page', () => {
             data: {
               id: 'op-1',
               status: 'BOOTSTRAP_PENDING',
+              operationMode: 'CREATE_USER_AND_INSTALL',
+              selectedExpertCount: 1,
+              completedExpertCount: 1,
+              failedExpertCount: 0,
+              skippedExpertCount: 0,
               bootstrapStatus: 'pending',
               agentId: 'agt-new',
               publishedExpertId: 'tpl-1',
@@ -355,96 +360,74 @@ describe('agent grants page', () => {
     });
 
     expect(
-      await screen.findByRole('radio', { name: 'Octop A' }),
+      await screen.findByRole('radio', { name: /Octop A/i }),
     ).toBeInTheDocument();
+    expect(screen.queryByText('WeKnora')).not.toBeInTheDocument();
+    expect(screen.queryByText('Octop Off')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: /Octop A/i }));
+    expect(await screen.findByText('Alice')).toBeInTheDocument();
+    await user.click(screen.getByText('Bob'));
     expect(
-      screen.queryByRole('radio', { name: 'WeKnora' }),
-    ).not.toBeInTheDocument();
+      await screen.findByText((content) => content.includes('Helper')),
+    ).toBeVisible();
     expect(
-      screen.queryByRole('radio', { name: 'Octop Off' }),
+      screen.getByText((content) => content.includes(pending)),
+    ).toBeVisible();
+    expect(
+      screen.queryByText((content) => content === completed),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('radio', { name: 'Octop A' }));
-    const employees = await screen.findByRole('region', {
-      name: copy.portalAgentGrantsEmployees,
+    const installButton = screen.getByRole('button', {
+      name: copy.portalAgentGrantsInstallExperts,
     });
-    await user.click(
-      await within(employees).findByRole('radio', { name: 'Alice (alice)' }),
-    );
-    await user.click(
-      within(employees).getByRole('radio', { name: 'Bob (bob)' }),
-    );
+    expect(installButton).toBeEnabled();
 
+    await user.click(screen.getByText('Alice'));
     expect(
-      within(employees).getByRole('radio', { name: 'Alice (alice)' }),
-    ).not.toBeChecked();
-    expect(
-      within(employees).getByRole('radio', { name: 'Bob (bob)' }),
-    ).toBeChecked();
-    expect(
-      await screen.findByText(copy.portalAgentGrantsAccountExists),
-    ).toBeVisible();
-    expect(screen.getByText('Agent ID: agt-1')).toBeVisible();
-    expect(screen.getByText('Published template ID: tpl-9')).toBeVisible();
-    expect(screen.getByText(pending)).toBeVisible();
-    expect(screen.queryByText(completed)).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: copy.portalAgentGrantsCreate }),
-    ).toBeDisabled();
-    expect(calls.filter((call) => call.path.endsWith('/grants'))).toHaveLength(
-      0,
-    );
-
-    await user.click(
-      within(employees).getByRole('radio', { name: 'Alice (alice)' }),
-    );
-    expect(
-      await screen.findByText(copy.portalAgentGrantsAccountMissing),
-    ).toBeVisible();
-    await user.click(screen.getByRole('radio', { name: 'Published Helper' }));
-    const create = screen.getByRole('button', {
+      screen.getAllByText(copy.portalAgentGrantsUnsynced).length,
+    ).toBeGreaterThan(0);
+    const createButton = screen.getByRole('button', {
       name: copy.portalAgentGrantsCreate,
     });
-    await waitFor(() => expect(create).toBeEnabled());
-    await user.click(create);
-    const dialog = await screen.findByRole('dialog', {
-      name: copy.portalAgentGrantsCreateTitle,
-    });
+    await waitFor(() => expect(createButton).toBeEnabled());
+    await user.click(createButton);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent(copy.portalAgentGrantsCreateTitle);
+    expect(dialog).toHaveTextContent('alice');
+    expect(dialog).toHaveTextContent(copy.portalAgentGrantsDockerSandbox);
     expect(
-      within(dialog).getByLabelText(copy.portalAgentGrantsUsername),
-    ).toHaveValue('alice');
-    await user.click(within(dialog).getByRole('combobox'));
-    expect(
-      screen.queryByRole('option', { name: 'Administrator' }),
+      screen.queryByText(copy.portalAgentGrantsPermissions),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'User' })).toBeInTheDocument();
-    const submit = within(dialog).getByRole('button', {
+
+    await user.click(screen.getByText('Published Helper'));
+    const submit = screen.getByRole('button', {
       name: copy.portalAgentGrantsSubmit,
     });
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
 
-    const result = await screen.findByTestId('agent-grant-result');
-    expect(result).toHaveAttribute('data-result-kind', 'BOOTSTRAP_PENDING');
-    expect(result).not.toHaveAttribute('data-result-kind', 'COMPLETED');
-    expect(within(result).getByText(pending)).toBeVisible();
-    expect(within(result).queryByText(completed)).not.toBeInTheDocument();
-    expect(screen.queryByText(completed)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        calls.filter(
+          (call) => call.method === 'POST' && call.path.endsWith('/grants'),
+        ),
+      ).toHaveLength(1),
+    );
     const grants = calls.filter(
       (call) => call.method === 'POST' && call.path.endsWith('/grants'),
-    );
-    expect(grants).toHaveLength(1);
-    expect(grants[0]?.path).toBe(
-      'enterpriseAppPortal/agentGrants/applications/octop-a/grants',
     );
     expect(grants[0]?.json).toMatchObject({
       casdoorUserId: 'org/alice',
       role: 'user',
-      createDefaultExpert: true,
-      expertTemplateId: 'tpl-1',
+      directory: true,
+      expertTemplateIds: ['tpl-1'],
+      defaultExpertTemplateId: 'tpl-1',
     });
     expect(grants[0]?.json).not.toHaveProperty('password');
-    expect(grants[0]?.json).not.toHaveProperty('directory');
+    expect(grants[0]?.json).not.toHaveProperty('permissions');
     expect(grants[0]?.json).not.toHaveProperty('username');
+    expect(await screen.findByText(pending)).toBeVisible();
   });
 });

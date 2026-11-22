@@ -1,6 +1,7 @@
 import { useApiClient, useToaster } from '@nocobase/app-client';
 import { useCan } from '@nocobase/app-plugin-authorization/client';
 import { useTranslation } from '@nocobase/i18n/client';
+import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactElement } from 'react';
 
 import { PageContainer } from '#components/page-container';
@@ -8,6 +9,14 @@ import { PageHeader } from '#components/page-header';
 import { Alert, AlertDescription, AlertTitle } from '#components/ui/alert';
 import { Button } from '#components/ui/button';
 import { Checkbox } from '#components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '#components/ui/dialog';
 import { Input } from '#components/ui/input';
 import { Label } from '#components/ui/label';
 import { RadioGroup, RadioGroupItem } from '#components/ui/radio-group';
@@ -18,14 +27,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '#components/ui/select';
+import { Switch } from '#components/ui/switch';
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '#components/ui/sheet';
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#components/ui/table';
 import { SettingsError, SettingsLoading } from './shared.js';
 import { useSettingsData } from './hooks.js';
 import {
@@ -37,39 +47,29 @@ import {
   agentGrantResultKind,
   buildAgentGrantCreateBody,
   defaultRoleId,
+  emptyCreateDraft,
   expertStatusText,
   filterPublishedTemplates,
-  parseOptionalNumber,
-  roleDraftFields,
+  installedTemplateIds,
+  normalizeOctopIdentityField,
   selectAgentGrantApplications,
   selectableRoles,
+  toggleExpertTemplate,
+  withRoleDefaults,
   type AgentGrantApplication,
   type AgentGrantCreateOptions,
   type AgentGrantEmployee,
   type AgentGrantOperation,
+  type CreateDraft,
+  type EmployeeSyncFilter,
   type InstalledExpert,
   type OctopAccountState,
   type PublishedTemplate,
 } from './portal-agent-grants-model.js';
 
-const LIST_SCROLL_CLASS =
-  'h-[70vh] max-h-[70vh] overflow-auto rounded-md border p-2';
-
 const AGENT_GRANTS = {
   resource: { type: 'settings', id: 'enterpriseAppPortal.agentGrants' },
 } as const;
-
-interface CreateDraft {
-  readonly displayName: string;
-  readonly email: string;
-  readonly roleId: string;
-  readonly permissions: readonly string[];
-  readonly maxAgents: string;
-  readonly tokenQuota: string;
-  readonly workspaceRootDir: string;
-  readonly allowedBackendTypes: readonly string[];
-  readonly createDefaultExpert: boolean;
-}
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -129,7 +129,9 @@ function readApplications(data: unknown): AgentGrantApplication[] {
         casdoorAppKey:
           typeof row.casdoorAppKey === 'string' ? row.casdoorAppKey : '',
         agentGrantsEnabled: row.agentGrantsEnabled === true,
-        apiBaseUrlConfigured: row.apiBaseUrlConfigured === true,
+        apiBaseUrlConfigured:
+          row.apiBaseUrlConfigured === true ||
+          (typeof row.apiBaseUrl === 'string' && row.apiBaseUrl.length > 0),
         apiAuthMode:
           typeof row.apiAuthMode === 'string' ? row.apiAuthMode : null,
       },
@@ -160,6 +162,11 @@ function readEmployees(data: unknown): AgentGrantEmployee[] {
           row.grantSource === 'inherited' || row.grantSource === 'direct'
             ? row.grantSource
             : undefined,
+        accountExists: row.accountExists === true,
+        octopUserId: firstString(row, 'octopUserId', 'octop_user_id') || null,
+        disabled: row.disabled === true,
+        syncedAt: firstString(row, 'syncedAt', 'synced_at') || null,
+        experts: readExperts(row.experts),
       },
     ];
   });
@@ -249,32 +256,11 @@ function readCreateOptions(data: unknown): AgentGrantCreateOptions {
       },
     ];
   });
-  const permissions = (
-    Array.isArray(row.permissions) ? row.permissions : []
-  ).flatMap((item) => {
-    const permission = asRecord(item);
-    if (!permission) return [];
-    const key = firstString(permission, 'key');
-    if (!key) return [];
-    return [
-      {
-        key,
-        category: firstString(permission, 'category') || 'general',
-        label: firstString(permission, 'label') || key,
-      },
-    ];
-  });
   return {
     roles: selectableRoles(roles),
-    permissions,
     ldapConfigured: row.ldapConfigured === true,
-    backendTypes: readStringList(
-      row,
-      'supportedBackendTypes',
-      'supported_backend_types',
-      'backendTypes',
-      'backend_types',
-    ),
+    allowedBackendTypes: ['docker'],
+    expertTemplateSource: 'published',
   };
 }
 
@@ -285,6 +271,11 @@ function readOperation(data: unknown): AgentGrantOperation | undefined {
   return {
     id: row.id,
     status: typeof row.status === 'string' ? row.status : '',
+    operationMode: firstString(row, 'operationMode', 'operation_mode') || null,
+    selectedExpertCount: readNumber(row, 'selectedExpertCount') ?? 0,
+    completedExpertCount: readNumber(row, 'completedExpertCount') ?? 0,
+    failedExpertCount: readNumber(row, 'failedExpertCount') ?? 0,
+    skippedExpertCount: readNumber(row, 'skippedExpertCount') ?? 0,
     bootstrapStatus:
       firstString(row, 'bootstrapStatus', 'bootstrap_status') || null,
     agentId: firstString(row, 'agentId', 'agent_id') || null,
@@ -308,161 +299,47 @@ function formatTimestamp(value: string | null): string {
   return date.toLocaleString();
 }
 
-function draftFromRole(
+function employeeSyncColumn(
   employee: AgentGrantEmployee,
-  options: AgentGrantCreateOptions,
-  roleId: string,
-  previous?: CreateDraft,
-): CreateDraft {
-  const role =
-    options.roles.find((item) => item.id === roleId) ?? options.roles[0];
-  return {
-    displayName: previous?.displayName ?? employee.displayName,
-    email: previous?.email ?? employee.email,
-    ...roleDraftFields(role, options),
-    createDefaultExpert: previous?.createDefaultExpert ?? true,
-  };
-}
-
-function Choice({
-  id,
-  value,
-  label,
-  description,
-  disabled = false,
-}: {
-  readonly id: string;
-  readonly value: string;
-  readonly label: string;
-  readonly description?: string;
-  readonly disabled?: boolean;
-}): ReactElement {
-  return (
-    <div className='flex items-start gap-2 rounded-md px-1 py-1.5'>
-      <RadioGroupItem id={id} value={value} disabled={disabled} />
-      <div className='grid gap-0.5'>
-        <Label htmlFor={id} className='font-normal'>
-          {label}
-        </Label>
-        {description ? (
-          <p className='text-xs text-muted-foreground'>{description}</p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function AgentGrantResult({
-  operation,
-  busy,
-  onRefresh,
-  onReconcile,
-}: {
-  readonly operation: AgentGrantOperation;
-  readonly busy: boolean;
-  readonly onRefresh: () => void;
-  readonly onReconcile: () => void;
-}): ReactElement {
-  const { t } = useTranslation();
-  const kind = agentGrantResultKind(operation);
-  const title =
-    kind === 'USER_CREATED'
-      ? t('settings.portalAgentGrantsUserCreated')
-      : kind === 'BOOTSTRAP_PENDING'
-        ? t('settings.portalAgentGrantsBootstrapPending')
-        : kind === 'COMPLETED'
-          ? t('settings.portalAgentGrantsCompleted')
-          : kind === 'BOOTSTRAP_FAILED'
-            ? t('settings.portalAgentGrantsBootstrapFailed')
-            : kind === 'OUTCOME_UNKNOWN'
-              ? t('settings.portalAgentGrantsOutcomeUnknown')
-              : kind === 'ACCOUNT_EXISTS'
-                ? t('settings.portalAgentGrantsAccountExists')
-                : operation.status || t('settings.portalAgentGrantsFailed');
-  return (
-    <Alert
-      data-testid='agent-grant-result'
-      data-result-kind={kind}
-      variant={
-        kind === 'BOOTSTRAP_FAILED' ||
-        kind === 'OUTCOME_UNKNOWN' ||
-        kind === 'ACCOUNT_EXISTS'
-          ? 'destructive'
-          : 'default'
-      }
-    >
-      <AlertTitle>{title}</AlertTitle>
-      <AlertDescription>
-        <div className='grid gap-2'>
-          {kind === 'BOOTSTRAP_PENDING' ? (
-            <p>{t('settings.portalAgentGrantsUserCreated')}</p>
-          ) : null}
-          {kind === 'OUTCOME_UNKNOWN' ? (
-            <p>{t('settings.portalAgentGrantsOutcomeUnknownHint')}</p>
-          ) : null}
-          {operation.agentId ? (
-            <p>
-              {t('settings.portalAgentGrantsAgentId')}: {operation.agentId}
-            </p>
-          ) : null}
-          {operation.publishedExpertId ? (
-            <p>
-              {t('settings.portalAgentGrantsPublishedExpertId')}:{' '}
-              {operation.publishedExpertId}
-            </p>
-          ) : null}
-          {operation.errorCode ? <p>{operation.errorCode}</p> : null}
-          {operation.errorMessage ? <p>{operation.errorMessage}</p> : null}
-          <div className='flex flex-wrap gap-2'>
-            {kind === 'BOOTSTRAP_PENDING' || kind === 'USER_CREATED' ? (
-              <Button
-                size='sm'
-                variant='outline'
-                disabled={busy}
-                onClick={onRefresh}
-              >
-                {t('settings.portalAgentGrantsRefreshStatus')}
-              </Button>
-            ) : null}
-            {kind === 'OUTCOME_UNKNOWN' ? (
-              <Button size='sm' disabled={busy} onClick={onReconcile}>
-                {t('settings.portalAgentGrantsReconcile')}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </AlertDescription>
-    </Alert>
-  );
+  t: (key: string) => string,
+): string {
+  if (!employee.accountExists) {
+    return t('settings.portalAgentGrantsUnsynced');
+  }
+  if (employee.disabled) {
+    return t('settings.portalAgentGrantsAccountDisabled');
+  }
+  if (employee.syncedAt) return formatTimestamp(employee.syncedAt);
+  return t('settings.portalAgentGrantsAccountExistsShort');
 }
 
 export default function PortalAgentGrantsPage(): ReactElement {
   const { t } = useTranslation();
   const api = useApiClient();
   const toaster = useToaster();
-  const canWrite = useCan({ ...AGENT_GRANTS, action: 'configure' }).can;
+  const canConfigure = useCan({ ...AGENT_GRANTS, action: 'configure' }).can;
+  const applicationRequestIdRef = useRef(0);
+  const employeeRequestIdRef = useRef(0);
+
+  const [appCode, setAppCode] = useState('');
+  const [employeeId, setEmployeeId] = useState('');
+  const [employeeQuery, setEmployeeQuery] = useState('');
+  const [syncFilter, setSyncFilter] = useState<EmployeeSyncFilter>('all');
+  const [userSort, setUserSort] = useState<'asc' | 'desc'>('asc');
+  const [templateQuery, setTemplateQuery] = useState('');
+  const [octopState, setOctopState] = useState<
+    OctopAccountState | 'loading' | 'error' | undefined
+  >();
+  const [templates, setTemplates] = useState<PublishedTemplate[]>([]);
+  const [createOptions, setCreateOptions] = useState<AgentGrantCreateOptions>();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [draft, setDraft] = useState<CreateDraft>(() => emptyCreateDraft());
+  const [submitting, setSubmitting] = useState(false);
+  const [operation, setOperation] = useState<AgentGrantOperation>();
+
   const applicationsQuery = useSettingsData<{ data: readonly unknown[] }>(
     agentGrantApplicationsPath(),
   );
-  const ticketRef = useRef(0);
-  const [appCode, setAppCode] = useState<string>();
-  const [employees, setEmployees] = useState<readonly AgentGrantEmployee[]>([]);
-  const [employeeId, setEmployeeId] = useState<string>();
-  const [templates, setTemplates] = useState<readonly PublishedTemplate[]>([]);
-  const [templateId, setTemplateId] = useState<string>();
-  const [templateQuery, setTemplateQuery] = useState('');
-  const [octopState, setOctopState] = useState<OctopAccountState>();
-  const [createOptions, setCreateOptions] = useState<AgentGrantCreateOptions>();
-  const [draft, setDraft] = useState<CreateDraft>();
-  const [operation, setOperation] = useState<AgentGrantOperation>();
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [listLoading, setListLoading] = useState(false);
-  const [stateLoading, setStateLoading] = useState(false);
-  const [optionsLoading, setOptionsLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [listError, setListError] = useState<unknown>();
-  const [octopError, setOctopError] = useState<unknown>();
-  const [optionsError, setOptionsError] = useState<unknown>();
 
   const applications = useMemo(
     () =>
@@ -471,728 +348,846 @@ export default function PortalAgentGrantsPage(): ReactElement {
       ),
     [applicationsQuery.data],
   );
-  const selectedEmployee = employees.find((item) => item.id === employeeId);
-  const visibleTemplates = useMemo(
-    () => filterPublishedTemplates(templates, templateQuery),
-    [templates, templateQuery],
+
+  const employeesQuery = useSettingsData<{ data: readonly unknown[] }>(
+    appCode
+      ? agentGrantApplicationPath(appCode, 'employees')
+      : `${agentGrantApplicationsPath()}/_/employees`,
+    { active: Boolean(appCode) },
   );
-  const selectedTemplate = templates.find((item) => item.id === templateId);
-  const pendingLabel = t('settings.portalAgentGrantsBootstrapPending');
-  const operationBlocksCreate =
-    operation !== undefined && agentGrantResultKind(operation) !== 'OTHER';
-  const createDisabled =
-    !canWrite ||
-    !selectedEmployee ||
-    selectedEmployee.isForbidden ||
-    stateLoading ||
-    octopError !== undefined ||
-    !octopState ||
-    octopState.accountExists ||
-    operationBlocksCreate;
 
-  const selectApplication = (nextAppCode: string) => {
-    const ticket = ++ticketRef.current;
-    setAppCode(nextAppCode);
-    setEmployees([]);
-    setEmployeeId(undefined);
-    setTemplates([]);
-    setTemplateId(undefined);
-    setTemplateQuery('');
-    setOctopState(undefined);
-    setOctopError(undefined);
-    setCreateOptions(undefined);
-    setDraft(undefined);
-    setOperation(undefined);
-    setDrawerOpen(false);
-    setListError(undefined);
-    setListLoading(true);
-    void (async () => {
-      try {
-        const [employeeResult, templateResult] = await Promise.all([
-          api.request<unknown>({
-            path: agentGrantApplicationPath(nextAppCode, 'employees'),
-          }),
-          api.request<unknown>({
-            path: agentGrantApplicationPath(nextAppCode, 'templates'),
-          }),
-        ]);
-        if (ticket !== ticketRef.current) return;
-        setEmployees(readEmployees(employeeResult));
-        setTemplates(readTemplates(templateResult));
-      } catch (error) {
-        if (ticket !== ticketRef.current) return;
-        setListError(error);
-      } finally {
-        if (ticket === ticketRef.current) setListLoading(false);
-      }
-    })();
-  };
+  const employees = useMemo(
+    () => (appCode ? readEmployees(employeesQuery.data ?? { data: [] }) : []),
+    [appCode, employeesQuery.data],
+  );
 
-  const loadOctopState = async (
-    nextAppCode: string,
-    employee: AgentGrantEmployee,
-    ticket: number,
-  ) => {
-    setStateLoading(true);
-    setOctopError(undefined);
-    setOctopState(undefined);
-    try {
-      const result = await api.request<unknown>({
-        path: agentGrantOctopStatePath(nextAppCode, employee.id),
-      });
-      if (ticket !== ticketRef.current) return;
-      const state = readOctopState(result);
-      if (!state) throw new Error(t('settings.portalAgentGrantsLookupFailed'));
-      setOctopState(state);
-    } catch (error) {
-      if (ticket !== ticketRef.current) return;
-      setOctopError(error);
-    } finally {
-      if (ticket === ticketRef.current) setStateLoading(false);
-    }
-  };
+  const selectedEmployee = employees.find((row) => row.id === employeeId);
+  const isNewUser =
+    octopState !== undefined &&
+    octopState !== 'loading' &&
+    octopState !== 'error' &&
+    !octopState.accountExists;
+  const installedIds =
+    octopState && octopState !== 'loading' && octopState !== 'error'
+      ? installedTemplateIds(octopState.experts)
+      : new Set<string>();
 
-  const selectEmployee = (nextId: string) => {
-    const employee = employees.find((item) => item.id === nextId);
-    if (!employee || employee.isForbidden || !appCode) return;
-    const ticket = ++ticketRef.current;
-    setEmployeeId(nextId);
-    setOperation(undefined);
-    void loadOctopState(appCode, employee, ticket);
-  };
-
-  const openCreate = () => {
-    if (createDisabled || !appCode || !selectedEmployee) return;
-    const ticket = ++ticketRef.current;
-    setDrawerOpen(true);
-    setDraft(undefined);
-    setCreateOptions(undefined);
-    setOptionsError(undefined);
-    setOptionsLoading(true);
-    void (async () => {
-      try {
-        const result = await api.request<unknown>({
-          path: agentGrantApplicationPath(appCode, 'createOptions'),
-        });
-        if (ticket !== ticketRef.current) return;
-        const options = readCreateOptions(result);
-        setCreateOptions(options);
-        setDraft(
-          draftFromRole(
-            selectedEmployee,
-            options,
-            defaultRoleId(options.roles),
-          ),
-        );
-      } catch (error) {
-        if (ticket !== ticketRef.current) return;
-        setOptionsError(error);
-      } finally {
-        if (ticket === ticketRef.current) setOptionsLoading(false);
-      }
-    })();
-  };
-
-  const applyRole = (roleId: string) => {
-    if (!selectedEmployee || !createOptions) return;
-    setDraft((current) =>
-      draftFromRole(selectedEmployee, createOptions, roleId, current),
+  const filteredEmployees = useMemo(() => {
+    const needle = employeeQuery.trim().toLowerCase();
+    const matched = employees.filter((employee) => {
+      if (syncFilter === 'synced' && !employee.accountExists) return false;
+      if (syncFilter === 'unsynced' && employee.accountExists) return false;
+      if (!needle) return true;
+      return [employee.displayName, employee.name, employee.email].some(
+        (value) => value.toLowerCase().includes(needle),
+      );
+    });
+    const direction = userSort === 'asc' ? 1 : -1;
+    return matched.sort(
+      (left, right) =>
+        direction *
+        left.displayName.localeCompare(right.displayName, undefined, {
+          sensitivity: 'base',
+          numeric: true,
+        }),
     );
-  };
+  }, [employeeQuery, employees, syncFilter, userSort]);
 
-  const submitCreate = async () => {
-    if (!draft || !appCode || !selectedEmployee || !createOptions) return;
-    const role = createOptions.roles.find((item) => item.id === draft.roleId);
-    if (!role || !createOptions.ldapConfigured) return;
+  const filteredTemplates = useMemo(
+    () => filterPublishedTemplates(templates, templateQuery),
+    [templateQuery, templates],
+  );
+
+  const resultKind = operation ? agentGrantResultKind(operation) : undefined;
+
+  async function selectApplication(nextAppCode: string): Promise<void> {
+    setAppCode(nextAppCode);
+    setEmployeeId('');
+    setEmployeeQuery('');
+    setSyncFilter('all');
+    setOctopState(undefined);
+    setTemplates([]);
+    setCreateOptions(undefined);
+    setOperation(undefined);
+    setDialogOpen(false);
+    if (!nextAppCode) return;
+    const current = ++applicationRequestIdRef.current;
+    ++employeeRequestIdRef.current;
+    try {
+      const [templateResponse, optionsResponse] = await Promise.all([
+        api.request<unknown>({
+          path: agentGrantApplicationPath(nextAppCode, 'templates'),
+        }),
+        api.request<unknown>({
+          path: agentGrantApplicationPath(nextAppCode, 'createOptions'),
+        }),
+      ]);
+      if (current !== applicationRequestIdRef.current) return;
+      setTemplates(readTemplates(templateResponse));
+      setCreateOptions(readCreateOptions(optionsResponse));
+    } catch (error) {
+      if (current !== applicationRequestIdRef.current) return;
+      toaster.show({
+        type: 'error',
+        title: errorMessage(
+          error,
+          t('settings.portalAgentGrantsOptionsFailed'),
+        ),
+      });
+    }
+  }
+
+  async function selectEmployee(
+    nextEmployeeId: string,
+    options?: { readonly keepOperation?: boolean },
+  ): Promise<void> {
+    setEmployeeId(nextEmployeeId);
+    if (!options?.keepOperation) setOperation(undefined);
+    setDialogOpen(false);
+    if (!appCode || !nextEmployeeId) {
+      setOctopState(undefined);
+      return;
+    }
+    setOctopState('loading');
+    const current = ++employeeRequestIdRef.current;
+    try {
+      const response = await api.request<unknown>({
+        path: agentGrantOctopStatePath(appCode, nextEmployeeId),
+      });
+      if (current !== employeeRequestIdRef.current) return;
+      const state = readOctopState(response);
+      setOctopState(state ?? 'error');
+    } catch {
+      if (current !== employeeRequestIdRef.current) return;
+      setOctopState('error');
+    }
+  }
+
+  function openDialog(): void {
+    if (!selectedEmployee || !createOptions) return;
+    const roleId = defaultRoleId(createOptions.roles);
+    const role = createOptions.roles.find((item) => item.id === roleId);
+    const next = withRoleDefaults(emptyCreateDraft(roleId), role);
+    setDraft(next);
+    setDialogOpen(true);
+  }
+
+  function changeRole(roleId: string): void {
+    const role = createOptions?.roles.find((item) => item.id === roleId);
+    setDraft((current) => withRoleDefaults({ ...current, roleId }, role));
+  }
+
+  async function submitGrant(): Promise<void> {
+    if (!selectedEmployee || !appCode) return;
     const body = buildAgentGrantCreateBody({
       casdoorUserId: selectedEmployee.id,
-      displayName: draft.displayName,
-      email: draft.email,
-      roleId: draft.roleId,
-      permissions: draft.permissions,
-      maxAgents: draft.maxAgents,
-      tokenQuota: draft.tokenQuota,
-      workspaceRootDir: draft.workspaceRootDir,
-      allowedBackendTypes: draft.allowedBackendTypes,
-      createDefaultExpert: draft.createDefaultExpert,
-      expertTemplateId: selectedTemplate?.id,
+      isNewUser,
+      draft,
     });
-    if (!body) return;
+    if (!body) {
+      toaster.show({
+        type: 'error',
+        title: t('settings.portalAgentGrantsInvalidForm'),
+      });
+      return;
+    }
+    if (
+      isNewUser &&
+      createOptions &&
+      !createOptions.ldapConfigured &&
+      body.directory
+    ) {
+      toaster.show({
+        type: 'error',
+        title: t('settings.portalAgentGrantsLdapRequired'),
+      });
+      return;
+    }
     setSubmitting(true);
     try {
-      const result = await api.request<unknown>({
-        path: agentGrantApplicationPath(appCode, 'grants'),
+      const response = await api.request<unknown>({
         method: 'POST',
+        path: agentGrantApplicationPath(appCode, 'grants'),
         json: body,
       });
-      const created = readOperation(result);
-      if (!created) throw new Error(t('settings.portalAgentGrantsFailed'));
+      const created = readOperation(response);
       setOperation(created);
-      const ticket = ++ticketRef.current;
-      await loadOctopState(appCode, selectedEmployee, ticket);
+      setDialogOpen(false);
+      setDraft(emptyCreateDraft());
+      employeesQuery.reload();
+      await selectEmployee(selectedEmployee.id, { keepOperation: true });
+      toaster.show({
+        type: 'success',
+        title: isNewUser
+          ? t('settings.portalAgentGrantsUserCreated')
+          : t('settings.portalAgentGrantsInstallDone'),
+      });
     } catch (error) {
       toaster.show({
         type: 'error',
         title: errorMessage(error, t('settings.portalAgentGrantsFailed')),
       });
-      const ticket = ++ticketRef.current;
-      await loadOctopState(appCode, selectedEmployee, ticket);
     } finally {
       setSubmitting(false);
     }
-  };
+  }
 
-  const refreshOperation = async () => {
+  async function refreshOperation(): Promise<void> {
     if (!operation) return;
-    setSubmitting(true);
     try {
-      const result = await api.request<unknown>({
+      const response = await api.request<unknown>({
         path: agentGrantOperationPath(operation.id),
       });
-      const next = readOperation(result);
-      if (next) setOperation(next);
+      setOperation(readOperation(response));
     } catch (error) {
       toaster.show({
         type: 'error',
         title: errorMessage(error, t('settings.portalAgentGrantsFailed')),
       });
-    } finally {
-      setSubmitting(false);
     }
-  };
+  }
 
-  const reconcileOperation = async () => {
+  async function reconcileOperation(): Promise<void> {
     if (!operation) return;
-    setSubmitting(true);
     try {
-      const result = await api.request<unknown>({
-        path: agentGrantReconcilePath(operation.id),
+      const response = await api.request<unknown>({
         method: 'POST',
+        path: agentGrantReconcilePath(operation.id),
       });
-      const next = readOperation(result);
-      if (next) setOperation(next);
+      setOperation(readOperation(response));
+      if (selectedEmployee) {
+        await selectEmployee(selectedEmployee.id, { keepOperation: true });
+      }
     } catch (error) {
       toaster.show({
         type: 'error',
         title: errorMessage(error, t('settings.portalAgentGrantsFailed')),
       });
-    } finally {
-      setSubmitting(false);
     }
-  };
+  }
 
-  const result = operation ? (
-    <AgentGrantResult
-      operation={operation}
-      busy={submitting}
-      onRefresh={() => void refreshOperation()}
-      onReconcile={() => void reconcileOperation()}
-    />
-  ) : null;
-  const numbersInvalid =
-    draft !== undefined &&
-    (parseOptionalNumber(draft.maxAgents) === undefined ||
-      parseOptionalNumber(draft.tokenQuota) === undefined);
-  const templateRequired =
-    draft?.createDefaultExpert === true && selectedTemplate === undefined;
-  const submitDisabled =
-    submitting ||
-    !draft ||
-    !createOptions ||
-    createOptions.roles.length === 0 ||
-    !createOptions.ldapConfigured ||
-    numbersInvalid ||
-    templateRequired;
+  if (applicationsQuery.loading) return <SettingsLoading />;
+  if (applicationsQuery.error) {
+    return (
+      <SettingsError
+        error={applicationsQuery.error}
+        retry={() => applicationsQuery.reload()}
+      />
+    );
+  }
+
+  const accountBlocked =
+    octopState === 'loading' ||
+    octopState === 'error' ||
+    (octopState !== undefined && octopState.disabled);
+  const canOpen = Boolean(selectedEmployee) && !accountBlocked && canConfigure;
 
   return (
-    <PageContainer className='space-y-6'>
+    <PageContainer>
       <PageHeader
         title={t('settings.portalAgentGrants')}
         description={t('settings.portalAgentGrantsDescription')}
-        actions={
-          <Button disabled={createDisabled} onClick={openCreate}>
-            {t('settings.portalAgentGrantsCreate')}
-          </Button>
-        }
       />
-      {!canWrite ? (
-        <Alert>
+      {!canConfigure ? (
+        <Alert className='mb-4'>
+          <AlertTitle>{t('settings.portalAgentGrantsReadOnly')}</AlertTitle>
+        </Alert>
+      ) : null}
+
+      <div className='mb-4 grid gap-4 lg:grid-cols-[240px_1fr]'>
+        <section className='rounded-md border p-3'>
+          <h2 className='mb-2 text-sm font-medium'>
+            {t('settings.portalAgentGrantsApplications')}
+          </h2>
+          {applications.length === 0 ? (
+            <p className='text-sm text-muted-foreground'>
+              {t('settings.portalAgentGrantsEmptyApplications')}
+            </p>
+          ) : (
+            <RadioGroup
+              value={appCode}
+              onValueChange={(value) => {
+                void selectApplication(String(value ?? ''));
+              }}
+            >
+              {applications.map((application) => {
+                const id = `agent-grant-app-${application.appCode}`;
+                return (
+                  <div
+                    key={application.appCode}
+                    className='mb-2 flex cursor-pointer items-start gap-2 rounded-md border p-2'
+                  >
+                    <RadioGroupItem id={id} value={application.appCode} />
+                    <div className='grid gap-0.5'>
+                      <Label htmlFor={id} className='font-normal'>
+                        {application.name}
+                      </Label>
+                      <p className='text-xs text-muted-foreground'>
+                        {application.appCode}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </RadioGroup>
+          )}
+        </section>
+
+        <section className='rounded-md border p-3'>
+          <div className='mb-3 flex flex-wrap items-center justify-between gap-2'>
+            <h2 className='text-sm font-medium'>
+              {t('settings.portalAgentGrantsEmployees', {
+                count: employees.length,
+              })}
+            </h2>
+            {appCode ? (
+              <div className='flex flex-wrap items-center justify-end gap-2'>
+                <div
+                  className='inline-flex rounded-md border p-0.5'
+                  role='group'
+                  aria-label={t('settings.portalAgentGrantsSyncFilter')}
+                >
+                  {(
+                    [
+                      ['all', 'settings.portalAgentGrantsSyncFilterAll'],
+                      [
+                        'unsynced',
+                        'settings.portalAgentGrantsSyncFilterUnsynced',
+                      ],
+                      ['synced', 'settings.portalAgentGrantsSyncFilterSynced'],
+                    ] as const
+                  ).map(([value, labelKey]) => (
+                    <Button
+                      key={value}
+                      type='button'
+                      size='sm'
+                      variant={syncFilter === value ? 'secondary' : 'ghost'}
+                      className='h-7 px-2.5'
+                      onClick={() => setSyncFilter(value)}
+                    >
+                      {t(labelKey)}
+                    </Button>
+                  ))}
+                </div>
+                <Input
+                  className='w-48'
+                  value={employeeQuery}
+                  onChange={(event) => setEmployeeQuery(event.target.value)}
+                  placeholder={t('settings.portalAgentGrantsSearchEmployees')}
+                  aria-label={t('settings.portalAgentGrantsSearchEmployees')}
+                />
+                <Button
+                  type='button'
+                  disabled={!canOpen}
+                  onClick={() => openDialog()}
+                >
+                  {isNewUser
+                    ? t('settings.portalAgentGrantsCreate')
+                    : t('settings.portalAgentGrantsInstallExperts')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+
+          {!appCode ? (
+            <p className='text-sm text-muted-foreground'>
+              {t('settings.portalAgentGrantsSelectApplication')}
+            </p>
+          ) : employeesQuery.loading ? (
+            <SettingsLoading />
+          ) : (
+            <div className='max-h-[70vh] overflow-auto rounded-md border'>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className='w-10' />
+                    <TableHead>
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='sm'
+                        className='-ml-3 h-8 gap-1 px-2'
+                        onClick={() =>
+                          setUserSort((current) =>
+                            current === 'asc' ? 'desc' : 'asc',
+                          )
+                        }
+                      >
+                        {t('settings.portalAgentGrantsColumnUser')}
+                        {userSort === 'asc' ? (
+                          <ArrowUpIcon className='size-3.5' />
+                        ) : (
+                          <ArrowDownIcon className='size-3.5' />
+                        )}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      {t('settings.portalAgentGrantsColumnEmail')}
+                    </TableHead>
+                    <TableHead>
+                      {t('settings.portalAgentGrantsColumnAccount')}
+                    </TableHead>
+                    <TableHead>
+                      {t('settings.portalAgentGrantsColumnSync')}
+                    </TableHead>
+                    <TableHead>
+                      {t('settings.portalAgentGrantsColumnExperts')}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredEmployees.map((employee) => {
+                    const selected = employee.id === employeeId;
+                    const rowState = selected ? octopState : undefined;
+                    const experts =
+                      rowState && rowState !== 'loading' && rowState !== 'error'
+                        ? rowState.experts
+                        : employee.experts;
+                    return (
+                      <TableRow
+                        key={employee.id}
+                        data-state={selected ? 'selected' : undefined}
+                        className='cursor-pointer'
+                        onClick={() => {
+                          void selectEmployee(employee.id);
+                        }}
+                      >
+                        <TableCell>
+                          <RadioGroup value={employeeId}>
+                            <RadioGroupItem value={employee.id} />
+                          </RadioGroup>
+                        </TableCell>
+                        <TableCell className='font-medium'>
+                          {employee.displayName}
+                        </TableCell>
+                        <TableCell className='text-muted-foreground'>
+                          {employee.email || '—'}
+                        </TableCell>
+                        <TableCell>{employee.name}</TableCell>
+                        <TableCell>{employeeSyncColumn(employee, t)}</TableCell>
+                        <TableCell>
+                          {experts.length > 0 ? (
+                            <ul className='space-y-1 text-xs'>
+                              {experts.map((expert) => (
+                                <li key={expert.agentId}>
+                                  {expert.name || expert.agentId} (
+                                  {expert.agentId}) ·{' '}
+                                  {expertStatusText(
+                                    expert,
+                                    t(
+                                      'settings.portalAgentGrantsBootstrapPending',
+                                    ),
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : employee.accountExists ? (
+                            t('settings.portalAgentGrantsNoExperts')
+                          ) : (
+                            '—'
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {operation ? (
+        <Alert className='mb-4'>
+          <AlertTitle>
+            {resultKind === 'COMPLETED'
+              ? t('settings.portalAgentGrantsCompleted')
+              : resultKind === 'PARTIAL'
+                ? t('settings.portalAgentGrantsPartial')
+                : resultKind === 'BOOTSTRAP_PENDING'
+                  ? t('settings.portalAgentGrantsBootstrapPending')
+                  : resultKind === 'OUTCOME_UNKNOWN'
+                    ? t('settings.portalAgentGrantsOutcomeUnknown')
+                    : t('settings.portalAgentGrantsUserCreated')}
+          </AlertTitle>
           <AlertDescription>
-            {t('settings.portalAgentGrantsReadOnly')}
+            <div className='space-y-1 text-sm'>
+              <div>
+                {t('settings.portalAgentGrantsOctopUserId')}:{' '}
+                {operation.octopUserId ?? '—'}
+              </div>
+              <div>
+                {operation.completedExpertCount}/{operation.selectedExpertCount}{' '}
+                {t('settings.portalAgentGrantsExpertsProgress')}
+              </div>
+              {operation.errorMessage ? (
+                <div>{operation.errorMessage}</div>
+              ) : null}
+            </div>
+            <div className='mt-3 flex gap-2'>
+              <Button
+                type='button'
+                variant='outline'
+                onClick={() => void refreshOperation()}
+              >
+                {t('settings.portalAgentGrantsRefreshStatus')}
+              </Button>
+              {resultKind === 'OUTCOME_UNKNOWN' ? (
+                <Button type='button' onClick={() => void reconcileOperation()}>
+                  {t('settings.portalAgentGrantsReconcile')}
+                </Button>
+              ) : null}
+            </div>
           </AlertDescription>
         </Alert>
       ) : null}
-      {applicationsQuery.loading ? <SettingsLoading /> : null}
-      {applicationsQuery.error ? (
-        <SettingsError
-          error={applicationsQuery.error}
-          retry={() => applicationsQuery.reload()}
-        />
-      ) : null}
-      {drawerOpen ? null : result}
-      <div className='grid gap-4 lg:grid-cols-3'>
-        <section
-          className='grid gap-2'
-          aria-label={t('settings.portalAgentGrantsApplications')}
-        >
-          <h2 className='text-sm font-medium'>
-            {t('settings.portalAgentGrantsApplications')}
-          </h2>
-          <div className={LIST_SCROLL_CLASS}>
-            {applications.length === 0 && !applicationsQuery.loading ? (
-              <p className='text-sm text-muted-foreground'>
-                {t('settings.portalAgentGrantsEmptyApplications')}
-              </p>
-            ) : (
-              <RadioGroup
-                value={appCode ?? ''}
-                onValueChange={selectApplication}
-              >
-                {applications.map((application) => (
-                  <Choice
-                    key={application.appCode}
-                    id={`agent-grant-app-${application.appCode}`}
-                    value={application.appCode}
-                    label={application.name}
-                    description={application.appCode}
-                  />
-                ))}
-              </RadioGroup>
-            )}
-          </div>
-        </section>
-        <section
-          className='grid gap-2'
-          aria-label={t('settings.portalAgentGrantsEmployees')}
-        >
-          <h2 className='text-sm font-medium'>
-            {t('settings.portalAgentGrantsEmployees')}
-          </h2>
-          <div className={LIST_SCROLL_CLASS}>
-            {!appCode ? (
-              <p className='text-sm text-muted-foreground'>
-                {t('settings.portalAgentGrantsSelectApplication')}
-              </p>
-            ) : null}
-            {listLoading ? <p role='status'>{t('settings.loading')}</p> : null}
-            {listError ? (
-              <SettingsError
-                error={listError}
-                retry={() => appCode && selectApplication(appCode)}
-              />
-            ) : null}
-            {appCode && !listLoading && employees.length === 0 && !listError ? (
-              <p className='text-sm text-muted-foreground'>
-                {t('settings.portalAgentGrantsSelectEmployee')}
-              </p>
-            ) : null}
-            <RadioGroup value={employeeId ?? ''} onValueChange={selectEmployee}>
-              {employees.map((employee) => (
-                <Choice
-                  key={employee.id}
-                  id={`agent-grant-employee-${employee.id.replace(/[^A-Za-z0-9_-]/gu, '-')}`}
-                  value={employee.id}
-                  disabled={employee.isForbidden}
-                  label={`${employee.displayName} (${employee.name})`}
-                  description={
-                    employee.isForbidden
-                      ? t('settings.portalAgentGrantsForbidden')
-                      : employee.grantSource === 'inherited'
-                        ? t('settings.portalAgentGrantsGrantInherited')
-                        : employee.grantSource === 'direct'
-                          ? t('settings.portalAgentGrantsGrantDirect')
-                          : undefined
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (submitting) return;
+          setDialogOpen(open);
+          if (!open) setDraft(emptyCreateDraft());
+        }}
+      >
+        <DialogContent className='max-h-[90vh] w-[min(100vw-2rem,56rem)] overflow-hidden sm:max-w-[56rem]'>
+          <DialogHeader>
+            <DialogTitle>
+              {isNewUser
+                ? t('settings.portalAgentGrantsCreateTitle')
+                : t('settings.portalAgentGrantsInstallTitle')}
+            </DialogTitle>
+            <DialogDescription>
+              {isNewUser
+                ? t('settings.portalAgentGrantsCreateHint')
+                : t('settings.portalAgentGrantsInstallHint')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className='max-h-[calc(90vh-10rem)] space-y-4 overflow-y-auto px-1 py-2'>
+            {selectedEmployee ? (
+              <div className='grid gap-3 md:grid-cols-3'>
+                <Field
+                  label={t('settings.portalAgentGrantsUsername')}
+                  value={normalizeOctopIdentityField(selectedEmployee.name)}
+                />
+                <Field
+                  label={t('settings.portalAgentGrantsDisplayName')}
+                  value={selectedEmployee.displayName}
+                />
+                <Field
+                  label={t('settings.portalAgentGrantsEmail')}
+                  value={
+                    normalizeOctopIdentityField(selectedEmployee.email) || '—'
                   }
                 />
-              ))}
-            </RadioGroup>
-            {stateLoading ? <p role='status'>{t('settings.loading')}</p> : null}
-            {octopError ? (
-              <Alert variant='destructive'>
+              </div>
+            ) : null}
+
+            {isNewUser ? (
+              <>
+                <div className='flex items-center justify-between rounded-md border p-3'>
+                  <div>
+                    <div className='text-sm font-medium'>
+                      {t('settings.portalAgentGrantsDirectory')}
+                    </div>
+                    <div className='text-xs text-muted-foreground'>
+                      {t('settings.portalAgentGrantsDirectoryHint')}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={draft.directory}
+                    onCheckedChange={(checked) =>
+                      setDraft((current) => ({
+                        ...current,
+                        directory: checked,
+                        password: checked ? '' : current.password,
+                        confirmPassword: checked ? '' : current.confirmPassword,
+                      }))
+                    }
+                  />
+                </div>
+
+                {!draft.directory ? (
+                  <div className='grid gap-3 md:grid-cols-2'>
+                    <div className='space-y-2'>
+                      <Label>{t('settings.portalAgentGrantsPassword')}</Label>
+                      <Input
+                        type='password'
+                        value={draft.password}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            password: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className='space-y-2'>
+                      <Label>
+                        {t('settings.portalAgentGrantsConfirmPassword')}
+                      </Label>
+                      <Input
+                        type='password'
+                        value={draft.confirmPassword}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            confirmPassword: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className='space-y-2'>
+                  <Label>{t('settings.portalAgentGrantsRole')}</Label>
+                  <Select
+                    value={draft.roleId}
+                    onValueChange={(value) => {
+                      const nextRoleId = String(value ?? '');
+                      if (nextRoleId) changeRole(nextRoleId);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(createOptions?.roles ?? []).map((role) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className='rounded-md border p-3 text-sm'>
+                  <div className='font-medium'>
+                    {t('settings.portalAgentGrantsBackendTypes')}
+                  </div>
+                  <div className='text-muted-foreground'>
+                    {t('settings.portalAgentGrantsDockerSandbox')}
+                  </div>
+                </div>
+
+                <PolicySwitch
+                  label={t('settings.portalAgentGrantsWorkspaceRoot')}
+                  enabled={draft.workspaceEnabled}
+                  onEnabledChange={(enabled) =>
+                    setDraft((current) => ({
+                      ...current,
+                      workspaceEnabled: enabled,
+                    }))
+                  }
+                >
+                  <Input
+                    value={draft.workspaceRootDir}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        workspaceRootDir: event.target.value,
+                      }))
+                    }
+                  />
+                </PolicySwitch>
+
+                <PolicySwitch
+                  label={t('settings.portalAgentGrantsTokenQuota')}
+                  enabled={draft.tokenQuotaEnabled}
+                  onEnabledChange={(enabled) =>
+                    setDraft((current) => ({
+                      ...current,
+                      tokenQuotaEnabled: enabled,
+                    }))
+                  }
+                >
+                  <Input
+                    value={draft.tokenQuota}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        tokenQuota: event.target.value,
+                      }))
+                    }
+                  />
+                </PolicySwitch>
+
+                <PolicySwitch
+                  label={t('settings.portalAgentGrantsMaxAgents')}
+                  enabled={draft.maxAgentsEnabled}
+                  onEnabledChange={(enabled) =>
+                    setDraft((current) => ({
+                      ...current,
+                      maxAgentsEnabled: enabled,
+                    }))
+                  }
+                >
+                  <Input
+                    value={draft.maxAgents}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        maxAgents: event.target.value,
+                      }))
+                    }
+                  />
+                </PolicySwitch>
+              </>
+            ) : (
+              <Alert>
                 <AlertDescription>
-                  {t('settings.portalAgentGrantsLookupFailed')}
+                  {t('settings.portalAgentGrantsAccountExists')}
                 </AlertDescription>
               </Alert>
-            ) : null}
-            {octopState ? (
-              <div className='mt-3 grid gap-2 text-sm'>
-                <Alert
-                  variant={octopState.accountExists ? 'destructive' : 'default'}
-                >
-                  <AlertDescription>
-                    {octopState.accountExists
-                      ? octopState.disabled
-                        ? t('settings.portalAgentGrantsAccountDisabled')
-                        : t('settings.portalAgentGrantsAccountExists')
-                      : t('settings.portalAgentGrantsAccountMissing')}
-                  </AlertDescription>
-                </Alert>
-                {octopState.octopUserId ? (
-                  <p>
-                    {t('settings.portalAgentGrantsOctopUserId')}:{' '}
-                    <span className='font-mono'>{octopState.octopUserId}</span>
-                  </p>
-                ) : null}
-                <h3 className='font-medium'>
-                  {t('settings.portalAgentGrantsInstalledExperts')}
-                </h3>
-                {octopState.experts.length === 0 ? (
-                  <p className='text-muted-foreground'>
-                    {t('settings.portalAgentGrantsNoExperts')}
-                  </p>
-                ) : (
-                  <ul className='grid gap-2'>
-                    {octopState.experts.map((expert) => (
-                      <li
-                        key={`${expert.agentId}:${expert.publishedExpertId ?? ''}`}
-                        className='rounded-md border p-2'
-                        data-expert-status={
-                          expert.bootstrapPending
-                            ? 'bootstrap_pending'
-                            : 'observed'
-                        }
-                      >
-                        <p className='font-medium'>{expert.name || '—'}</p>
-                        <p className='font-mono text-xs'>
-                          {t('settings.portalAgentGrantsAgentId')}:{' '}
-                          {expert.agentId}
-                        </p>
-                        <p className='font-mono text-xs'>
-                          {t('settings.portalAgentGrantsPublishedExpertId')}:{' '}
-                          {expert.publishedExpertId ?? '—'}
-                        </p>
-                        <p>
-                          {t('settings.portalAgentGrantsExpertState')}:{' '}
-                          <span>{expertStatusText(expert, pendingLabel)}</span>
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </section>
-        <section
-          className='grid gap-2'
-          aria-label={t('settings.portalAgentGrantsTemplates')}
-        >
-          <h2 className='text-sm font-medium'>
-            {t('settings.portalAgentGrantsTemplates')}
-          </h2>
-          <div className={LIST_SCROLL_CLASS}>
-            {!appCode ? (
-              <p className='text-sm text-muted-foreground'>
-                {t('settings.portalAgentGrantsSelectApplication')}
-              </p>
-            ) : (
-              <Input
-                value={templateQuery}
-                aria-label={t('settings.portalAgentGrantsSearchTemplates')}
-                placeholder={t('settings.portalAgentGrantsSearchTemplates')}
-                onChange={(event) => setTemplateQuery(event.target.value)}
-              />
             )}
-            {appCode && !listLoading && templates.length === 0 && !listError ? (
-              <p className='mt-2 text-sm text-muted-foreground'>
-                {t('settings.portalAgentGrantsNoTemplates')}
-              </p>
-            ) : null}
-            <RadioGroup
-              className='mt-2'
-              value={templateId ?? ''}
-              onValueChange={setTemplateId}
-            >
-              {visibleTemplates.map((template) => (
-                <Choice
-                  key={template.id}
-                  id={`agent-grant-template-${template.id}`}
-                  value={template.id}
-                  label={template.name}
-                  description={[
-                    `${t('settings.portalAgentGrantsTemplateId')}: ${template.id}`,
-                    template.description,
-                    `${t('settings.portalAgentGrantsUpdatedAt')}: ${formatTimestamp(template.updatedAt)}`,
-                  ]
-                    .filter((part) => part)
-                    .join(' · ')}
-                />
-              ))}
-            </RadioGroup>
-            {selectedTemplate ? (
-              <div className='mt-3 grid gap-1 text-xs text-muted-foreground'>
-                <p>
-                  {t('settings.portalAgentGrantsPublisher')}:{' '}
-                  {selectedTemplate.creatorUsername ?? '—'}
-                </p>
-                <p>
-                  {t('settings.portalAgentGrantsUpdatedAt')}:{' '}
-                  {formatTimestamp(selectedTemplate.updatedAt)}
-                </p>
-                {selectedTemplate.description ? (
-                  <p>{selectedTemplate.description}</p>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </section>
-      </div>
-      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <SheetContent
-          side='right'
-          className='data-[side=right]:w-full data-[side=right]:overflow-y-auto data-[side=right]:sm:max-w-xl'
-        >
-          <SheetHeader>
-            <SheetTitle>
-              {t('settings.portalAgentGrantsCreateTitle')}
-            </SheetTitle>
-            <SheetDescription>
-              {t('settings.portalAgentGrantsDirectoryNote')}
-            </SheetDescription>
-          </SheetHeader>
-          {optionsLoading ? <SettingsLoading /> : null}
-          {optionsError ? (
-            <Alert variant='destructive'>
-              <AlertDescription>
-                {t('settings.portalAgentGrantsOptionsFailed')}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {draft && createOptions ? (
-            <div className='grid gap-4 px-4'>
-              <div className='grid gap-1.5'>
-                <Label htmlFor='agent-grant-username'>
-                  {t('settings.portalAgentGrantsUsername')}
-                </Label>
+
+            <div className='space-y-2'>
+              <div className='flex items-center justify-between gap-2'>
+                <Label>{t('settings.portalAgentGrantsInstallExperts')}</Label>
                 <Input
-                  id='agent-grant-username'
-                  value={selectedEmployee?.name ?? ''}
-                  readOnly
+                  className='w-48'
+                  value={templateQuery}
+                  onChange={(event) => setTemplateQuery(event.target.value)}
+                  placeholder={t('settings.portalAgentGrantsSearchTemplates')}
                 />
               </div>
-              <div className='grid gap-1.5'>
-                <Label htmlFor='agent-grant-display-name'>
-                  {t('settings.portalAgentGrantsDisplayName')}
-                </Label>
-                <Input
-                  id='agent-grant-display-name'
-                  value={draft.displayName}
-                  onChange={(event) =>
-                    setDraft({ ...draft, displayName: event.target.value })
-                  }
-                />
-              </div>
-              <div className='grid gap-1.5'>
-                <Label htmlFor='agent-grant-email'>
-                  {t('settings.portalAgentGrantsEmail')}
-                </Label>
-                <Input
-                  id='agent-grant-email'
-                  type='email'
-                  value={draft.email}
-                  onChange={(event) =>
-                    setDraft({ ...draft, email: event.target.value })
-                  }
-                />
-              </div>
-              <div className='flex items-start gap-2'>
-                <Checkbox
-                  id='agent-grant-directory'
-                  checked
-                  disabled
-                  aria-label={t('settings.portalAgentGrantsDirectoryLocked')}
-                />
-                <Label htmlFor='agent-grant-directory' className='grid gap-0.5'>
-                  <span>{t('settings.portalAgentGrantsDirectoryLocked')}</span>
-                  <span className='text-xs font-normal text-muted-foreground'>
-                    {t('settings.portalAgentGrantsDirectoryNote')}
-                  </span>
-                </Label>
-              </div>
-              {!createOptions.ldapConfigured ? (
-                <Alert variant='destructive'>
-                  <AlertDescription>
-                    {t('settings.portalAgentGrantsLdapRequired')}
-                  </AlertDescription>
-                </Alert>
-              ) : null}
-              <div className='grid gap-1.5'>
-                <Label>{t('settings.portalAgentGrantsRole')}</Label>
-                <Select
-                  items={createOptions.roles.map((role) => ({
-                    value: role.id,
-                    label: role.name,
-                  }))}
-                  value={draft.roleId}
-                  onValueChange={(value) => {
-                    if (typeof value === 'string') applyRole(value);
-                  }}
-                >
-                  <SelectTrigger className='w-full'>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {createOptions.roles.map((role) => (
-                      <SelectItem key={role.id} value={role.id}>
-                        {role.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className='text-xs text-muted-foreground'>
-                  {t('settings.portalAgentGrantsNoAdminRole')}
-                </p>
-              </div>
-              <fieldset className='grid gap-2'>
-                <legend className='text-sm font-medium'>
-                  {t('settings.portalAgentGrantsPermissions')}
-                </legend>
-                {createOptions.permissions.map((permission) => {
-                  const checked = draft.permissions.includes(permission.key);
+              <div className='max-h-56 space-y-2 overflow-auto rounded-md border p-2'>
+                {filteredTemplates.map((template) => {
+                  const installed = installedIds.has(template.id);
+                  const checked = draft.expertTemplateIds.includes(template.id);
                   return (
-                    <div
-                      key={permission.key}
-                      className='flex items-center gap-2'
+                    <label
+                      key={template.id}
+                      className='flex items-start gap-2 rounded-md border p-2'
                     >
                       <Checkbox
-                        id={`agent-grant-permission-${permission.key}`}
                         checked={checked}
-                        onCheckedChange={(value) => {
-                          const next = new Set(draft.permissions);
-                          if (value === true) next.add(permission.key);
-                          else next.delete(permission.key);
-                          setDraft({
-                            ...draft,
-                            permissions: [...next],
-                          });
-                        }}
+                        disabled={installed}
+                        onCheckedChange={(value) =>
+                          setDraft((current) =>
+                            toggleExpertTemplate(
+                              current,
+                              template.id,
+                              value === true,
+                              isNewUser,
+                            ),
+                          )
+                        }
                       />
-                      <Label
-                        htmlFor={`agent-grant-permission-${permission.key}`}
-                      >
-                        {permission.label}
-                        <span className='ml-2 text-xs text-muted-foreground'>
-                          {permission.category}
+                      <span className='min-w-0 flex-1'>
+                        <span className='block text-sm font-medium'>
+                          {template.name}
+                          {installed
+                            ? ` · ${t('settings.portalAgentGrantsAlreadyInstalled')}`
+                            : ''}
                         </span>
-                      </Label>
-                    </div>
+                        <span className='block text-xs text-muted-foreground'>
+                          {template.id}
+                          {template.updatedAt
+                            ? ` · ${formatTimestamp(template.updatedAt)}`
+                            : ''}
+                        </span>
+                      </span>
+                    </label>
                   );
                 })}
-              </fieldset>
-              <div className='grid gap-1.5'>
-                <Label htmlFor='agent-grant-max-agents'>
-                  {t('settings.portalAgentGrantsMaxAgents')}
-                </Label>
-                <Input
-                  id='agent-grant-max-agents'
-                  inputMode='numeric'
-                  value={draft.maxAgents}
-                  onChange={(event) =>
-                    setDraft({ ...draft, maxAgents: event.target.value })
-                  }
-                />
               </div>
-              <div className='grid gap-1.5'>
-                <Label htmlFor='agent-grant-token-quota'>
-                  {t('settings.portalAgentGrantsTokenQuota')}
-                </Label>
-                <Input
-                  id='agent-grant-token-quota'
-                  inputMode='numeric'
-                  value={draft.tokenQuota}
-                  onChange={(event) =>
-                    setDraft({ ...draft, tokenQuota: event.target.value })
-                  }
-                />
-                <p className='text-xs text-muted-foreground'>
-                  {t('settings.portalAgentGrantsNullableHint')}
-                </p>
-              </div>
-              <div className='grid gap-1.5'>
-                <Label htmlFor='agent-grant-workspace'>
-                  {t('settings.portalAgentGrantsWorkspaceRoot')}
-                </Label>
-                <Input
-                  id='agent-grant-workspace'
-                  value={draft.workspaceRootDir}
-                  onChange={(event) =>
-                    setDraft({
-                      ...draft,
-                      workspaceRootDir: event.target.value,
-                    })
-                  }
-                />
-              </div>
-              <fieldset className='grid gap-2'>
-                <legend className='text-sm font-medium'>
-                  {t('settings.portalAgentGrantsBackendTypes')}
-                </legend>
-                {createOptions.backendTypes.map((type) => {
-                  const checked = draft.allowedBackendTypes.includes(type);
-                  return (
-                    <div key={type} className='flex items-center gap-2'>
-                      <Checkbox
-                        id={`agent-grant-backend-${type}`}
-                        checked={checked}
-                        onCheckedChange={(value) => {
-                          const next = new Set(draft.allowedBackendTypes);
-                          if (value === true) next.add(type);
-                          else next.delete(type);
-                          setDraft({
-                            ...draft,
-                            allowedBackendTypes: [...next],
-                          });
-                        }}
-                      />
-                      <Label htmlFor={`agent-grant-backend-${type}`}>
-                        {type}
-                      </Label>
-                    </div>
-                  );
-                })}
-              </fieldset>
-              <div className='flex items-start gap-2'>
-                <Checkbox
-                  id='agent-grant-default-expert'
-                  checked={draft.createDefaultExpert}
-                  onCheckedChange={(value) =>
-                    setDraft({
-                      ...draft,
-                      createDefaultExpert: value === true,
-                    })
-                  }
-                />
-                <Label htmlFor='agent-grant-default-expert'>
-                  {t('settings.portalAgentGrantsCreateDefaultExpert')}
-                </Label>
-              </div>
-              <div className='grid gap-1 text-sm'>
-                <p className='font-medium'>
-                  {t('settings.portalAgentGrantsBoundTemplate')}
-                </p>
-                {selectedTemplate ? (
-                  <p className='font-mono text-xs'>
-                    {selectedTemplate.name} · {selectedTemplate.id}
-                  </p>
-                ) : (
-                  <p className='text-muted-foreground'>
-                    {t('settings.portalAgentGrantsNoBoundTemplate')}
-                  </p>
-                )}
-              </div>
-              {result}
             </div>
-          ) : null}
-          <SheetFooter>
+
+            {isNewUser ? (
+              <div className='space-y-2'>
+                <Label>{t('settings.portalAgentGrantsDefaultExpert')}</Label>
+                <RadioGroup
+                  value={draft.defaultExpertTemplateId ?? ''}
+                  onValueChange={(value) => {
+                    const nextId = String(value ?? '');
+                    setDraft((current) => ({
+                      ...current,
+                      defaultExpertTemplateId: nextId || null,
+                    }));
+                  }}
+                >
+                  {draft.expertTemplateIds.map((templateId) => {
+                    const template = templates.find(
+                      (item) => item.id === templateId,
+                    );
+                    return (
+                      <label
+                        key={templateId}
+                        className='flex items-center gap-2 rounded-md border p-2'
+                      >
+                        <RadioGroupItem value={templateId} />
+                        <span className='text-sm'>
+                          {template?.name ?? templateId}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </RadioGroup>
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
             <Button
-              disabled={submitDisabled}
-              onClick={() => void submitCreate()}
+              type='button'
+              variant='outline'
+              disabled={submitting}
+              onClick={() => setDialogOpen(false)}
             >
-              {t('settings.portalAgentGrantsSubmit')}
+              {t('actions.close')}
             </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+            <Button
+              type='button'
+              disabled={submitting}
+              onClick={() => void submitGrant()}
+            >
+              {isNewUser
+                ? t('settings.portalAgentGrantsSubmit')
+                : t('settings.portalAgentGrantsInstallExperts')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageContainer>
+  );
+}
+
+function Field({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}): ReactElement {
+  return (
+    <div className='space-y-1 rounded-md border p-3'>
+      <div className='text-xs text-muted-foreground'>{label}</div>
+      <div className='text-sm font-medium'>{value}</div>
+    </div>
+  );
+}
+
+function PolicySwitch({
+  label,
+  enabled,
+  onEnabledChange,
+  children,
+}: {
+  readonly label: string;
+  readonly enabled: boolean;
+  readonly onEnabledChange: (enabled: boolean) => void;
+  readonly children: ReactElement;
+}): ReactElement {
+  return (
+    <div className='space-y-2 rounded-md border p-3'>
+      <div className='flex items-center justify-between gap-2'>
+        <Label>{label}</Label>
+        <Switch checked={enabled} onCheckedChange={onEnabledChange} />
+      </div>
+      {enabled ? children : null}
+    </div>
   );
 }

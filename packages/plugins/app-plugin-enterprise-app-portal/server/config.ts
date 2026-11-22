@@ -46,6 +46,8 @@ export const AGENT_GRANT_STATUSES = [
   'USER_CREATED',
   'BOOTSTRAP_PENDING',
   'COMPLETED',
+  'PARTIAL',
+  'EXPERT_INSTALL_FAILED',
   'BOOTSTRAP_FAILED',
   'FAILED_NO_MUTATION',
   'OUTCOME_UNKNOWN',
@@ -56,10 +58,31 @@ export const AGENT_GRANT_STATUSES = [
 ] as const;
 export type AgentGrantStatus = (typeof AGENT_GRANT_STATUSES)[number];
 
+export const AGENT_GRANT_OPERATION_MODES = [
+  'CREATE_USER_AND_INSTALL',
+  'INSTALL_ONLY',
+] as const;
+export type AgentGrantOperationMode =
+  (typeof AGENT_GRANT_OPERATION_MODES)[number];
+
+export const AGENT_GRANT_EXPERT_ITEM_STATUSES = [
+  'PENDING',
+  'SUBMITTING',
+  'COMPLETED',
+  'BOOTSTRAP_PENDING',
+  'FAILED',
+  'OUTCOME_UNKNOWN',
+  'ALREADY_INSTALLED',
+] as const;
+export type AgentGrantExpertItemStatus =
+  (typeof AGENT_GRANT_EXPERT_ITEM_STATUSES)[number];
+
 /** Statuses that release the per-employee create lock. */
 export const AGENT_GRANT_TERMINAL_STATUSES = [
   'ACCOUNT_EXISTS',
   'COMPLETED',
+  'PARTIAL',
+  'EXPERT_INSTALL_FAILED',
   'BOOTSTRAP_FAILED',
   'FAILED_NO_MUTATION',
   'ACCOUNT_EXISTS_UNATTRIBUTED',

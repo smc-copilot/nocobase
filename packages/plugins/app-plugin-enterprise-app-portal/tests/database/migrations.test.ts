@@ -75,6 +75,71 @@ describeMigration('enterprise_app_portal_202611212000_add_agent_grants', {
   },
 });
 
+describeMigration('enterprise_app_portal_202611222000_agent_grants_v1_1', {
+  sources: [
+    source(
+      '@superice/app-plugin-enterprise-app-portal',
+      '../../database/migrations',
+    ),
+  ],
+  up: async ({ expectCollection }) => {
+    await expectCollection('enterprisePortalAgentGrantOperations').toHaveField(
+      'operationMode',
+      { type: 'string', nullable: true, length: 32 },
+    );
+    await expectCollection('enterprisePortalAgentGrantOperations').toHaveField(
+      'selectedExpertCount',
+      { type: 'integer', nullable: false },
+    );
+    await expectCollection('enterprisePortalAgentGrantOperations').toHaveField(
+      'completedExpertCount',
+      { type: 'integer', nullable: false },
+    );
+    await expectCollection('enterprisePortalAgentGrantOperations').toHaveField(
+      'failedExpertCount',
+      { type: 'integer', nullable: false },
+    );
+    await expectCollection('enterprisePortalAgentGrantOperations').toHaveField(
+      'skippedExpertCount',
+      { type: 'integer', nullable: false },
+    );
+    await expectCollection('enterprisePortalAgentGrantExpertItems').toHaveField(
+      'operationId',
+      {
+        type: 'string',
+        nullable: false,
+        length: 64,
+      },
+    );
+    await expectCollection('enterprisePortalAgentGrantExpertItems').toHaveField(
+      'expertTemplateId',
+      {
+        type: 'string',
+        nullable: false,
+        length: 128,
+      },
+    );
+    await expectCollection('enterprisePortalAgentGrantExpertItems').toHaveIndex(
+      ['operationId', 'expertTemplateId'],
+      { unique: true },
+    );
+    await expectCollection('enterprisePortalAgentGrantExpertItems').toHaveIndex(
+      ['operationId'],
+    );
+  },
+  down: async ({ expectCollection }) => {
+    await expectCollection(
+      'enterprisePortalAgentGrantExpertItems',
+    ).not.toExist();
+    await expectCollection(
+      'enterprisePortalAgentGrantOperations',
+    ).not.toHaveField('operationMode');
+    await expectCollection(
+      'enterprisePortalAgentGrantOperations',
+    ).not.toHaveField('selectedExpertCount');
+  },
+});
+
 describeMigration('enterprise_app_portal_202611200001_create_collections', {
   sources: [
     source(

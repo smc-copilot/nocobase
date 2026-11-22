@@ -4,10 +4,12 @@ import type { DatabaseManager } from '@nocobase/db';
 
 import {
   AGENT_GRANT_TERMINAL_STATUSES,
+  type AgentGrantExpertItemStatus,
+  type AgentGrantOperationMode,
   type AgentGrantStatus,
 } from '../config.js';
 import { portalError } from '../errors.js';
-import { str, strOrNull, toDate } from './values.js';
+import { str, strOrNull, toBool, toDate } from './values.js';
 
 export interface AgentGrantOperationRecord {
   readonly id: string;
@@ -16,6 +18,11 @@ export interface AgentGrantOperationRecord {
   readonly username: string;
   readonly actorUserId: string;
   readonly status: AgentGrantStatus;
+  readonly operationMode: AgentGrantOperationMode | null;
+  readonly selectedExpertCount: number;
+  readonly completedExpertCount: number;
+  readonly failedExpertCount: number;
+  readonly skippedExpertCount: number;
   readonly expertTemplateId: string | null;
   readonly createOptionsSnapshot: Readonly<Record<string, unknown>>;
   readonly octopUserId: string | null;
@@ -29,17 +36,38 @@ export interface AgentGrantOperationRecord {
   readonly completedAt: Date | null;
 }
 
+export interface AgentGrantExpertItemRecord {
+  readonly id: string;
+  readonly operationId: string;
+  readonly expertTemplateId: string;
+  readonly expertName: string;
+  readonly status: AgentGrantExpertItemStatus;
+  readonly agentId: string | null;
+  readonly bootstrapPending: boolean | null;
+  readonly errorCode: string | null;
+  readonly errorMessage: string | null;
+  readonly startedAt: Date | null;
+  readonly completedAt: Date | null;
+}
+
 export interface AgentGrantOperationDraft {
   readonly appCode: string;
   readonly casdoorUserId: string;
   readonly username: string;
   readonly actorUserId: string;
+  readonly operationMode?: AgentGrantOperationMode | null;
+  readonly selectedExpertCount?: number;
   readonly expertTemplateId?: string | null;
   readonly createOptionsSnapshot: unknown;
 }
 
 export interface AgentGrantOperationPatch {
   readonly status?: AgentGrantStatus;
+  readonly operationMode?: AgentGrantOperationMode | null;
+  readonly selectedExpertCount?: number;
+  readonly completedExpertCount?: number;
+  readonly failedExpertCount?: number;
+  readonly skippedExpertCount?: number;
   readonly expertTemplateId?: string | null;
   readonly createOptionsSnapshot?: unknown;
   readonly octopUserId?: string | null;
@@ -47,6 +75,24 @@ export interface AgentGrantOperationPatch {
   readonly bootstrapStatus?: string | null;
   readonly errorCode?: string | null;
   readonly errorMessage?: string | null;
+}
+
+export interface AgentGrantExpertItemDraft {
+  readonly operationId: string;
+  readonly expertTemplateId: string;
+  readonly expertName: string;
+  readonly status?: AgentGrantExpertItemStatus;
+}
+
+export interface AgentGrantExpertItemPatch {
+  readonly status?: AgentGrantExpertItemStatus;
+  readonly expertName?: string;
+  readonly agentId?: string | null;
+  readonly bootstrapPending?: boolean | null;
+  readonly errorCode?: string | null;
+  readonly errorMessage?: string | null;
+  readonly startedAt?: Date | null;
+  readonly completedAt?: Date | null;
 }
 
 const TERMINAL = new Set<string>(AGENT_GRANT_TERMINAL_STATUSES);
@@ -93,6 +139,7 @@ function isSecretKey(key: string): boolean {
   return (
     normalized === 'password' ||
     normalized.endsWith('password') ||
+    normalized === 'confirmpassword' ||
     normalized === 'secret' ||
     normalized.endsWith('secret') ||
     normalized === 'token' ||
@@ -106,6 +153,15 @@ function isSecretKey(key: string): boolean {
   );
 }
 
+function toInt(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
 function toRecord(row: Record<string, unknown>): AgentGrantOperationRecord {
   return {
     id: str(row.id),
@@ -114,6 +170,13 @@ function toRecord(row: Record<string, unknown>): AgentGrantOperationRecord {
     username: str(row.username),
     actorUserId: str(row.actorUserId),
     status: str(row.status) as AgentGrantStatus,
+    operationMode: strOrNull(
+      row.operationMode,
+    ) as AgentGrantOperationMode | null,
+    selectedExpertCount: toInt(row.selectedExpertCount),
+    completedExpertCount: toInt(row.completedExpertCount),
+    failedExpertCount: toInt(row.failedExpertCount),
+    skippedExpertCount: toInt(row.skippedExpertCount),
     expertTemplateId: strOrNull(row.expertTemplateId),
     createOptionsSnapshot: parseSnapshot(row.createOptionsSnapshot),
     octopUserId: strOrNull(row.octopUserId),
@@ -124,6 +187,25 @@ function toRecord(row: Record<string, unknown>): AgentGrantOperationRecord {
     lockKey: strOrNull(row.lockKey),
     startedAt: toDate(row.startedAt),
     updatedAt: toDate(row.updatedAt),
+    completedAt: row.completedAt == null ? null : toDate(row.completedAt),
+  };
+}
+
+function toExpertItem(
+  row: Record<string, unknown>,
+): AgentGrantExpertItemRecord {
+  return {
+    id: str(row.id),
+    operationId: str(row.operationId),
+    expertTemplateId: str(row.expertTemplateId),
+    expertName: str(row.expertName),
+    status: str(row.status) as AgentGrantExpertItemStatus,
+    agentId: strOrNull(row.agentId),
+    bootstrapPending:
+      row.bootstrapPending == null ? null : toBool(row.bootstrapPending),
+    errorCode: strOrNull(row.errorCode),
+    errorMessage: strOrNull(row.errorMessage),
+    startedAt: row.startedAt == null ? null : toDate(row.startedAt),
     completedAt: row.completedAt == null ? null : toDate(row.completedAt),
   };
 }
@@ -200,6 +282,11 @@ export class AgentGrantOperationStore {
           username: draft.username,
           actorUserId: draft.actorUserId,
           status: 'PREFLIGHTING',
+          operationMode: draft.operationMode ?? null,
+          selectedExpertCount: draft.selectedExpertCount ?? 0,
+          completedExpertCount: 0,
+          failedExpertCount: 0,
+          skippedExpertCount: 0,
           expertTemplateId: draft.expertTemplateId ?? null,
           createOptionsSnapshot: JSON.stringify(snapshot),
           octopUserId: null,
@@ -249,6 +336,26 @@ export class AgentGrantOperationStore {
       .query.updateTable('enterprisePortalAgentGrantOperations')
       .set({
         status,
+        operationMode:
+          patch.operationMode === undefined
+            ? current.operationMode
+            : patch.operationMode,
+        selectedExpertCount:
+          patch.selectedExpertCount === undefined
+            ? current.selectedExpertCount
+            : patch.selectedExpertCount,
+        completedExpertCount:
+          patch.completedExpertCount === undefined
+            ? current.completedExpertCount
+            : patch.completedExpertCount,
+        failedExpertCount:
+          patch.failedExpertCount === undefined
+            ? current.failedExpertCount
+            : patch.failedExpertCount,
+        skippedExpertCount:
+          patch.skippedExpertCount === undefined
+            ? current.skippedExpertCount
+            : patch.skippedExpertCount,
         expertTemplateId:
           patch.expertTemplateId === undefined
             ? current.expertTemplateId
@@ -276,5 +383,94 @@ export class AgentGrantOperationStore {
       .where('id', '=', id)
       .execute();
     return this.requireById(id);
+  }
+
+  public async listExpertItems(
+    operationId: string,
+  ): Promise<readonly AgentGrantExpertItemRecord[]> {
+    const rows = await this.database()
+      .connection()
+      .query.selectFrom('enterprisePortalAgentGrantExpertItems')
+      .selectAll()
+      .where('operationId', '=', operationId)
+      .execute();
+    return rows.map((row) => toExpertItem(row));
+  }
+
+  public async createExpertItem(
+    draft: AgentGrantExpertItemDraft,
+  ): Promise<AgentGrantExpertItemRecord> {
+    const id = randomUUID();
+    await this.database()
+      .connection()
+      .query.insertInto('enterprisePortalAgentGrantExpertItems')
+      .values({
+        id,
+        operationId: draft.operationId,
+        expertTemplateId: draft.expertTemplateId,
+        expertName: draft.expertName,
+        status: draft.status ?? 'PENDING',
+        agentId: null,
+        bootstrapPending: null,
+        errorCode: null,
+        errorMessage: null,
+        startedAt: null,
+        completedAt: null,
+      })
+      .execute();
+    return this.requireExpertItem(id);
+  }
+
+  public async requireExpertItem(
+    id: string,
+  ): Promise<AgentGrantExpertItemRecord> {
+    const row = await this.database()
+      .connection()
+      .query.selectFrom('enterprisePortalAgentGrantExpertItems')
+      .selectAll()
+      .where('id', '=', id)
+      .executeTakeFirst();
+    if (!row) {
+      throw portalError(
+        'NOT_FOUND',
+        'AGENT_GRANT_EXPERT_ITEM_NOT_FOUND',
+        'Unknown agent grant expert item.',
+      );
+    }
+    return toExpertItem(row);
+  }
+
+  public async updateExpertItem(
+    id: string,
+    patch: AgentGrantExpertItemPatch,
+  ): Promise<AgentGrantExpertItemRecord> {
+    const current = await this.requireExpertItem(id);
+    await this.database()
+      .connection()
+      .query.updateTable('enterprisePortalAgentGrantExpertItems')
+      .set({
+        status: patch.status ?? current.status,
+        expertName: patch.expertName ?? current.expertName,
+        agentId: patch.agentId === undefined ? current.agentId : patch.agentId,
+        bootstrapPending:
+          patch.bootstrapPending === undefined
+            ? current.bootstrapPending
+            : patch.bootstrapPending,
+        errorCode:
+          patch.errorCode === undefined ? current.errorCode : patch.errorCode,
+        errorMessage:
+          patch.errorMessage === undefined
+            ? current.errorMessage
+            : patch.errorMessage,
+        startedAt:
+          patch.startedAt === undefined ? current.startedAt : patch.startedAt,
+        completedAt:
+          patch.completedAt === undefined
+            ? current.completedAt
+            : patch.completedAt,
+      })
+      .where('id', '=', id)
+      .execute();
+    return this.requireExpertItem(id);
   }
 }

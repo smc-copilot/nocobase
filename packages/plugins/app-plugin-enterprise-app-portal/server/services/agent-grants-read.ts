@@ -6,7 +6,6 @@ import type { CasdoorUserView } from './casdoor-management-client.js';
 import type { OctopManagementClient } from './octop-management-client.js';
 import type {
   OctopAgent,
-  OctopPermission,
   OctopPublishedExpert,
   OctopRole,
   OctopUser,
@@ -31,6 +30,14 @@ export interface AuthorizedEmployeeView {
   readonly username: string;
   readonly displayName: string;
   readonly email: string;
+  /** Whether an Octop account exists for this Casdoor username. */
+  readonly accountExists: boolean;
+  readonly octopUserId: string | null;
+  readonly disabled: boolean;
+  /** Octop account create time (ISO-8601), null when unsynced. */
+  readonly syncedAt: string | null;
+  /** Experts currently owned by this Octop user. */
+  readonly experts: readonly InstalledExpertView[];
 }
 
 export interface InstalledExpertView {
@@ -53,10 +60,9 @@ export interface EmployeeOctopState {
 
 export interface AgentGrantCreateOptions {
   readonly roles: readonly OctopRole[];
-  readonly permissions: readonly OctopPermission[];
   readonly ldapConfigured: boolean;
-  readonly supportedBackendTypes: readonly string[];
-  readonly directoryLocked: true;
+  /** Backend type is fixed to docker for Agent Grants v1.1. */
+  readonly allowedBackendTypes: readonly ['docker'];
   readonly expertTemplateSource: 'published';
 }
 
@@ -124,7 +130,35 @@ export class AgentGrantsReadService {
       );
     }
     const users = await this.grants.listApplicationUsers(app.casdoorAppKey);
-    return users.map(toEmployee);
+    const client = await this.openClient(app);
+    const [octopUsers, agents] = await Promise.all([
+      client.getUsers(),
+      client.getAgents('all'),
+    ]);
+    const byUsername = indexOctopUsers(octopUsers);
+    const expertsByUserId = indexExpertsByUser(agents, octopUsers);
+    return users.map((user) => {
+      const base = toEmployee(user);
+      const match = byUsername.get(octopUsernameKey(base.username));
+      if (!match || match === 'ambiguous') {
+        return {
+          ...base,
+          accountExists: Boolean(match),
+          octopUserId: null,
+          disabled: false,
+          syncedAt: null,
+          experts: [],
+        };
+      }
+      return {
+        ...base,
+        accountExists: true,
+        octopUserId: match.id,
+        disabled: match.disabled,
+        syncedAt: match.createdAt,
+        experts: expertsByUserId.get(match.id) ?? [],
+      };
+    });
   }
 
   public async getEmployeeOctopState(
@@ -178,18 +212,11 @@ export class AgentGrantsReadService {
     const roles = (await client.getRoles()).filter(
       (role) => role.systemRole?.toLowerCase() !== 'admin',
     );
-    const permissions = await client.getPermissions();
     const ldap = await client.getLdapConfig();
-    const backends = new Set<string>();
-    for (const role of roles) {
-      for (const backend of role.allowedBackendTypes) backends.add(backend);
-    }
     return {
       roles,
-      permissions,
       ldapConfigured: ldap.configured,
-      supportedBackendTypes: [...backends].sort(),
-      directoryLocked: true,
+      allowedBackendTypes: ['docker'],
       expertTemplateSource: 'published',
     };
   }
@@ -279,7 +306,12 @@ function toApplicationView(
   };
 }
 
-function toEmployee(user: CasdoorUserView): AuthorizedEmployeeView {
+function toEmployee(
+  user: CasdoorUserView,
+): Omit<
+  AuthorizedEmployeeView,
+  'accountExists' | 'octopUserId' | 'disabled' | 'syncedAt' | 'experts'
+> {
   const casdoorUserId = user.id.includes('/')
     ? user.id
     : `${user.owner}/${user.name}`;
@@ -289,6 +321,43 @@ function toEmployee(user: CasdoorUserView): AuthorizedEmployeeView {
     displayName: user.displayName,
     email: user.email,
   };
+}
+
+function indexOctopUsers(
+  users: readonly OctopUser[],
+): ReadonlyMap<string, OctopUser | 'ambiguous'> {
+  const indexed = new Map<string, OctopUser | 'ambiguous'>();
+  for (const user of users) {
+    const key = octopUsernameKey(user.username);
+    if (indexed.has(key)) indexed.set(key, 'ambiguous');
+    else indexed.set(key, user);
+  }
+  return indexed;
+}
+
+function indexExpertsByUser(
+  agents: readonly OctopAgent[],
+  users: readonly OctopUser[],
+): ReadonlyMap<string, InstalledExpertView[]> {
+  const userByUsername = new Map(
+    users.map((user) => [octopUsernameKey(user.username), user] as const),
+  );
+  const byUserId = new Map<string, InstalledExpertView[]>();
+  for (const agent of agents) {
+    if (agent.kind !== 'expert') continue;
+    let owner: OctopUser | undefined;
+    if (agent.userId) {
+      owner = users.find((user) => user.id === agent.userId);
+    }
+    if (!owner && agent.ownerUsername) {
+      owner = userByUsername.get(octopUsernameKey(agent.ownerUsername));
+    }
+    if (!owner) continue;
+    const list = byUserId.get(owner.id) ?? [];
+    list.push(toExpertView(agent));
+    byUserId.set(owner.id, list);
+  }
+  return byUserId;
 }
 
 function agentOwnedBy(agent: OctopAgent, user: OctopUser): boolean {
