@@ -17,6 +17,7 @@ import {
   buildOctopUserCreateBody,
   normalizeOctopIdentityField,
 } from './octop-create-request.js';
+import { dockerSandboxBackend } from './octop-docker-backend.js';
 import {
   assertEnvName,
   assertGrantApplication,
@@ -700,15 +701,16 @@ export class AgentGrantsService {
         startedAt: new Date(),
       });
       try {
+        const name = template.name ?? templateId;
         const result = await client.installPublishedExpertForUser(
           octopUserId,
           templateId,
           {
-            name: template.name ?? templateId,
+            name,
             description: template.description ?? '',
-            // Agent Grants only assigns docker sandbox; published experts may
-            // default to local_shell and fail target-user policy without this.
-            backend: { type: 'docker' },
+            // Published experts may default to local_shell. The install body
+            // takes this object as `backend` (POST /api/agents uses config.backend).
+            backend: dockerSandboxBackend(name),
           },
         );
         assertInstallOwner(result.userId, octopUserId);

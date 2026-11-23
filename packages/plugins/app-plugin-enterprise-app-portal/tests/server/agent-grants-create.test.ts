@@ -27,6 +27,7 @@ const octopState: {
   lastInstallPath: string | undefined;
   lastInstallAsUser: string | undefined;
   lastInstallQuery: string | undefined;
+  lastInstallBody: Record<string, unknown> | undefined;
   installed: {
     userId: string;
     templateId: string;
@@ -45,6 +46,7 @@ const octopState: {
   lastInstallPath: undefined,
   lastInstallAsUser: undefined,
   lastInstallQuery: undefined,
+  lastInstallBody: undefined,
   installed: [],
   users: [],
   onPost: undefined,
@@ -136,6 +138,7 @@ describe('agent grant create', () => {
     octopState.lastInstallPath = undefined;
     octopState.lastInstallAsUser = undefined;
     octopState.lastInstallQuery = undefined;
+    octopState.lastInstallBody = undefined;
     octopState.installed = [];
     octopState.users = [];
     octopState.onPost = undefined;
@@ -411,6 +414,26 @@ describe('agent grant create', () => {
     );
     expect(octopState.lastInstallAsUser).toBe('23');
     expect(octopState.lastInstallQuery).toContain('as_user=23');
+    expect(octopState.lastInstallBody).toMatchObject({
+      name: 'Ops',
+      backend: {
+        type: 'docker',
+        image: 'python:3.12-slim',
+        sandbox_scope: 'agent',
+        sandbox_prefix: 'octop_sandbox',
+        workspace_path: '/workspace',
+        volumes: {
+          '/home/smc/.octop/agent-workspaces/Ops': {
+            bind: '/workspace',
+            mode: 'rw',
+          },
+        },
+        allow_network: true,
+        memory: '1g',
+        cpus: 2,
+        pids_limit: 256,
+      },
+    });
     expect(created.selectedExpertCount).toBe(2);
     const items = await harness.services.agentGrants.listExpertItems(
       created.id,
@@ -725,6 +748,10 @@ async function octop(
     octopState.lastInstallPath = url.pathname;
     octopState.lastInstallQuery = url.search;
     octopState.lastInstallAsUser = url.searchParams.get('as_user') ?? undefined;
+    octopState.lastInstallBody = JSON.parse(String(init?.body)) as Record<
+      string,
+      unknown
+    >;
     octopState.onInstall?.();
     if (octopState.installForbidden) {
       return Response.json(
