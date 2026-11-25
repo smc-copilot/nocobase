@@ -1439,7 +1439,7 @@ importers:
         version: 0.10.2
       eslint:
         specifier: 'catalog:'
-        version: 10.8.1(jiti@2.7.0)(supports-color@8.1.1)
+        version: 10.8.1(jiti@2.7.0)
       eventsource-parser:
         specifier: 3.1.0
         version: 3.1.0
@@ -5127,6 +5127,9 @@ importers:
       hono:
         specifier: 'catalog:'
         version: 4.13.2
+      jose:
+        specifier: ^6.2.9
+        version: 6.2.9
       zod:
         specifier: 'catalog:'
         version: 4.6.7
@@ -5142,7 +5145,7 @@ importers:
         version: 24.13.3
       eslint:
         specifier: 'catalog:'
-        version: 10.8.1(jiti@2.7.0)
+        version: 10.8.1(jiti@2.7.0)(supports-color@8.1.1)
       prettier:
         specifier: 'catalog:'
         version: 3.9.6
@@ -12728,8 +12731,8 @@ packages:
     resolution: {integrity: sha512-0LrrStPOdJj+SPCCrGhzryycLjwcgUSHBtxNA8aIDxf0GLsRh1cKYhB00Gd1lDOS4yGH69+SNn13+TWbVHETFQ==}
     engines: {node: ^10 || ^12.20.0 || ^14.13.0 || >=15.0.0, npm: '>=7.0.0'}
 
-  csstype@3.2.3:
-    resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
+  csstype@3.2.4:
+    resolution: {integrity: sha512-PoKaoPzQapnEoqUSnHx1u6W6ku8CVEgKsnpmmzU3m1nwkidpPBQ8V/Zq2+bWNrsOKoKLwTGdbx6xF7BXP1zLVQ==}
 
   cuint@0.2.2:
     resolution: {integrity: sha512-d4ZVpCW31eWwCMe1YT3ur7mUDnTXbgwyzaL320DrcRT45rfjYxkt5QWLrmOJ+/UEAI2+fQgKe/fCjR8l4TpRgw==}
@@ -20848,7 +20851,7 @@ snapshots:
 
   '@types/react@19.2.18':
     dependencies:
-      csstype: 3.2.3
+      csstype: 3.2.4
 
   '@types/readable-stream@4.0.24':
     dependencies:
@@ -21922,7 +21925,7 @@ snapshots:
     dependencies:
       css-tree: 2.2.1
 
-  csstype@3.2.3: {}
+  csstype@3.2.4: {}
 
   cuint@0.2.2: {}
 

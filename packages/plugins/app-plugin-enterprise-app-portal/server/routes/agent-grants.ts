@@ -27,6 +27,7 @@ import {
   AgentGrantOperationParam,
   AgentGrantOperationSchema,
   AgentGrantRevokeUnsyncedSchema,
+  AgentGrantUserSchema,
   AppCodeParam,
   AuthorizedEmployeeSchema,
   CatalogApplicationSchema,
@@ -181,6 +182,27 @@ export function registerAgentGrantRoutes(
           context.req.valid('param').appCode,
         ),
       });
+    },
+  );
+
+  router.get(
+    '/agentGrants/users',
+    read,
+    describeRoute({
+      tags,
+      summary:
+        'List authorized employees across every Agent Grants Octop instance',
+      operationId: 'enterpriseAppPortalListAgentGrantUsers',
+      ...cliRoute(false),
+      description: `Requires \`${SETTINGS_AGENT_GRANTS}\` read. Returns one row per employee per enabled Octop instance, including Casdoor groups for the department column.`,
+      responses: {
+        200: listResponse(AgentGrantUserSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    async (context) => {
+      const data = await services().agentGrantsRead.listAgentGrantUsers();
+      return context.json({ data, meta: { total: data.length } });
     },
   );
 

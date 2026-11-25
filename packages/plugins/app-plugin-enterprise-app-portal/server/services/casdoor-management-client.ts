@@ -368,6 +368,40 @@ export class CasdoorManagementClient {
     return { users, total: readTotal(envelope.data2, users.length) };
   }
 
+  /**
+   * Resolves one Casdoor user by owner/name id, raw id, or exact name match.
+   * Used for Enforce subject normalization from external identity bindings.
+   */
+  public async findUserByIdOrName(
+    subjectOrName: string,
+  ): Promise<CasdoorUserView | undefined> {
+    const id = subjectOrName.trim();
+    if (!id) return undefined;
+    try {
+      const envelope = await this.envelope('/api/get-user', {
+        method: 'GET',
+        query: { id },
+      });
+      const user = parseUser(envelope.data);
+      if (user) return user;
+    } catch {
+      // Fall through to name search.
+    }
+    const name = id.includes('/') ? id.slice(id.indexOf('/') + 1) : id;
+    const listed = await this.listUsers({
+      organization: this.organization(),
+      query: name,
+      page: 1,
+      pageSize: 50,
+    });
+    return listed.users.find(
+      (user) =>
+        user.id === id ||
+        `${user.owner}/${user.name}` === id ||
+        user.name === name,
+    );
+  }
+
   public async listGroups(
     input: {
       readonly organization?: string;

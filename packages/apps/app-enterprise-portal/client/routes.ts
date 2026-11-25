@@ -32,6 +32,15 @@ const appRoutes: AppClientRouteContribution = defineAppRoutes([
     path: '/inbox',
   },
   {
+    // Unified Octop Router entry: issue a Route Ticket and form_post to Router.
+    // Auth required; after login the app returns to this fixed path (no open return_to).
+    authz: 'skip',
+    auth: 'required',
+    componentLoader: () => import('./pages/route-entry.js'),
+    name: 'route-entry',
+    path: '/route-entry',
+  },
+  {
     auth: 'guest',
     authz: 'skip',
     componentLoader: () => import('./pages/auth/login.js'),

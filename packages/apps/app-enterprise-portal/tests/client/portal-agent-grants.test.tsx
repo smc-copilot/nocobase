@@ -17,6 +17,7 @@ import {
   buildAgentGrantCreateBody,
   emptyCreateDraft,
   expertStatusText,
+  operationNeedsOctopRefresh,
   roleDraftFields,
   selectAgentGrantApplications,
   selectableRoles,
@@ -93,6 +94,10 @@ describe('agent grant presentation', () => {
         pending,
       ),
     ).toBe('completed');
+    expect(operationNeedsOctopRefresh('BOOTSTRAP_PENDING')).toBe(true);
+    expect(operationNeedsOctopRefresh('USER_CREATED')).toBe(true);
+    expect(operationNeedsOctopRefresh('OUTCOME_UNKNOWN')).toBe(true);
+    expect(operationNeedsOctopRefresh('COMPLETED')).toBe(false);
   });
 
   it('builds the simplified create body and keeps default expert optional for new users', () => {
@@ -472,5 +477,8 @@ describe('agent grants page', () => {
     expect(grants[0]?.json).not.toHaveProperty('permissions');
     expect(grants[0]?.json).not.toHaveProperty('username');
     expect(await screen.findByText(pending)).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: copy.portalAgentGrantsReconcile }),
+    ).toBeVisible();
   });
 });

@@ -8,6 +8,7 @@ import type { ApplicationCatalogService } from './application-catalog.js';
 import type { PortalApplicationRecord } from './application-catalog.js';
 import {
   AgentGrantOperationStore,
+  isTerminalAgentGrantStatus,
   type AgentGrantExpertItemRecord,
   type AgentGrantOperationRecord,
 } from './agent-grant-operations.js';
@@ -425,9 +426,9 @@ export class AgentGrantsService {
   }
 
   /**
-   * Takes the per-employee lock. When the previous operation still holds it
-   * only because Octop no longer has that account, close the old row and
-   * take the lock again. A create that is still talking to Octop keeps the 409.
+   * Takes the per-employee lock. A leftover lock is closed when Octop no
+   * longer has the account, or when a previous bootstrap has already
+   * finished. A create that is still talking to Octop keeps the 409.
    */
   private async acquireOperation(draft: {
     readonly app: PortalApplicationRecord;
@@ -456,7 +457,13 @@ export class AgentGrantsService {
         draft.casdoorUserId,
         draft.username,
       );
-      if (!released) throw error;
+      if (released) return await this.operations.acquire(operationDraft);
+      const finished = await this.releaseLockAfterBootstrapFinished(
+        draft.app,
+        draft.casdoorUserId,
+        draft.actorUserId,
+      );
+      if (!finished) throw error;
       return await this.operations.acquire(operationDraft);
     }
   }
@@ -497,6 +504,28 @@ export class AgentGrantsService {
     return true;
   }
 
+  /**
+   * Polls Octop for a leftover BOOTSTRAP_PENDING lock from before the lock
+   * was released at finalize. USER_CREATED / SUBMITTING stay locked: those
+   * rows may still be writing to Octop.
+   */
+  private async releaseLockAfterBootstrapFinished(
+    app: PortalApplicationRecord,
+    casdoorUserId: string,
+    actorUserId: string,
+  ): Promise<boolean> {
+    const holding = await this.operations.findByLockKey(
+      app.appCode,
+      casdoorUserId,
+    );
+    if (!holding || holding.status !== 'BOOTSTRAP_PENDING') return false;
+    const reconciled = await this.reconcile(holding.id, actorUserId);
+    return (
+      isTerminalAgentGrantStatus(reconciled.status) ||
+      reconciled.lockKey == null
+    );
+  }
+
   public async reconcile(
     operationId: string,
     actorUserId: string,
@@ -532,18 +561,12 @@ export class AgentGrantsService {
         skipped += 1;
         continue;
       }
-      const agent =
-        (item.agentId
-          ? agents.find((entry) => entry.agentId === item.agentId)
-          : undefined) ??
-        agents.find(
-          (entry) =>
-            entry.kind === 'expert' &&
-            entry.publishedExpertId === item.expertTemplateId &&
-            (operation.octopUserId
-              ? entry.userId === operation.octopUserId
-              : true),
-        );
+      const agent = findExpertAgent(
+        agents,
+        item,
+        operation.octopUserId,
+        operation.username,
+      );
       const status = classifyExpertBootstrap(agent);
       if (status === 'BOOTSTRAP_PENDING') pending = true;
       if (status === 'COMPLETED' || status === 'ALREADY_INSTALLED') {
@@ -1195,6 +1218,26 @@ function sameOctopUserId(
 ): boolean {
   if (left == null || left === '') return false;
   return Number(left) === Number(right);
+}
+
+function findExpertAgent(
+  agents: readonly OctopAgent[],
+  item: AgentGrantExpertItemRecord,
+  octopUserId: string | null,
+  username: string | null,
+): OctopAgent | undefined {
+  if (item.agentId) {
+    const byId = agents.find((entry) => entry.agentId === item.agentId);
+    if (byId) return byId;
+  }
+  return agents.find((entry) => {
+    if (entry.kind !== 'expert') return false;
+    if (entry.publishedExpertId !== item.expertTemplateId) return false;
+    if (!octopUserId && !username) return true;
+    if (octopUserId && sameOctopUserId(entry.userId, octopUserId)) return true;
+    if (!username || !entry.ownerUsername) return false;
+    return entry.ownerUsername.toLowerCase() === username.toLowerCase();
+  });
 }
 
 function assertInstallOwner(

@@ -173,6 +173,17 @@ export function agentGrantResultKind(operation: {
   return 'OTHER';
 }
 
+/** These kinds still need an Octop read; a GET of the stored row is stale. */
+export function operationNeedsOctopRefresh(
+  kind: AgentGrantResultKind | undefined,
+): boolean {
+  return (
+    kind === 'BOOTSTRAP_PENDING' ||
+    kind === 'USER_CREATED' ||
+    kind === 'OUTCOME_UNKNOWN'
+  );
+}
+
 /**
  * Pending bootstrap keeps a dedicated label. The agent id is already persisted
  * on Octop; pending only means workspace/bootstrap has not finished.

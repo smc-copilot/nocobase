@@ -129,6 +129,23 @@ const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
   },
   {
     parent: 'settingsBusiness',
+    name: 'settingsPortalAgentUsers',
+    path: '/portal-agent-users',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.agentGrants' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalAgentUsers',
+      description: 'settings.portalAgentUsersDescription',
+      icon: Users,
+    },
+    breadcrumb: { title: 'settings.portalAgentUsers' },
+    componentLoader: () => import('./portal-agent-users.js'),
+  },
+  {
+    parent: 'settingsBusiness',
     name: 'settingsPortalCatalog',
     path: '/portal-catalog',
     auth: 'required',

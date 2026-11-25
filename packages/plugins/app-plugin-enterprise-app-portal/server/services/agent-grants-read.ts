@@ -31,6 +31,8 @@ export interface AuthorizedEmployeeView {
   readonly username: string;
   readonly displayName: string;
   readonly email: string;
+  /** Casdoor group ids (`owner/name`), used as the portal department column. */
+  readonly groups: readonly string[];
   /** Whether an Octop account exists for this Casdoor username. */
   readonly accountExists: boolean;
   readonly octopUserId: string | null;
@@ -39,6 +41,12 @@ export interface AuthorizedEmployeeView {
   readonly syncedAt: string | null;
   /** Experts currently owned by this Octop user. */
   readonly experts: readonly InstalledExpertView[];
+}
+
+/** One authorized employee on one Agent Grants Octop instance. */
+export interface AgentGrantUserView extends AuthorizedEmployeeView {
+  readonly appCode: string;
+  readonly appName: string;
 }
 
 export interface InstalledExpertView {
@@ -123,6 +131,44 @@ export class AgentGrantsReadService {
     appCode: string,
   ): Promise<readonly AuthorizedEmployeeView[]> {
     const app = await this.requireGrantApplication(appCode);
+    return this.listAuthorizedEmployeesForApp(app);
+  }
+
+  /**
+   * One row per authorized employee per Agent Grants-enabled Octop instance.
+   * Instances are loaded in parallel. A single instance failure rejects the
+   * whole list so the client does not show a silently incomplete table.
+   */
+  public async listAgentGrantUsers(): Promise<readonly AgentGrantUserView[]> {
+    const applications = await this.listAgentGrantApplications();
+    // Sequential per instance: Casdoor enforce is already N+1 per app, and
+    // parallel instance reads contended the shared management fetch in tests.
+    const rows: AgentGrantUserView[] = [];
+    for (const application of applications) {
+      const app = await this.requireGrantApplication(application.appCode);
+      const employees = await this.listAuthorizedEmployeesForApp(app);
+      for (const employee of employees) {
+        rows.push({
+          ...employee,
+          appCode: application.appCode,
+          appName: application.name,
+        });
+      }
+    }
+    return rows.sort((left, right) => {
+      const byName = left.displayName.localeCompare(
+        right.displayName,
+        undefined,
+        { sensitivity: 'base', numeric: true },
+      );
+      if (byName !== 0) return byName;
+      return left.appCode.localeCompare(right.appCode);
+    });
+  }
+
+  private async listAuthorizedEmployeesForApp(
+    app: PortalApplicationRecord,
+  ): Promise<readonly AuthorizedEmployeeView[]> {
     if (!app.casdoorAppKey) {
       throw portalError(
         'FAILED_PRECONDITION',
@@ -322,6 +368,7 @@ function toEmployee(
     username: user.name,
     displayName: user.displayName,
     email: user.email,
+    groups: [...user.groups],
   };
 }
 

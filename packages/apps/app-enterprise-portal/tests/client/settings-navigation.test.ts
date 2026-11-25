@@ -136,6 +136,7 @@ describe('System settings navigation', () => {
       ['settingsPortalCasdoorConnection', '/settings/portal-casdoor'],
       ['settingsPortalCasdoorGrants', '/settings/portal-grants'],
       ['settingsPortalAgentGrants', '/settings/portal-agent-grants'],
+      ['settingsPortalAgentUsers', '/settings/portal-agent-users'],
       ['settingsPortalCatalog', '/settings/portal-catalog'],
     ];
     const system = [['settingsPortalAudit', '/settings/portal-audit']];
@@ -173,6 +174,7 @@ describe('System settings navigation', () => {
         'settingsPortalCasdoorConnection',
         'settingsPortalCasdoorGrants',
         'settingsPortalAgentGrants',
+        'settingsPortalAgentUsers',
         'settingsPortalCatalog',
         'settingsPortalAudit',
       ].map((name) => routeKey(find(routes, name))),

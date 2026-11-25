@@ -236,6 +236,19 @@ function isUniqueViolation(error: unknown): boolean {
 export class AgentGrantOperationStore {
   public constructor(private readonly database: () => DatabaseManager) {}
 
+  public async findByLockKey(
+    appCode: string,
+    casdoorUserId: string,
+  ): Promise<AgentGrantOperationRecord | undefined> {
+    const row = await this.database()
+      .connection()
+      .query.selectFrom('enterprisePortalAgentGrantOperations')
+      .selectAll()
+      .where('lockKey', '=', agentGrantLockKey(appCode, casdoorUserId))
+      .executeTakeFirst();
+    return row ? toRecord(row) : undefined;
+  }
+
   public async getById(
     id: string,
   ): Promise<AgentGrantOperationRecord | undefined> {
@@ -325,6 +338,9 @@ export class AgentGrantOperationStore {
     const current = await this.requireById(id);
     const status = patch.status ?? current.status;
     const terminal = isTerminalAgentGrantStatus(status);
+    // Bootstrap wait is not a write. Holding the lock here blocked every
+    // later expert install after Octop had already finished the previous one.
+    const releaseLock = terminal || status === 'BOOTSTRAP_PENDING';
     const snapshot =
       patch.createOptionsSnapshot === undefined
         ? undefined
@@ -376,7 +392,7 @@ export class AgentGrantOperationStore {
           patch.errorMessage === undefined
             ? current.errorMessage
             : patch.errorMessage,
-        lockKey: terminal ? null : current.lockKey,
+        lockKey: releaseLock ? null : current.lockKey,
         updatedAt: now,
         completedAt: terminal ? now : current.completedAt,
       })

@@ -165,4 +165,57 @@ describe('CasdoorApplicationAccessAdapter', () => {
       uncached.listAuthorizedAppKeys({ userId: 'local-1', username: 'alice' }),
     ).rejects.toMatchObject({ reason: 'CASDOOR_AUTHORIZATION_UNAVAILABLE' });
   });
+
+  it('prefers casdoorUserId and supports bypassCache / requireBinding', async () => {
+    const subjects: string[] = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as string[];
+      subjects.push(body[0] ?? '');
+      return Response.json({ status: 'ok', data: [true] });
+    };
+    const adapter = new CasdoorApplicationAccessAdapter(
+      () => ({ source: 'managementApi', cacheTtlMs: 60_000 }),
+      () => new Date('2026-11-21T00:00:00Z'),
+      {
+        client: () =>
+          new CasdoorManagementClient(
+            {
+              endpoint: 'https://casdoor.test',
+              clientId: 'portal-client',
+              clientSecret: 'portal-secret',
+              organization: 'smartcore',
+              applicationOwner: 'admin',
+              permissionOwner: 'smartcore',
+              auth: 'query',
+              permissionNamePrefix: 'nocobase-portal-app-',
+            },
+            fetchImpl,
+          ),
+        targets: async () => [{ appCode: 'octop', casdoorAppKey: 'octop' }],
+      },
+    );
+    await adapter.listAuthorizedAppKeys({
+      userId: 'local-1',
+      casdoorUserId: 'smartcore/bound',
+      username: 'alice',
+    });
+    expect(subjects).toEqual(['smartcore/bound']);
+    await adapter.listAuthorizedAppKeys({
+      userId: 'local-1',
+      casdoorUserId: 'smartcore/bound',
+    });
+    expect(subjects).toHaveLength(1);
+    await adapter.listAuthorizedAppKeys(
+      { userId: 'local-1', casdoorUserId: 'smartcore/bound' },
+      { bypassCache: true },
+    );
+    expect(subjects).toHaveLength(2);
+    adapter.clearCache();
+    await expect(
+      adapter.listAuthorizedAppKeys(
+        { userId: 'local-1', username: 'alice' },
+        { requireBinding: true, bypassCache: true },
+      ),
+    ).rejects.toMatchObject({ reason: 'IDENTITY_BINDING_REQUIRED' });
+  });
 });

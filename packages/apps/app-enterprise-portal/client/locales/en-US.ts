@@ -37,6 +37,26 @@ const enUS = {
     userConfigHint:
       'Local user accounts and permissions are under System settings.',
     userConfigLink: 'User management',
+    routeEntry: {
+      title: 'Continue to Octop',
+      description:
+        'Choose an authorized Octop application. The portal issues a short-lived ticket and posts it to the Router.',
+      redirecting: 'Submitting your ticket to the Router…',
+      continue: 'Continue',
+      empty: 'No Octop applications are available for routing.',
+      errorTitle: 'Unable to continue',
+      failed: 'Unable to issue a route ticket.',
+      bindingRequired:
+        'Link this account to Casdoor before using Router entry.',
+      bindingAmbiguous:
+        'Multiple Casdoor bindings conflict for this account. Ask an administrator to fix them.',
+      selectionRequired: 'Select an application to continue.',
+      accessDenied: 'You are not authorized for this application.',
+      unavailable: 'Route tickets are not available right now.',
+      disabledTitle: 'Router entry is disabled',
+      disabledBody:
+        'Portal routing is turned off for this deployment. Use the employee portal home page instead.',
+    },
     catalogAuthorityTitle: 'Casdoor applications are authoritative',
     catalogAuthorityBody:
       'This page maintains portal launch URLs and enablement. Authorization still lives in Casdoor permissions.',
@@ -285,6 +305,30 @@ const enUS = {
     portalAgentGrantsLookupFailed:
       'Unable to read the Octop account. Creating is blocked.',
     portalAgentGrantsNoAdminRole: 'Administrator roles are not available here.',
+    portalAgentUsers: 'Agent user management',
+    portalAgentUsersDescription:
+      'Authorized employees across Octop instances. Initialize an account or install experts for the selected row.',
+    portalAgentUsersCount: 'Employees {{count}}',
+    portalAgentUsersSyncFilter: 'Sync status',
+    portalAgentUsersSyncAll: 'All',
+    portalAgentUsersSyncUnsynced: 'Not synced',
+    portalAgentUsersSyncSynced: 'Synced',
+    portalAgentUsersInstance: 'Instance',
+    portalAgentUsersInstanceAll: 'All instances',
+    portalAgentUsersDepartment: 'Department',
+    portalAgentUsersDepartmentAll: 'All departments',
+    portalAgentUsersSearch: 'Search users',
+    portalAgentUsersColumnUser: 'User',
+    portalAgentUsersColumnEmail: 'Email',
+    portalAgentUsersColumnAccount: 'Account',
+    portalAgentUsersColumnDepartment: 'Department',
+    portalAgentUsersColumnInstance: 'Instance',
+    portalAgentUsersColumnSync: 'Account sync',
+    portalAgentUsersColumnExperts: 'Authorized experts',
+    portalAgentUsersColumnActions: 'Actions',
+    portalAgentUsersManage: 'Manage',
+    portalAgentUsersInitialize: 'Initialize',
+    portalAgentUsersEmpty: 'No authorized employees.',
   },
 };
 
