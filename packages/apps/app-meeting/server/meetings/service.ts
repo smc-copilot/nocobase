@@ -148,11 +148,14 @@ export class MeetingQueryService {
       }),
       repository.count(),
     ]);
-    const oaCreated = await this.oaMeetingCreatedByMeetingId(
-      rows.map((row) => row.id),
-    );
+    const meetingIds = rows
+      .map((row) => row.id)
+      .filter((id): id is string => typeof id === 'string');
+    const oaCreated = await this.oaMeetingCreatedByMeetingId(meetingIds);
     return {
-      data: rows.map((row) => toPublic(row, oaCreated.has(row.id))),
+      data: rows.map((row) =>
+        toPublic(row, row.id !== undefined && oaCreated.has(row.id)),
+      ),
       meta: { page: query.page, pageSize: query.pageSize, total },
     };
   }

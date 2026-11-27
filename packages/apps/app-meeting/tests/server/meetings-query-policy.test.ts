@@ -9,8 +9,13 @@ function policy(): RepositoryPolicy {
 }
 
 function connection(withPolicy: ReturnType<typeof vi.fn>): DatabaseConnection {
+  // Meetings go through withPolicy; OA operation/step bookkeeping collections
+  // use plain findOne lookups, which list() performs to flag OA-created meetings.
   return {
-    repository: () => ({ withPolicy }),
+    repository: (name: string) =>
+      name === 'meetings'
+        ? { withPolicy }
+        : { findOne: vi.fn(async () => undefined) },
   } as unknown as DatabaseConnection;
 }
 
