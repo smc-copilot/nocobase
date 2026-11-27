@@ -7,6 +7,7 @@
 import {
   act,
   fireEvent,
+  renderHook,
   screen,
   waitFor,
   within,
@@ -29,6 +30,7 @@ import {
   clientMocks,
   FakeApiError,
   resetApi,
+  toasts,
 } from './fake-client.js';
 import { agent } from './fixtures.js';
 import { renderPage } from './render.js';
@@ -41,6 +43,7 @@ vi.mock('@nocobase/app-plugin-authorization/client', () =>
 
 const { default: AgentsPage } =
   await import('../../client/pages/agents/index.js');
+const { useNotify } = await import('../../client/hooks/use-notify.js');
 
 let agents: AgentView[] = [];
 let availableGroups: AvailableModelGroup[] = [];
@@ -59,6 +62,27 @@ async function chooseTemplate(container: HTMLElement, template: string) {
 }
 
 describe('the Agent page', () => {
+  it('错误提示保留真实 API 请求 ID，本地错误不带请求 ID', async () => {
+    const { ApiClientError } = await vi.importActual<
+      typeof import('@nocobase/app-client')
+    >('@nocobase/app-client');
+    const { result } = renderHook(() => useNotify());
+    result.current.error(
+      new ApiClientError('Request failed', {
+        status: 500,
+        method: 'POST',
+        url: '/api/agents/runnerAgents',
+        requestId: 'request-fixture',
+      }),
+    );
+    expect(toasts.at(-1)).toMatchObject({
+      type: 'error',
+      requestId: 'request-fixture',
+    });
+    result.current.error(new Error('Local failure'));
+    expect(toasts.at(-1)).toMatchObject({ type: 'error' });
+    expect(toasts.at(-1)).not.toHaveProperty('requestId');
+  });
   beforeEach(() => {
     agents = [
       agent('sonnet', {
@@ -194,6 +218,74 @@ describe('the Agent page', () => {
       ).toEqual([
         expect.objectContaining({ description: 'Updated description' }),
       ]),
+    );
+  });
+
+  it('shows every agent’s whole model id below its name and in its dialog, a Claude catalog model included', async () => {
+    renderPage(<AgentsPage />);
+    const row = await screen.findByTestId('agent-kimi');
+    expect(within(row).getByTestId('agent-model').textContent).toBe(
+      'moonshotai/kimi-k2',
+    );
+    expect(
+      within(await screen.findByTestId('agent-sonnet')).getByTestId(
+        'agent-model',
+      ).textContent,
+    ).toBe('claude-sonnet-5');
+    fireEvent.click(screen.getByTestId('agent-edit-kimi'));
+    const dialog = await screen.findByTestId('agent-dialog');
+    expect(within(dialog).getByTestId('agent-dialog-model').textContent).toBe(
+      'moonshotai/kimi-k2',
+    );
+  });
+
+  it('shows the whole id of a model the catalog does not know, whatever the agent is called', async () => {
+    agents = agents.map((item) =>
+      item.id === 'kimi' ? { ...item, name: 'OpenCode · Kimi K2' } : item,
+    );
+    renderPage(<AgentsPage />);
+    const row = await screen.findByTestId('agent-kimi');
+    expect(row).toHaveTextContent('OpenCode · Kimi K2');
+    expect(within(row).getByTestId('agent-model').textContent).toBe(
+      'moonshotai/kimi-k2',
+    );
+  });
+
+  it('shows a Claude agent’s whole model id when editing it', async () => {
+    renderPage(<AgentsPage />);
+    fireEvent.click(await screen.findByTestId('agent-edit-sonnet'));
+    const dialog = await screen.findByTestId('agent-dialog');
+    expect(within(dialog).getByTestId('agent-dialog-model').textContent).toBe(
+      'claude-sonnet-5',
+    );
+  });
+
+  it('shows each agent by its saved name with its whole model id below', async () => {
+    const qwen = (id: string, name: string, model: string) => ({
+      ...agents[1]!,
+      id,
+      name,
+      model,
+      modelEntries: [{ tool: 'opencode' as const, model, effort: null }],
+    });
+    agents = [
+      ...agents,
+      qwen('lan', 'OpenCode · Qwen3.8 Flash', 'example-provider/qwen3.8-flash'),
+      qwen(
+        'console',
+        'OpenCode · Qwen3.8 Flash (opencode)',
+        'opencode/qwen3.8-flash',
+      ),
+    ];
+    renderPage(<AgentsPage />);
+    const lan = await screen.findByTestId('agent-lan');
+    expect(lan).toHaveTextContent('OpenCode · Qwen3.8 Flash');
+    expect(lan).not.toHaveTextContent('Flash (');
+    expect(within(lan).getByTestId('agent-model').textContent).toBe(
+      'example-provider/qwen3.8-flash',
+    );
+    expect(screen.getByTestId('agent-console')).toHaveTextContent(
+      'OpenCode · Qwen3.8 Flash (opencode)',
     );
   });
 

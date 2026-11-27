@@ -73,4 +73,6 @@ export const DEFAULT_SYNC_CRON = '*/15 * * * *';
 export const SETTINGS_SYNC = 'casdoorIdentity.sync';
 export const SETTINGS_MAPPING = 'casdoorIdentity.mapping';
 export const SETTINGS_SUBJECT_BINDINGS = 'casdoorIdentity.subjectBindings';
+export const SETTINGS_EXTERNAL_IDENTITIES =
+  'casdoorIdentity.externalIdentities';
 export const ERROR_DOMAIN = 'casdoorIdentity';

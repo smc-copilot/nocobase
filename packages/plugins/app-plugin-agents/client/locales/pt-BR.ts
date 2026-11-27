@@ -193,6 +193,7 @@ const ptBR: LocaleResource<typeof enUS> = {
       title: 'Editar {{name}}',
       enabled: 'Habilitado',
       done: '{{name}} salvo',
+      model: 'Modelo',
     },
     available: {
       open: 'Adicionar Agent',
@@ -271,10 +272,6 @@ const ptBR: LocaleResource<typeof enUS> = {
     save: 'Salvar habilidades',
     descriptionOnline:
       'Manuais que o Agent lê quando uma tarefa corresponde à sua descrição, em uma sandbox somente leitura no servidor.',
-    onlineScripts:
-      'Os scripts não são executados para Agents online: o Agent pode lê-los, não executá-los.',
-    skippedScripts: ': {{paths}}',
-    pathSeparator: ', ',
   },
   brief: {
     preview: 'Pré-visualização do prompt completo',
@@ -617,6 +614,15 @@ const ptBR: LocaleResource<typeof enUS> = {
     pathHint:
       'O runner encontra as ferramentas de programação pelo próprio PATH. Em um terminal onde which codex / which claude funcione, execute nocobase-runner service install de novo e reinicie o serviço (ou execute nocobase-runner start de novo) para que ele receba o PATH correto.',
     quota: {
+      ceilingReached: 'Limite de uso atingido',
+      ceilingLabel: 'Pausar em',
+      ceilingInput: 'Pausar novos trabalhos de {{tool}} na porcentagem usada',
+      ceilingSave: 'Aplicar',
+      ceilingInvalid:
+        'Insira uma porcentagem inteira de 1 a 100 ou deixe em branco.',
+      ceilingPaused:
+        'Uma janela atingiu o limite; novos trabalhos afetados aguardam a redefinição ou alteração do limite.',
+
       workspaceStatus: {
         active: 'O trabalho continua',
         ended: 'Finalizado · limpeza permitida',
@@ -647,6 +653,10 @@ const ptBR: LocaleResource<typeof enUS> = {
       workspaceSize: 'Tamanho do espaço de trabalho: {{value}}',
       providers_one: 'Provedor {{count}} na cota',
       providers_other: 'Provedores {{count}} na cota',
+      models_one: '{{count}} modelo na cota',
+      models_other: '{{count}} modelos na cota',
+      models_many: '{{count}} modelos na cota',
+      percent: '{{percent}}%',
       runColumns: {
         issue: 'Tarefa / conversa',
         agent: 'Agente',
@@ -689,7 +699,7 @@ const ptBR: LocaleResource<typeof enUS> = {
         'Limpe somente depois de confirmar que a cota foi restaurada. {{target}} volta a receber trabalho imediatamente; se a cota ainda estiver esgotada, a próxima execução a marca de novo.',
       observed: 'Último {{time}} relatado',
       usedPercent: '{{percent}}% usado',
-      ok: 'OK',
+      noUsage: 'Ainda não há dados de cota',
       hint: 'Uma marca some sozinha no horário de reinicialização conhecido ou quando a ferramenta volta a informar cota disponível. Limpe-a manualmente somente depois de confirmar que a cota foi restaurada. Somente o proprietário e os administradores do ambiente de execução podem limpar as marcas.',
       marks_many: 'Marcas de cota {{count}}',
       providers_many: 'Provedores {{count}} na cota',
@@ -768,8 +778,8 @@ const ptBR: LocaleResource<typeof enUS> = {
       offlineNever: 'Off-line',
     },
     toolUsage: {
-      label: 'Executado por ferramenta de codificação',
-      item: '{{tool}} {{used}}/{{limit}}',
+      short: 'Execuções {{used}}/{{limit}}',
+      hint: 'No máximo {{limit}} execuções de {{tool}} ao mesmo tempo; {{used}} em andamento',
     },
     toolSlots: {
       label: 'Limites por ferramenta de codificação',
@@ -909,6 +919,8 @@ const ptBR: LocaleResource<typeof enUS> = {
       show: 'Versão {{version}}: um ambiente de execução mais recente está disponível',
       available: 'Atualização disponível',
       badge: 'Atualizável',
+      latest: 'Atual',
+      installed: 'Versão {{version}}',
       title: 'Um ambiente de execução mais recente para {{name}}',
       description: '{{version}} instalado, esta aplicação atende {{latest}}.',
       hint: 'Ele se atualiza quando nenhum Agent está em execução. Para atualizá-lo agora, execute-o em seu host.',
@@ -979,6 +991,23 @@ const ptBR: LocaleResource<typeof enUS> = {
     },
   },
   chat: {
+    thinking: {
+      levels: {
+        'provider-default': 'Padrão',
+        none: 'Desativado',
+        minimal: 'Mínimo',
+        low: 'Baixo',
+        medium: 'Médio',
+        high: 'Alto',
+        xhigh: 'Muito alto',
+      },
+      adjusted:
+        'Este modelo não aceita o nível de raciocínio "{{requested}}"; nesta resposta foi usado "{{used}}".',
+      adjustedToDefault:
+        'Este modelo não aceita o nível de raciocínio "{{requested}}"; nesta resposta foi usado o padrão do provedor.',
+      warning:
+        'O modelo pode não ter aplicado o nível de raciocínio "{{level}}" nesta resposta.',
+    },
     // Keep new guidance available in English until this locale is translated.
     executionFailed:
       'A execução falhou. Revise a conversa salva antes de tentar de novo.',
@@ -1306,8 +1335,6 @@ const ptBR: LocaleResource<typeof enUS> = {
     binaryFile: 'Arquivo binário, {{size}}. Não pode ser editado aqui.',
     executable: 'Executável',
     scriptBadge: 'Roteiro',
-    scriptsNote:
-      'Possui scripts: os Agents online podem lê-los, mas nunca executá-los',
     compatibility: 'Compatibilidade: {{value}}',
     fileContent: 'Conteúdo de {{path}}',
     export: 'Exportar',
@@ -1339,8 +1366,7 @@ const ptBR: LocaleResource<typeof enUS> = {
       name: 'Nome',
       renameTitle: 'Renomear "{{name}}"',
       conventional: {
-        scripts:
-          'Os Agents de código podem ser executados. Os Agents online apenas leem.',
+        scripts: 'Código que os Agents podem executar.',
         references: 'Os Agents de documentação leem quando precisam.',
         assets: 'Modelos, imagens e outros recursos.',
       },

@@ -192,6 +192,7 @@ const ruRU: LocaleResource<typeof enUS> = {
       title: 'Изменить {{name}}',
       enabled: 'Включён',
       done: '{{name}} сохранён',
+      model: 'Модель',
     },
     available: {
       open: 'Добавить Agent',
@@ -278,10 +279,6 @@ const ruRU: LocaleResource<typeof enUS> = {
     save: 'Сохранить навыки',
     descriptionOnline:
       'Руководства, которые Agent читает, когда задача подходит под их описание, в изолированной среде только для чтения на сервере.',
-    onlineScripts:
-      'Онлайн-Agent не выполняют скрипты: Agent может их читать, но не запускать.',
-    skippedScripts: ': {{paths}}',
-    pathSeparator: ', ',
   },
   brief: {
     preview: 'Предпросмотр полного запроса',
@@ -621,6 +618,16 @@ const ruRU: LocaleResource<typeof enUS> = {
   },
   runtimes: {
     quota: {
+      ceilingReached: 'Порог квоты достигнут',
+      ceilingLabel: 'Приостановить при',
+      ceilingInput:
+        'Приостановить новые задачи {{tool}} при указанном проценте использования',
+      ceilingSave: 'Применить',
+      ceilingInvalid:
+        'Введите целое число от 1 до 100 или оставьте поле пустым.',
+      ceilingPaused:
+        'Один из периодов квоты достиг порога; новые затронутые задачи ждут сброса или изменения порога.',
+
       workspaceStatus: {
         active: 'Работа продолжается',
         ended: 'Завершено · очистка разрешена',
@@ -653,6 +660,11 @@ const ruRU: LocaleResource<typeof enUS> = {
       workspaceSize: 'Размер рабочего пространства: {{value}}',
       providers_one: 'У {{count}} провайдера исчерпана квота',
       providers_other: 'У {{count}} провайдера исчерпана квота',
+      models_one: 'У {{count}} модели исчерпана квота',
+      models_other: 'У {{count}} моделей исчерпана квота',
+      models_few: 'У {{count}} моделей исчерпана квота',
+      models_many: 'У {{count}} моделей исчерпана квота',
+      percent: '{{percent}}%',
       providers_few: 'У {{count}} провайдеров исчерпана квота',
       providers_many: 'У {{count}} провайдеров исчерпана квота',
       runColumns: {
@@ -697,7 +709,7 @@ const ruRU: LocaleResource<typeof enUS> = {
         'Снимайте её только после того, как убедитесь, что квота восстановлена. {{target}} сразу снова получит работу; если квота всё ещё исчерпана, следующий запуск снова её отметит.',
       observed: 'Последний отчёт {{time}}',
       usedPercent: 'Использовано {{percent}}%',
-      ok: 'OK',
+      noUsage: 'Пока нет данных о квоте',
       hint: 'Отметка снимается сама в известное время сброса или когда инструмент снова сообщит об остатке квоты. Снимайте её вручную только после того, как убедитесь, что квота восстановлена. Снимать отметки могут только владелец среды выполнения и администраторы.',
     },
     workspaces: {
@@ -773,8 +785,8 @@ const ruRU: LocaleResource<typeof enUS> = {
       offlineNever: 'Не в сети',
     },
     toolUsage: {
-      label: 'Запуски по инструментам',
-      item: '{{tool}} {{used}}/{{limit}}',
+      short: 'Запуски {{used}}/{{limit}}',
+      hint: 'Не более {{limit}} запусков {{tool}} одновременно; сейчас {{used}}',
     },
     toolSlots: {
       label: 'Лимиты по инструментам',
@@ -915,6 +927,8 @@ const ruRU: LocaleResource<typeof enUS> = {
       show: 'Версия {{version}}: доступен более новый runner',
       available: 'Доступно обновление',
       badge: 'Можно обновить',
+      latest: 'Актуальная',
+      installed: 'Версия {{version}}',
       title: 'Более новый runner для {{name}}',
       description: 'Установлен {{version}}, это приложение раздаёт {{latest}}.',
       hint: 'Обновится сам, когда не будет работающих Agent. Чтобы обновить сейчас, выполните это на её хосте.',
@@ -985,6 +999,23 @@ const ruRU: LocaleResource<typeof enUS> = {
     },
   },
   chat: {
+    thinking: {
+      levels: {
+        'provider-default': 'По умолчанию',
+        none: 'Выкл.',
+        minimal: 'Минимальный',
+        low: 'Низкий',
+        medium: 'Средний',
+        high: 'Высокий',
+        xhigh: 'Очень высокий',
+      },
+      adjusted:
+        'Эта модель не поддерживает уровень размышления «{{requested}}»; для этого ответа использован уровень «{{used}}».',
+      adjustedToDefault:
+        'Эта модель не поддерживает уровень размышления «{{requested}}»; для этого ответа использованы настройки поставщика по умолчанию.',
+      warning:
+        'Модель могла не применить уровень размышления «{{level}}» к этому ответу.',
+    },
     executionFailed:
       'Выполнение не удалось. Перед повтором просмотрите сохранённый разговор.',
     untitled: 'Разговор без названия',
@@ -1307,8 +1338,6 @@ const ruRU: LocaleResource<typeof enUS> = {
     binaryFile: 'Двоичный файл, {{size}}. Здесь его нельзя редактировать.',
     executable: 'Исполняемый',
     scriptBadge: 'Скрипт',
-    scriptsNote:
-      'Содержит скрипты: онлайн-Agent могут их читать, но никогда не запускают',
     compatibility: 'Совместимость: {{value}}',
     fileContent: 'Содержимое {{path}}',
     export: 'Экспорт',
@@ -1341,8 +1370,7 @@ const ruRU: LocaleResource<typeof enUS> = {
       name: 'Имя',
       renameTitle: 'Переименовать «{{name}}»',
       conventional: {
-        scripts:
-          'Код, который Agent могут запускать. Онлайн-Agent его только читают.',
+        scripts: 'Код, который Agent могут запускать.',
         references: 'Документация, которую Agent читают по необходимости.',
         assets: 'Шаблоны, изображения и другие ресурсы.',
       },

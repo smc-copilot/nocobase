@@ -6,6 +6,7 @@ import type { AppPluginApplication } from '@nocobase/app-server/plugins';
 import { ServiceProvider } from '@nocobase/service-provider';
 
 import {
+  SETTINGS_EXTERNAL_IDENTITIES,
   SETTINGS_MAPPING,
   SETTINGS_SUBJECT_BINDINGS,
   SETTINGS_SYNC,
@@ -50,6 +51,17 @@ export function registerIdentitySettings(authz: AppAuthorization): void {
         {
           name: 'revoke',
           title: 'Revoke or re-enable subject bindings',
+        },
+      ],
+    },
+    {
+      id: SETTINGS_EXTERNAL_IDENTITIES,
+      title: 'External identity bindings',
+      actions: [
+        { name: 'read', title: 'View issuer and subject bindings' },
+        {
+          name: 'import',
+          title: 'Preview and commit employee-number identity bindings',
         },
       ],
     },

@@ -16,6 +16,11 @@ export interface ExternalIdentityClaims {
   readonly emailVerified: boolean;
   readonly name?: string;
   readonly organization?: string;
+  /**
+   * Trusted employee number from a verified token or directory snapshot. Used only to match an
+   * existing local `user.username`; it is never the stable identity key.
+   */
+  readonly employeeNo?: string;
   readonly groups: readonly string[];
   /** The raw attribute bag, for dotted-path mapping rules. */
   readonly attributes: Readonly<Record<string, unknown>>;
@@ -28,6 +33,8 @@ export interface ClaimMapping {
   readonly name?: string;
   readonly organization?: string;
   readonly groups?: string;
+  /** Dotted path of the trusted employee-number claim. Defaults to `employeeNo`. */
+  readonly employeeNo?: string;
 }
 
 /**

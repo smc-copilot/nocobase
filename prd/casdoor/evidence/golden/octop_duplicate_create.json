@@ -1,0 +1,8 @@
+{
+  "http_status": 409,
+  "code": "USERNAME_TAKEN",
+  "expected": {
+    "http_status": 409,
+    "code": "USERNAME_TAKEN"
+  }
+}

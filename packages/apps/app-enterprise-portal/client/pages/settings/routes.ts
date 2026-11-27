@@ -1,0 +1,273 @@
+import {
+  Users,
+  ShieldCheck,
+  KeyRound,
+  ListFilter,
+  Fingerprint,
+  LayoutGrid,
+  ScrollText,
+  Cable,
+  Table2,
+  Bot,
+} from 'lucide-react';
+import {
+  defineAppRoutes,
+  type AppClientRouteContribution,
+} from '@nocobase/app-client/plugins';
+
+/**
+ * Users and Permission management, in the Accounts and permissions category of the System settings shell
+ * (`shell-routes.ts`). Register this contribution as business capabilities are developed; a bare application stays
+ * without them.
+ */
+const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
+  {
+    parent: 'settingsAccount',
+    name: 'settingsUsers',
+    path: '/users',
+    auth: 'required',
+    authz: { resource: { type: 'user', id: '*' }, action: 'read' },
+    navigation: {
+      title: 'settings.users',
+      description: 'settings.usersDescription',
+      icon: Users,
+    },
+    breadcrumb: { title: 'settings.users' },
+    componentLoader: () => import('./users.js'),
+    children: [
+      // The forms declare their presentation, so the dialog or drawer opens at once and the wait for the form's module,
+      // its authorization and its data stays inside it instead of under the list.
+      {
+        name: 'settingsUserCreate',
+        path: 'create',
+        authz: { resource: { type: 'user', id: '*' }, action: 'create' },
+        presentation: { kind: 'dialog', title: 'settings.newUser' },
+        componentLoader: () => import('./user-form.js'),
+      },
+      // A sibling rather than the parent of the editor, so closing the drawer returns to the list instead of to this
+      // route, which only forwards older detail links to the editor.
+      {
+        name: 'settingsUser',
+        path: ':userId',
+        componentLoader: () => import('./user-detail.js'),
+      },
+      {
+        name: 'settingsUserEdit',
+        path: ':userId/edit',
+        presentation: { kind: 'drawer', title: 'settings.editUser' },
+        componentLoader: () => import('./user-form.js'),
+      },
+    ],
+  },
+  {
+    parent: 'settingsAccount',
+    name: 'settingsIdentityBindings',
+    path: '/identity-bindings',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'casdoorIdentity.externalIdentities' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.identityBindings',
+      description: 'settings.identityBindingsDescription',
+      icon: Fingerprint,
+    },
+    breadcrumb: { title: 'settings.identityBindings' },
+    componentLoader: () => import('./identity-bindings.js'),
+  },
+  {
+    parent: 'settingsBusiness',
+    name: 'settingsPortalCasdoorConnection',
+    path: '/portal-casdoor',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.casdoor' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalCasdoorConnection',
+      description: 'settings.portalCasdoorConnectionDescription',
+      icon: Cable,
+    },
+    breadcrumb: { title: 'settings.portalCasdoorConnection' },
+    componentLoader: () => import('./portal-casdoor-connection.js'),
+  },
+  {
+    parent: 'settingsBusiness',
+    name: 'settingsPortalCasdoorGrants',
+    path: '/portal-grants',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.casdoor' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalCasdoorGrants',
+      description: 'settings.portalCasdoorGrantsDescription',
+      icon: Table2,
+    },
+    breadcrumb: { title: 'settings.portalCasdoorGrants' },
+    componentLoader: () => import('./portal-casdoor-grants.js'),
+  },
+  {
+    parent: 'settingsBusiness',
+    name: 'settingsPortalAgentGrants',
+    path: '/portal-agent-grants',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.agentGrants' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalAgentGrants',
+      description: 'settings.portalAgentGrantsDescription',
+      icon: Bot,
+    },
+    breadcrumb: { title: 'settings.portalAgentGrants' },
+    componentLoader: () => import('./portal-agent-grants.js'),
+  },
+  {
+    parent: 'settingsBusiness',
+    name: 'settingsPortalAgentUsers',
+    path: '/portal-agent-users',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.agentGrants' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalAgentUsers',
+      description: 'settings.portalAgentUsersDescription',
+      icon: Users,
+    },
+    breadcrumb: { title: 'settings.portalAgentUsers' },
+    componentLoader: () => import('./portal-agent-users.js'),
+  },
+  {
+    parent: 'settingsBusiness',
+    name: 'settingsPortalCatalog',
+    path: '/portal-catalog',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.catalog' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalCatalog',
+      description: 'settings.portalCatalogDescription',
+      icon: LayoutGrid,
+    },
+    breadcrumb: { title: 'settings.portalCatalog' },
+    componentLoader: () => import('./portal-catalog.js'),
+  },
+  {
+    parent: 'settingsSystem',
+    name: 'settingsPortalAudit',
+    path: '/portal-audit',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'enterpriseAppPortal.audit' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'settings.portalAudit',
+      description: 'settings.portalAuditDescription',
+      icon: ScrollText,
+    },
+    breadcrumb: { title: 'settings.portalAudit' },
+    componentLoader: () => import('./portal-audit.js'),
+  },
+  {
+    parent: 'settingsAccount',
+    name: 'permissionManagement',
+    navigation: {
+      title: 'settings.permissionManagement',
+      description: 'settings.permissionManagementDescription',
+      icon: ShieldCheck,
+    },
+    breadcrumb: { title: 'settings.permissionManagement' },
+    children: [
+      {
+        name: 'settingsRoles',
+        path: '/roles',
+        auth: 'required',
+        authz: {
+          resource: {
+            type: 'settings',
+            id: 'authorization.permission-sets',
+          },
+          action: 'read',
+        },
+        navigation: { title: 'settings.roles', icon: KeyRound },
+        breadcrumb: { title: 'settings.roles' },
+        componentLoader: () => import('./roles.js'),
+        children: [
+          {
+            name: 'settingsRoleCreate',
+            path: 'create',
+            authz: {
+              resource: {
+                type: 'settings',
+                id: 'authorization.permission-sets',
+              },
+              action: 'create',
+            },
+            breadcrumb: { title: 'settings.newRole' },
+            // Rendered in the roles page's right column, beside the role list.
+            componentLoader: () => import('./role-form.js'),
+          },
+          {
+            name: 'settingsRoleEdit',
+            path: ':key/edit',
+            breadcrumb: { title: 'settings.editRole' },
+            componentLoader: () => import('./role-form.js'),
+          },
+        ],
+      },
+      {
+        name: 'settingsDefaultAccess',
+        path: '/default-access',
+        auth: 'required',
+        authz: {
+          resource: {
+            type: 'settings',
+            id: 'authorization.default-access',
+          },
+          action: 'read',
+        },
+        navigation: {
+          title: 'settings.defaultAccess.title',
+          icon: ListFilter,
+        },
+        breadcrumb: { title: 'settings.defaultAccess.title' },
+        componentLoader: () => import('./default-access.js'),
+        children: [
+          {
+            name: 'settingsDefaultAccessCreate',
+            path: 'create',
+            authz: {
+              resource: {
+                type: 'settings',
+                id: 'authorization.default-access',
+              },
+              action: 'create',
+            },
+            breadcrumb: { title: 'settings.defaultAccess.new' },
+            presentation: { kind: 'child-page' },
+            componentLoader: () => import('./default-access-form.js'),
+          },
+          // Read permission opens the full rule even when the viewer may not update it.
+          {
+            name: 'settingsDefaultAccessEdit',
+            path: ':key/edit',
+            breadcrumb: { title: 'settings.defaultAccess.edit' },
+            presentation: { kind: 'child-page' },
+            componentLoader: () => import('./default-access-form.js'),
+          },
+        ],
+      },
+    ],
+  },
+]);
+export default systemSettingsRoutes;
