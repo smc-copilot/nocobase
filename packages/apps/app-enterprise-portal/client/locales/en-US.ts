@@ -317,6 +317,8 @@ const enUS = {
     portalAgentUsersInstanceAll: 'All instances',
     portalAgentUsersDepartment: 'Department',
     portalAgentUsersDepartmentAll: 'All departments',
+    portalAgentUsersDepartmentSelected: '{{count}} departments selected',
+    portalAgentUsersDepartmentClear: 'Clear departments',
     portalAgentUsersSearch: 'Search users',
     portalAgentUsersColumnUser: 'User',
     portalAgentUsersColumnEmail: 'Email',

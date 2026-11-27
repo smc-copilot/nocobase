@@ -67,7 +67,7 @@ describe('agent grant user filters', () => {
     expect(
       filterAgentGrantUsers(rows, {
         appCode: 'octop-a',
-        department: '__all__',
+        departments: [],
         sync: 'all',
         query: '',
       }).map((row) => row.id),
@@ -75,7 +75,7 @@ describe('agent grant user filters', () => {
     expect(
       filterAgentGrantUsers(rows, {
         appCode: '__all__',
-        department: 'smartcore/HR',
+        departments: ['smartcore/HR'],
         sync: 'all',
         query: '',
       }).map((row) => row.displayName),
@@ -83,7 +83,15 @@ describe('agent grant user filters', () => {
     expect(
       filterAgentGrantUsers(rows, {
         appCode: '__all__',
-        department: '__all__',
+        departments: ['smartcore/JP_Dept', 'smartcore/HR'],
+        sync: 'all',
+        query: '',
+      }).map((row) => row.displayName),
+    ).toEqual(['Alice', 'Bob']);
+    expect(
+      filterAgentGrantUsers(rows, {
+        appCode: '__all__',
+        departments: [],
         sync: 'unsynced',
         query: 'alice',
       }).map((row) => row.name),
@@ -91,7 +99,7 @@ describe('agent grant user filters', () => {
     expect(
       filterAgentGrantUsers(rows, {
         appCode: '__all__',
-        department: '__all__',
+        departments: [],
         sync: 'synced',
         query: 'alice',
       }),
@@ -327,20 +335,44 @@ describe('agent user management page', () => {
       }),
     );
     await user.click(
-      screen.getByRole('combobox', { name: copy.portalAgentUsersDepartment }),
+      screen.getByRole('button', { name: copy.portalAgentUsersDepartment }),
     );
-    await user.click(await screen.findByRole('option', { name: 'JP_Dept' }));
+    await user.click(
+      await screen.findByRole('menuitemcheckbox', { name: 'JP_Dept' }),
+    );
+    expect(
+      screen.getByRole('button', {
+        name: copy.portalAgentUsersDepartment,
+      }),
+    ).toHaveTextContent(
+      copy.portalAgentUsersDepartmentSelected.replace('{{count}}', '1'),
+    );
     expect(screen.getByText('Alice')).toBeInTheDocument();
     expect(screen.queryByText('Bob')).not.toBeInTheDocument();
 
     await user.click(
-      screen.getByRole('combobox', { name: copy.portalAgentUsersDepartment }),
+      await screen.findByRole('menuitemcheckbox', { name: 'HR' }),
     );
+    expect(
+      screen.getByRole('button', {
+        name: copy.portalAgentUsersDepartment,
+      }),
+    ).toHaveTextContent(
+      copy.portalAgentUsersDepartmentSelected.replace('{{count}}', '2'),
+    );
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.getByText('Bob')).toBeInTheDocument();
+
     await user.click(
-      await screen.findByRole('option', {
-        name: copy.portalAgentUsersDepartmentAll,
+      await screen.findByRole('menuitem', {
+        name: copy.portalAgentUsersDepartmentClear,
       }),
     );
+    expect(
+      screen.getByRole('button', {
+        name: copy.portalAgentUsersDepartment,
+      }),
+    ).toHaveTextContent(copy.portalAgentUsersDepartmentAll);
     const search = screen.getByRole('textbox', {
       name: copy.portalAgentUsersSearch,
     });
