@@ -10,7 +10,13 @@ import { expect, it } from 'vitest';
 const exec = promisify(execFile);
 async function compile(config: string): Promise<void> {
   try {
-    await exec('pnpm', ['exec', 'tsc', '-p', config], { cwd: appRoot });
+    await exec(
+      process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+      ['exec', 'tsc', '-p', config],
+      {
+        cwd: appRoot,
+      },
+    );
   } catch (error) {
     throw new Error((error as { stdout: string }).stdout, { cause: error });
   }
@@ -56,7 +62,7 @@ it('runs compiled extensionless server imports without source files or a loader'
     // Use the same two stages as the shared application build.
     await compile(config);
     await exec(
-      'pnpm',
+      process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
       [
         'exec',
         'tsc-alias',
@@ -65,7 +71,9 @@ it('runs compiled extensionless server imports without source files or a loader'
         '--outDir',
         path.join(directory, 'dist'),
       ],
-      { cwd: appRoot },
+      {
+        cwd: appRoot,
+      },
     );
     await rm(source, { recursive: true });
     const runner = path.join(directory, 'runner.mjs');

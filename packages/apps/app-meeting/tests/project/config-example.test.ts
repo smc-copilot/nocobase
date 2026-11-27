@@ -8,8 +8,13 @@ import { describe, expect, it } from 'vitest';
 // its own header and fills the placeholder key of the live `secrets` section, keeping everything else verbatim. These
 // are the parts of the example it relies on.
 describe('config.example.yml', () => {
-  const read = () =>
-    readFile(new URL('../../config.example.yml', import.meta.url), 'utf8');
+  const read = async () =>
+    (
+      await readFile(
+        new URL('../../config.example.yml', import.meta.url),
+        'utf8',
+      )
+    ).replace(/\r\n/g, '\n');
 
   it('opens with the instruction config init replaces', async () => {
     expect((await read()).split('\n')[0]).toMatch(

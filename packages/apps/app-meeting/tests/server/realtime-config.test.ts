@@ -42,7 +42,9 @@ it('loads the actual commented Redis example through the application runtime wit
     new URL('../../config.example.yml', import.meta.url),
     'utf8',
   );
-  const example = source.match(/^# realtime:\n(?:#(?: {2,}.*)?\n)*/m)?.[0];
+  const example = source.match(
+    /^# realtime:\r?\n(?:#(?: {2,}.*)?\r?\n)*/m,
+  )?.[0];
   expect(example).toBeDefined();
   const runtime = await load(
     source.replace(example!, example!.replace(/^# ?/gm, '')),
