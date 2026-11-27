@@ -51,6 +51,7 @@ describe('enterprise app portal routes', () => {
     granted = new Set();
     const { query } = harness.database.connection();
     for (const table of [
+      'enterprisePortalRouteTickets',
       'enterprisePortalAuditEvents',
       'enterprisePortalUserPreferences',
       'enterprisePortalApplications',

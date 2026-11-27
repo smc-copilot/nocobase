@@ -41,28 +41,29 @@ export class ApplicationLaunchService {
     } = () => ({}),
   ) {}
 
-  public async listAuthorized(identity: AccessIdentity): Promise<{
+  public async listAuthorized(
+    identity: AccessIdentity,
+    options: { readonly requireBinding?: boolean } = {},
+  ): Promise<{
     readonly applications: readonly AuthorizedApplicationView[];
     readonly autoLaunchMode: AutoLaunchMode;
     readonly suggestedAppCode: string | null;
     readonly isolationNotice: boolean;
   }> {
-    const decision = await this.access.listAuthorizedAppKeys(identity);
+    const decision = await this.access.listAuthorizedAppKeys(identity, {
+      requireBinding: options.requireBinding,
+    });
     const catalog = await this.catalog.list();
     const authorized = catalog.filter(
       (record) => record.enabled && decision.appKeys.includes(record.appCode),
     );
     const health = await this.health.probeMany(authorized);
     const prefs = await this.preferences.get(identity.userId);
-    const defaultValid =
-      prefs.defaultAppCode != null &&
-      authorized.some((record) => record.appCode === prefs.defaultAppCode);
-    let suggested: string | null = null;
-    if (prefs.autoLaunchMode === 'if_single' && authorized.length === 1) {
-      suggested = authorized[0].appCode;
-    } else if (prefs.autoLaunchMode === 'default_if_valid' && defaultValid) {
-      suggested = prefs.defaultAppCode;
-    }
+    const suggested = suggestAutoLaunch(
+      prefs.autoLaunchMode,
+      authorized,
+      prefs.defaultAppCode,
+    );
     return {
       applications: authorized.map((record) => ({
         appCode: record.appCode,
@@ -83,9 +84,54 @@ export class ApplicationLaunchService {
     };
   }
 
+  /**
+   * Octop apps eligible for unified Router Ticket entry.
+   * `agentGrantsEnabled` is intentionally ignored as an entry gate.
+   */
+  public async listRoutingCandidates(
+    identity: AccessIdentity,
+    options: { readonly requireBinding?: boolean } = {},
+  ): Promise<{
+    readonly applications: readonly AuthorizedApplicationView[];
+    readonly autoLaunchMode: AutoLaunchMode;
+    readonly suggestedAppCode: string | null;
+  }> {
+    const listed = await this.listAuthorized(identity, options);
+    const prefs = await this.preferences.get(identity.userId);
+    const catalog = await this.catalog.list();
+    const byCode = new Map(catalog.map((record) => [record.appCode, record]));
+    const applications = listed.applications.filter((app) => {
+      if (app.appType !== 'octop' || !app.enabled) return false;
+      const record = byCode.get(app.appCode);
+      if (!record || !(record.casdoorAppKey ?? '').trim()) return false;
+      try {
+        const url = this.catalog.launchUrlOf(record);
+        const host = new URL(url).hostname.toLowerCase();
+        return this.allowlist().some(
+          (entry) => entry.trim().toLowerCase() === host,
+        );
+      } catch {
+        return false;
+      }
+    });
+    return {
+      applications,
+      autoLaunchMode: listed.autoLaunchMode,
+      suggestedAppCode: suggestAutoLaunch(
+        prefs.autoLaunchMode,
+        applications,
+        prefs.defaultAppCode,
+      ),
+    };
+  }
+
   public async launch(
     identity: AccessIdentity,
     appCode: string,
+    options: {
+      readonly bypassCache?: boolean;
+      readonly requireBinding?: boolean;
+    } = {},
   ): Promise<LaunchResult> {
     const record = await this.catalog.requireByCode(appCode);
     if (!record.enabled) {
@@ -103,7 +149,7 @@ export class ApplicationLaunchService {
       );
     }
     try {
-      await this.access.assertAuthorized(identity, appCode);
+      await this.access.assertAuthorized(identity, appCode, options);
     } catch (error) {
       await this.audit.record({
         actorUserId: identity.userId,
@@ -147,4 +193,21 @@ export class ApplicationLaunchService {
     });
     return { appCode: record.appCode, name: record.name, url };
   }
+}
+
+function suggestAutoLaunch(
+  mode: AutoLaunchMode,
+  authorized: readonly { readonly appCode: string }[],
+  defaultAppCode: string | null,
+): string | null {
+  const defaultValid =
+    defaultAppCode != null &&
+    authorized.some((record) => record.appCode === defaultAppCode);
+  if (mode === 'if_single' && authorized.length === 1) {
+    return authorized[0].appCode;
+  }
+  if (mode === 'default_if_valid' && defaultValid) {
+    return defaultAppCode;
+  }
+  return null;
 }

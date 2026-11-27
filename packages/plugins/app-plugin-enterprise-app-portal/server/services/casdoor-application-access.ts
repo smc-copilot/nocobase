@@ -17,9 +17,24 @@ import {
 export interface AccessIdentity {
   readonly userId: string;
   readonly username?: string | null;
+  /**
+   * Verified Casdoor Enforce subject (`owner/name`), resolved from
+   * `externalIdentities` — never guessed from username alone.
+   */
+  readonly casdoorUserId?: string | null;
   /** Verified claims from a just-validated token or a fresh directory snapshot. */
   readonly claims?: Readonly<Record<string, unknown>>;
   readonly claimsObservedAt?: Date;
+}
+
+export interface AccessQueryOptions {
+  /** When true, skip the per-user authorized-app cache (redeem path). */
+  readonly bypassCache?: boolean;
+  /**
+   * When true, refuse username `{org}/{name}` fallback and require
+   * `casdoorUserId` or verified claims.
+   */
+  readonly requireBinding?: boolean;
 }
 
 export interface AccessDecision {
@@ -86,6 +101,7 @@ export class CasdoorApplicationAccessAdapter {
 
   public async listAuthorizedAppKeys(
     identity: AccessIdentity,
+    options: AccessQueryOptions = {},
   ): Promise<AccessDecision> {
     const source = this.config().source ?? 'unconfigured';
     if (source === 'unconfigured') {
@@ -101,19 +117,22 @@ export class CasdoorApplicationAccessAdapter {
     );
     const cached = this.cache.get(identity.userId);
     const now = this.now().getTime();
-    if (cached && cached.expiresAt > now) {
+    if (!options.bypassCache && cached && cached.expiresAt > now) {
       return { appKeys: cached.appKeys, source };
     }
-    const appKeys = await this.resolve(source, identity);
-    this.cache.set(identity.userId, { appKeys, expiresAt: now + ttl });
+    const appKeys = await this.resolve(source, identity, options);
+    if (!options.bypassCache) {
+      this.cache.set(identity.userId, { appKeys, expiresAt: now + ttl });
+    }
     return { appKeys, source };
   }
 
   public async assertAuthorized(
     identity: AccessIdentity,
     appCode: string,
+    options: AccessQueryOptions = {},
   ): Promise<void> {
-    const decision = await this.listAuthorizedAppKeys(identity);
+    const decision = await this.listAuthorizedAppKeys(identity, options);
     if (!decision.appKeys.includes(appCode)) {
       throw portalError(
         'PERMISSION_DENIED',
@@ -126,6 +145,7 @@ export class CasdoorApplicationAccessAdapter {
   private async resolve(
     source: AccessSource,
     identity: AccessIdentity,
+    options: AccessQueryOptions,
   ): Promise<readonly string[]> {
     if (source === 'contractFixture') {
       return this.fromFixture(identity);
@@ -134,7 +154,7 @@ export class CasdoorApplicationAccessAdapter {
       return this.fromClaims(identity);
     }
     if (source === 'managementApi') {
-      return this.fromManagementApi(identity);
+      return this.fromManagementApi(identity, options);
     }
     throw portalError(
       'UNAVAILABLE',
@@ -145,6 +165,7 @@ export class CasdoorApplicationAccessAdapter {
 
   private async fromManagementApi(
     identity: AccessIdentity,
+    options: AccessQueryOptions,
   ): Promise<readonly string[]> {
     const client = this.deps.client?.();
     if (!client || !this.deps.targets) {
@@ -154,11 +175,17 @@ export class CasdoorApplicationAccessAdapter {
         'Casdoor Management API access is not configured; refusing by default.',
       );
     }
-    const subject = casdoorSubject(identity, client.organization());
+    const subject = casdoorSubject(
+      identity,
+      client.organization(),
+      options.requireBinding === true,
+    );
     if (!subject) {
       throw portalError(
-        'UNAVAILABLE',
-        'CASDOOR_AUTHORIZATION_UNAVAILABLE',
+        options.requireBinding ? 'PERMISSION_DENIED' : 'UNAVAILABLE',
+        options.requireBinding
+          ? 'IDENTITY_BINDING_REQUIRED'
+          : 'CASDOOR_AUTHORIZATION_UNAVAILABLE',
         'No Casdoor user id is available for application access.',
       );
     }
@@ -260,12 +287,17 @@ function isPortalError(error: unknown): error is ApiError {
 function casdoorSubject(
   identity: AccessIdentity,
   organization: string,
+  requireBinding: boolean,
 ): string | undefined {
+  if (identity.casdoorUserId && isCasdoorId(identity.casdoorUserId.trim())) {
+    return identity.casdoorUserId.trim();
+  }
   const claimId = stringClaim(identity.claims, 'id');
   if (isCasdoorId(claimId)) return claimId;
   const sub = stringClaim(identity.claims, 'sub');
   if (isCasdoorId(sub)) return sub;
   if (isCasdoorId(identity.userId)) return identity.userId;
+  if (requireBinding) return undefined;
   const name =
     identity.username?.trim() ||
     stringClaim(identity.claims, 'name') ||

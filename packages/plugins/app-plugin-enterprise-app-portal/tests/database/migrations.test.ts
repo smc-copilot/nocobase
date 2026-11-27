@@ -189,3 +189,29 @@ describeMigration('enterprise_app_portal_202611200001_create_collections', {
     await expectCollection('enterprisePortalAuditEvents').not.toExist();
   },
 });
+
+describeMigration('enterprise_app_portal_202611231200_route_tickets', {
+  sources: [
+    source(
+      '@superice/app-plugin-enterprise-app-portal',
+      '../../database/migrations',
+    ),
+  ],
+  up: async ({ expectCollection }) => {
+    await expectCollection('enterprisePortalRouteTickets').toHaveField(
+      'jtiHash',
+      { type: 'string', nullable: false, length: 64 },
+    );
+    await expectCollection('enterprisePortalRouteTickets').toHaveField(
+      'casdoorSubject',
+      { type: 'string', nullable: false, length: 255 },
+    );
+    await expectCollection('enterprisePortalRouteTickets').toHaveIndex(
+      ['jtiHash'],
+      { unique: true },
+    );
+  },
+  down: async ({ expectCollection }) => {
+    await expectCollection('enterprisePortalRouteTickets').not.toExist();
+  },
+});

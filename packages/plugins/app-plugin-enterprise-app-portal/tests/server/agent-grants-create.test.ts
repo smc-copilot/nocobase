@@ -27,6 +27,7 @@ const octopState: {
   lastInstallPath: string | undefined;
   lastInstallAsUser: string | undefined;
   lastInstallQuery: string | undefined;
+  lastInstallBody: Record<string, unknown> | undefined;
   installed: {
     userId: string;
     templateId: string;
@@ -45,6 +46,7 @@ const octopState: {
   lastInstallPath: undefined,
   lastInstallAsUser: undefined,
   lastInstallQuery: undefined,
+  lastInstallBody: undefined,
   installed: [],
   users: [],
   onPost: undefined,
@@ -105,7 +107,12 @@ describe('agent grant create', () => {
           : input.url,
     );
     if (url.hostname === 'casdoor.test') return casdoor(url, init);
-    if (url.hostname === 'octop.example.com') return octop(url, init);
+    if (
+      url.hostname === 'octop.example.com' ||
+      url.hostname === 'octop2.example.com'
+    ) {
+      return octop(url, init);
+    }
     return new Response('ok', { status: 200 });
   };
 
@@ -113,7 +120,7 @@ describe('agent grant create', () => {
     harness = await createPortalHarness(
       {
         launchHostAllowlist: ['example.com'],
-        octopApiHostAllowlist: ['octop.example.com'],
+        octopApiHostAllowlist: ['octop.example.com', 'octop2.example.com'],
         access: {
           source: 'managementApi',
           managementApi: {
@@ -136,6 +143,7 @@ describe('agent grant create', () => {
     octopState.lastInstallPath = undefined;
     octopState.lastInstallAsUser = undefined;
     octopState.lastInstallQuery = undefined;
+    octopState.lastInstallBody = undefined;
     octopState.installed = [];
     octopState.users = [];
     octopState.onPost = undefined;
@@ -366,13 +374,33 @@ describe('agent grant create', () => {
     expect(octopState.posts).toBe(1);
   });
 
+  it('creates a new user without a default expert and without installing experts', async () => {
+    const created = await harness.services.agentGrants.createGrant(
+      'octop',
+      {
+        casdoorUserId: 'smartcore/alice',
+        expertTemplateIds: [],
+        defaultExpertTemplateId: null,
+      },
+      'admin-1',
+    );
+    expect(octopState.posts).toBe(1);
+    expect(octopState.installs).toBe(0);
+    expect(octopState.lastBody).toMatchObject({
+      create_default_expert: false,
+    });
+    expect(octopState.lastBody).not.toHaveProperty('expert_template_id');
+    expect(created.selectedExpertCount).toBe(0);
+    expect(created.status).toBe('COMPLETED');
+  });
+
   it('sends directory=true, create_default_expert=false, and never a password for new users', async () => {
     const created = await harness.services.agentGrants.createGrant(
       'octop',
       {
         casdoorUserId: 'smartcore/alice',
         expertTemplateIds: [TEMPLATE],
-        defaultExpertTemplateId: TEMPLATE,
+        defaultExpertTemplateId: null,
       },
       'admin-1',
     );
@@ -411,6 +439,13 @@ describe('agent grant create', () => {
     );
     expect(octopState.lastInstallAsUser).toBe('23');
     expect(octopState.lastInstallQuery).toContain('as_user=23');
+    expect(octopState.lastInstallBody).toMatchObject({
+      name: 'Ops',
+      backend: {
+        type: 'named',
+        name: 'sandbox',
+      },
+    });
     expect(created.selectedExpertCount).toBe(2);
     const items = await harness.services.agentGrants.listExpertItems(
       created.id,
@@ -422,6 +457,138 @@ describe('agent grant create', () => {
     expect(
       items.find((item) => item.expertTemplateId === TEMPLATE_B)?.agentId,
     ).toBe('4HJVNM');
+  });
+
+  it('recreates the employee after Octop deletes the account that still holds the grant lock', async () => {
+    const stale = await harness.services.agentGrantOps.acquire({
+      appCode: 'octop',
+      casdoorUserId: 'smartcore/alice',
+      username: 'alice',
+      actorUserId: 'admin-1',
+      createOptionsSnapshot: {},
+    });
+    await harness.services.agentGrantOps.transition(stale.id, {
+      status: 'USER_CREATED',
+      operationMode: 'CREATE_USER_AND_INSTALL',
+      octopUserId: '9',
+    });
+    octopState.users = [];
+
+    const created = await harness.services.agentGrants.createGrant(
+      'octop',
+      {
+        casdoorUserId: 'smartcore/alice',
+        expertTemplateIds: [TEMPLATE],
+        defaultExpertTemplateId: TEMPLATE,
+      },
+      'admin-1',
+    );
+
+    expect(octopState.posts).toBe(1);
+    expect(created.id).not.toBe(stale.id);
+    const closed = await harness.services.agentGrantOps.requireById(stale.id);
+    expect(closed.status).toBe('BOOTSTRAP_FAILED');
+    expect(closed.lockKey).toBeNull();
+    expect(closed.errorCode).toBe('OCTOP_ACCOUNT_REMOVED');
+  });
+
+  it('keeps the lock when a create is still writing and the Octop account exists', async () => {
+    const stale = await harness.services.agentGrantOps.acquire({
+      appCode: 'octop',
+      casdoorUserId: 'smartcore/alice',
+      username: 'alice',
+      actorUserId: 'admin-1',
+      createOptionsSnapshot: {},
+    });
+    await harness.services.agentGrantOps.transition(stale.id, {
+      status: 'USER_CREATED',
+      octopUserId: '9',
+    });
+    octopState.users = [{ id: 9, username: 'alice', max_agents: 5 }];
+
+    await expect(
+      harness.services.agentGrants.createGrant(
+        'octop',
+        {
+          casdoorUserId: 'smartcore/alice',
+          expertTemplateIds: [TEMPLATE_B],
+          defaultExpertTemplateId: null,
+        },
+        'admin-1',
+      ),
+    ).rejects.toMatchObject({ reason: 'AGENT_GRANT_OPERATION_IN_PROGRESS' });
+    expect(octopState.posts).toBe(0);
+    const held = await harness.services.agentGrantOps.requireById(stale.id);
+    expect(held.status).toBe('USER_CREATED');
+    expect(held.lockKey).toBe('octop:smartcore/alice');
+  });
+
+  it('closes a leftover bootstrap lock after Octop finishes so another expert can be installed', async () => {
+    const stale = await seedHeldBootstrap(harness, {
+      agentId: 'DONE1',
+      templateId: TEMPLATE,
+      bootstrapPending: false,
+    });
+    await harness.database
+      .connection()
+      .query.updateTable('enterprisePortalAgentGrantOperations')
+      .set({ lockKey: 'octop:smartcore/alice' })
+      .where('id', '=', stale.id)
+      .execute();
+    octopState.users = [{ id: 9, username: 'alice', max_agents: 5 }];
+    octopState.installed.push({
+      userId: '9',
+      templateId: TEMPLATE,
+      agentId: 'DONE1',
+    });
+
+    const created = await harness.services.agentGrants.createGrant(
+      'octop',
+      {
+        casdoorUserId: 'smartcore/alice',
+        expertTemplateIds: [TEMPLATE_B],
+        defaultExpertTemplateId: null,
+      },
+      'admin-1',
+    );
+
+    expect(octopState.posts).toBe(0);
+    expect(octopState.installs).toBe(1);
+    expect(created.id).not.toBe(stale.id);
+    expect(created.operationMode).toBe('INSTALL_ONLY');
+    const closed = await harness.services.agentGrantOps.requireById(stale.id);
+    expect(closed.status).toBe('COMPLETED');
+    expect(closed.lockKey).toBeNull();
+  });
+
+  it('releases the employee lock once bootstrap is only waiting on Octop', async () => {
+    const created = await harness.services.agentGrants.createGrant(
+      'octop',
+      {
+        casdoorUserId: 'smartcore/alice',
+        expertTemplateIds: [TEMPLATE],
+        defaultExpertTemplateId: TEMPLATE,
+      },
+      'admin-1',
+    );
+    expect(['BOOTSTRAP_PENDING', 'COMPLETED']).toContain(created.status);
+    const row = await harness.services.agentGrantOps.requireById(created.id);
+    if (row.status === 'BOOTSTRAP_PENDING') {
+      expect(row.lockKey).toBeNull();
+    }
+    octopState.users = [{ id: 23, username: 'alice', max_agents: 5 }];
+    const installed = await harness.services.agentGrants.createGrant(
+      'octop',
+      {
+        casdoorUserId: 'smartcore/alice',
+        expertTemplateIds: [TEMPLATE_B],
+        defaultExpertTemplateId: null,
+      },
+      'admin-1',
+    );
+    expect(octopState.posts).toBe(1);
+    expect(installed.operationMode).toBe('INSTALL_ONLY');
+    expect(installed.id).not.toBe(created.id);
   });
 
   it('blocks expert install when supportsInstallAsUser is false', async () => {
@@ -526,11 +693,68 @@ describe('agent grant create', () => {
       accountExists: true,
       octopUserId: '9',
       syncedAt: new Date(1_795_158_943 * 1000).toISOString(),
+      groups: [],
     });
     expect(employees.find((entry) => entry.username === 'dave')).toMatchObject({
       accountExists: false,
       syncedAt: null,
     });
+    const aggregated =
+      await harness.services.agentGrantsRead.listAgentGrantUsers();
+    expect(
+      aggregated.map((row) => `${row.appCode}:${row.casdoorUserId}`),
+    ).toEqual(
+      expect.arrayContaining([
+        'octop:smartcore/alice',
+        'octop:smartcore/Alice',
+        'octop:smartcore/dave',
+      ]),
+    );
+    expect(aggregated.every((row) => row.appName === 'Octop')).toBe(true);
+    expect(alice?.groups).toEqual([]);
+
+    await harness.services.catalog.create(
+      {
+        appCode: 'octop2',
+        name: 'Octop B',
+        appType: 'octop',
+        baseUrl: 'https://example.com/apps/octop2',
+        casdoorAppKey: 'octop2',
+        agentGrantsEnabled: true,
+        supportsInstallAsUser: true,
+        apiBaseUrl: 'https://octop2.example.com',
+        apiAuthMode: 'bearer_env',
+        apiTokenEnv: 'OCTOP_ADMIN_TOKEN',
+      },
+      'admin-1',
+    );
+    await harness.services.catalog.create(
+      {
+        appCode: 'octopoff',
+        name: 'Octop Off',
+        appType: 'octop',
+        baseUrl: 'https://example.com/apps/octopoff',
+        casdoorAppKey: 'octopoff',
+        agentGrantsEnabled: false,
+        apiBaseUrl: 'https://octop.example.com',
+        apiAuthMode: 'bearer_env',
+        apiTokenEnv: 'OCTOP_ADMIN_TOKEN',
+      },
+      'admin-1',
+    );
+    const across = await harness.services.agentGrantsRead.listAgentGrantUsers();
+    expect(across.map((row) => `${row.appCode}:${row.username}`)).toEqual(
+      expect.arrayContaining(['octop:alice', 'octop2:alice', 'octop2:bob']),
+    );
+    expect(across.some((row) => row.appCode === 'octopoff')).toBe(false);
+    expect(
+      across.find((row) => row.appCode === 'octop2' && row.username === 'bob'),
+    ).toMatchObject({
+      appName: 'Octop B',
+      accountExists: false,
+      groups: ['smartcore/ops'],
+    });
+
     const options =
       await harness.services.agentGrantsRead.listCreateOptions('octop');
     expect(options.roles.map((role) => role.id)).toEqual(['user']);
@@ -630,6 +854,40 @@ describe('agent grant create', () => {
   });
 });
 
+async function seedHeldBootstrap(
+  harness: PortalHarness,
+  expert: {
+    readonly agentId: string;
+    readonly templateId: string;
+    readonly bootstrapPending: boolean;
+  },
+) {
+  const stale = await harness.services.agentGrantOps.acquire({
+    appCode: 'octop',
+    casdoorUserId: 'smartcore/alice',
+    username: 'alice',
+    actorUserId: 'admin-1',
+    createOptionsSnapshot: {},
+  });
+  await harness.services.agentGrantOps.transition(stale.id, {
+    status: 'BOOTSTRAP_PENDING',
+    operationMode: 'CREATE_USER_AND_INSTALL',
+    octopUserId: '9',
+    selectedExpertCount: 1,
+  });
+  const item = await harness.services.agentGrantOps.createExpertItem({
+    operationId: stale.id,
+    expertTemplateId: expert.templateId,
+    expertName: 'Demo',
+    status: 'BOOTSTRAP_PENDING',
+  });
+  await harness.services.agentGrantOps.updateExpertItem(item.id, {
+    agentId: expert.agentId,
+    bootstrapPending: expert.bootstrapPending,
+  });
+  return stale;
+}
+
 function casdoor(url: URL, init: RequestInit | undefined): Response {
   if (url.searchParams.get('clientSecret') !== 'portal-secret') {
     return Response.json({ status: 'error', msg: 'unauthorized' });
@@ -666,13 +924,34 @@ function casdoor(url: URL, init: RequestInit | undefined): Response {
           state: 'Active',
           isEnabled: true,
         },
+        {
+          owner: 'smartcore',
+          name: 'nocobase-portal-app-octop2',
+          displayName: 'Octop 2',
+          users: ['smartcore/alice', 'smartcore/bob'],
+          groups: [],
+          roles: [],
+          resources: ['octop2'],
+          actions: ['Read'],
+          resourceType: 'Application',
+          effect: 'Allow',
+          state: 'Active',
+          isEnabled: true,
+        },
       ],
     });
   }
   if (url.pathname === '/api/enforce') {
-    const subject = JSON.parse(String(init?.body ?? '[]')) as string[];
-    const denied =
-      subject[0] === 'smartcore/bob' || subject[0] === 'smartcore/erin';
+    const body = JSON.parse(String(init?.body ?? '[]')) as string[];
+    const subject = body[0];
+    const resource = body[1];
+    if (resource === 'octop2') {
+      return Response.json({
+        status: 'ok',
+        data: subject === 'smartcore/alice' || subject === 'smartcore/bob',
+      });
+    }
+    const denied = subject === 'smartcore/bob' || subject === 'smartcore/erin';
     return Response.json({ status: 'ok', data: !denied });
   }
   return Response.json({ status: 'ok', data: [] });
@@ -685,6 +964,7 @@ function casdoorUser(name: string, displayName: string) {
     name,
     displayName,
     email: `${name}@example.com`,
+    groups: name === 'bob' ? ['smartcore/ops'] : [],
     isForbidden: false,
     isDeleted: false,
   };
@@ -698,6 +978,11 @@ async function octop(
   const header = new Headers(init?.headers).get('authorization');
   if (header !== 'Bearer octop-test-token') {
     return Response.json({ error: { code: 'UNAUTHORIZED' } }, { status: 401 });
+  }
+  if (url.hostname === 'octop2.example.com') {
+    if (url.pathname === '/api/users') return Response.json([]);
+    if (url.pathname === '/api/agents') return Response.json([]);
+    return Response.json({ ok: true, db: true });
   }
   if (url.pathname === '/api/users' && init?.method === 'POST') {
     octopState.posts += 1;
@@ -725,6 +1010,10 @@ async function octop(
     octopState.lastInstallPath = url.pathname;
     octopState.lastInstallQuery = url.search;
     octopState.lastInstallAsUser = url.searchParams.get('as_user') ?? undefined;
+    octopState.lastInstallBody = JSON.parse(String(init?.body)) as Record<
+      string,
+      unknown
+    >;
     octopState.onInstall?.();
     if (octopState.installForbidden) {
       return Response.json(

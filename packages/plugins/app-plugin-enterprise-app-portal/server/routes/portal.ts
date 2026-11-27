@@ -19,6 +19,10 @@ import {
 } from '../config.js';
 import type { EnterprisePortalServices } from '../services/composition.js';
 import { registerAgentGrantRoutes } from './agent-grants.js';
+import {
+  createRouteTicketRedeemRouter,
+  registerRouteTicketSessionRoutes,
+} from './route-tickets.js';
 import type { AccessIdentity } from '../services/casdoor-application-access.js';
 import type { PortalApplicationRecord } from '../services/application-catalog.js';
 import {
@@ -95,13 +99,26 @@ function identityOf(context: Context<PortalEnv>): AccessIdentity {
   };
 }
 
+function isInternalRedeemPath(path: string): boolean {
+  return (
+    path === '/internal/routeTickets/redeem' ||
+    path.endsWith('/internal/routeTickets/redeem')
+  );
+}
+
 export function createPortalRouter(
   options: PortalRouterOptions,
 ): Hono<PortalEnv> {
   const router = new Hono<PortalEnv>();
   router.onError((error, context) => apiErrorHandler(error, context));
+  // Router redeem uses a service Bearer token — skip browser session auth.
   for (const middleware of options.authenticate) {
-    router.use('*', middleware);
+    router.use('*', async (context, next) => {
+      if (isInternalRedeemPath(context.req.path)) {
+        return next();
+      }
+      return middleware(context as never, next);
+    });
   }
   const permit =
     (item: string, action: string): MiddlewareHandler =>
@@ -517,5 +534,10 @@ export function createPortalRouter(
     permit,
     identityOf,
   });
+  registerRouteTicketSessionRoutes(router as never, {
+    services,
+    identityOf,
+  });
+  router.route('/', createRouteTicketRedeemRouter({ services }));
   return router;
 }

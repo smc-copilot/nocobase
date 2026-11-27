@@ -77,7 +77,10 @@ export const AGENT_GRANT_EXPERT_ITEM_STATUSES = [
 export type AgentGrantExpertItemStatus =
   (typeof AGENT_GRANT_EXPERT_ITEM_STATUSES)[number];
 
-/** Statuses that release the per-employee create lock. */
+/**
+ * Statuses that always release the per-employee create lock.
+ * `BOOTSTRAP_PENDING` also drops the lock: waiting on Octop is not a write.
+ */
 export const AGENT_GRANT_TERMINAL_STATUSES = [
   'ACCOUNT_EXISTS',
   'COMPLETED',
@@ -163,6 +166,31 @@ export interface EnterpriseAppPortalAccessConfig {
   readonly fixtureGrants?: readonly ContractFixtureGrant[];
 }
 
+/** Trusted Octop Router Ticket routing (PRD Portal Routing). Default off. */
+export interface EnterpriseAppPortalRoutingConfig {
+  readonly enabled?: boolean;
+  /** Absolute Router form action, e.g. `https://ai.superice.com:8090/api/entry`. */
+  readonly publicRouterEntryUrl?: string;
+  /** Portal path after Casdoor login for unified entry. */
+  readonly loginEntryPath?: string;
+  readonly issuer?: string;
+  readonly audience?: string;
+  /** Ticket lifetime in seconds (clamped 15–60). Default 30. */
+  readonly ticketTtlSeconds?: number;
+  /** Env var holding the Ed25519 PKCS8 private key (PEM or base64). */
+  readonly signingKeyEnv?: string;
+  readonly signingKeyId?: string;
+  /** Env var holding the Router→Portal redeem Bearer token. */
+  readonly redeemServiceCredentialEnv?: string;
+  /** When true, refuse username-based Casdoor subject fallback. Default true. */
+  readonly requireBinding?: boolean;
+  /** When true, redeem re-runs Casdoor enforce without cache. Default true. */
+  readonly recheckEnforceOnRedeem?: boolean;
+  /** Casdoor issuer used to look up `externalIdentities` rows. */
+  readonly identityIssuer?: string;
+  readonly identityIssuerEnv?: string;
+}
+
 export interface EnterpriseAppPortalConfig {
   /**
    * Hostnames the deployment already trusts for launch and health. Saving an
@@ -196,7 +224,19 @@ export interface EnterpriseAppPortalConfig {
     readonly cacheTtlMs?: number;
   };
   readonly access?: EnterpriseAppPortalAccessConfig;
+  readonly routing?: EnterpriseAppPortalRoutingConfig;
 }
+
+export const PORTAL_ROUTE_SIGNING_KEY_ENV = 'PORTAL_ROUTE_ED25519_PRIVATE_KEY';
+export const PORTAL_ROUTE_REDEEM_TOKEN_ENV =
+  'PORTAL_ROUTE_REDEEM_SERVICE_TOKEN';
+export const CASDOOR_ISSUER_ENV = 'CASDOOR_ISSUER';
+export const DEFAULT_ROUTE_ISSUER = 'nocobase-enterprise-portal';
+export const DEFAULT_ROUTE_AUDIENCE = 'octop-router';
+export const DEFAULT_ROUTE_ENTRY_PATH = '/main/route-entry';
+export const DEFAULT_ROUTE_TICKET_TTL_SECONDS = 30;
+export const MIN_ROUTE_TICKET_TTL_SECONDS = 15;
+export const MAX_ROUTE_TICKET_TTL_SECONDS = 60;
 
 export interface ResolvedCasdoorManagement {
   readonly endpoint: string;

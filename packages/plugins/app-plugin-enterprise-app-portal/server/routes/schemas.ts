@@ -23,6 +23,7 @@ import type { UserApplicationGrants } from '../services/casdoor-application-gran
 import type {
   AgentGrantApplicationView,
   AgentGrantCreateOptions,
+  AgentGrantUserView,
   AuthorizedEmployeeView,
   EmployeeOctopState,
 } from '../services/agent-grants-read.js';
@@ -425,7 +426,7 @@ export const AgentGrantCreateInput: z.ZodType<{
   maxAgents: z.number().int().nullable().optional(),
   directory: z.boolean().optional(),
   password: z.string().min(8).max(128).nullable().optional(),
-  expertTemplateIds: z.array(z.string().min(1).max(128)).min(1).max(50),
+  expertTemplateIds: z.array(z.string().min(1).max(128)).max(50),
   defaultExpertTemplateId: z.string().min(1).max(128).nullable().optional(),
 });
 
@@ -447,28 +448,46 @@ export const AgentGrantApplicationSchema: z.ZodType<AgentGrantApplicationView> =
     })
     .meta({ ref: 'EnterpriseAppPortalAgentGrantApplication' });
 
+const installedExpertSchema = z.object({
+  agentId: z.string(),
+  publishedExpertId: z.string().nullable(),
+  name: z.string().nullable(),
+  state: z.string().nullable(),
+  bootstrapPending: z.boolean(),
+  kind: z.string().nullable(),
+});
+
 export const AuthorizedEmployeeSchema: z.ZodType<AuthorizedEmployeeView> = z
   .object({
     casdoorUserId: z.string(),
     username: z.string(),
     displayName: z.string(),
     email: z.string(),
+    groups: z.array(z.string()),
     accountExists: z.boolean(),
     octopUserId: z.string().nullable(),
     disabled: z.boolean(),
     syncedAt: z.string().nullable(),
-    experts: z.array(
-      z.object({
-        agentId: z.string(),
-        publishedExpertId: z.string().nullable(),
-        name: z.string().nullable(),
-        state: z.string().nullable(),
-        bootstrapPending: z.boolean(),
-        kind: z.string().nullable(),
-      }),
-    ),
+    experts: z.array(installedExpertSchema),
   })
   .meta({ ref: 'EnterpriseAppPortalAuthorizedEmployee' });
+
+export const AgentGrantUserSchema: z.ZodType<AgentGrantUserView> = z
+  .object({
+    appCode: z.string(),
+    appName: z.string(),
+    casdoorUserId: z.string(),
+    username: z.string(),
+    displayName: z.string(),
+    email: z.string(),
+    groups: z.array(z.string()),
+    accountExists: z.boolean(),
+    octopUserId: z.string().nullable(),
+    disabled: z.boolean(),
+    syncedAt: z.string().nullable(),
+    experts: z.array(installedExpertSchema),
+  })
+  .meta({ ref: 'EnterpriseAppPortalAgentGrantUser' });
 
 export const EmployeeOctopStateSchema: z.ZodType<EmployeeOctopState> = z
   .object({
@@ -622,3 +641,71 @@ export const AgentGrantExpertItemSchema: z.ZodType<{
     completedAt: z.string().nullable(),
   })
   .meta({ ref: 'EnterpriseAppPortalAgentGrantExpertItem' });
+
+export const RouteTicketIssueInput: z.ZodType<{
+  appCode: string;
+  mode: 'auto' | 'selected';
+}> = z.strictObject({
+  appCode: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
+    .max(64),
+  mode: z.enum(['auto', 'selected']),
+});
+
+export const RouteTicketIssueSchema: z.ZodType<{
+  ticket: string;
+  appCode: string;
+  expiresIn: number;
+  requestId: string;
+  submission: { method: 'POST'; url: string };
+}> = z
+  .object({
+    ticket: z.string(),
+    appCode: z.string(),
+    expiresIn: z.number().int(),
+    requestId: z.string(),
+    submission: z.object({
+      method: z.literal('POST'),
+      url: z.string().url(),
+    }),
+  })
+  .meta({ ref: 'EnterpriseAppPortalIssuedRouteTicket' });
+
+export const RouteTicketCandidatesSchema: z.ZodType<{
+  applications: AuthorizedApplicationView[];
+  autoLaunchMode: (typeof AUTO_LAUNCH_MODES)[number];
+  suggestedAppCode: string | null;
+  routingEnabled: boolean;
+}> = z
+  .object({
+    applications: z.array(AuthorizedApplicationSchema),
+    autoLaunchMode: z.enum(AUTO_LAUNCH_MODES),
+    suggestedAppCode: z.string().nullable(),
+    routingEnabled: z.boolean(),
+  })
+  .meta({ ref: 'EnterpriseAppPortalRouteTicketCandidates' });
+
+export const RouteTicketRedeemInput: z.ZodType<{
+  ticket: string;
+  requestId?: string;
+}> = z.strictObject({
+  ticket: z.string().min(1).max(8192),
+  requestId: z.string().max(64).optional(),
+});
+
+export const RouteTicketRedeemSchema: z.ZodType<{
+  appCode: string;
+  publicUrl: string;
+  casdoorSubject: string;
+  ticketId: string;
+  consumed: true;
+}> = z
+  .object({
+    appCode: z.string(),
+    publicUrl: z.string().url(),
+    casdoorSubject: z.string(),
+    ticketId: z.string(),
+    consumed: z.literal(true),
+  })
+  .meta({ ref: 'EnterpriseAppPortalRedeemedRouteTicket' });

@@ -1,6 +1,9 @@
 import type { DatabaseManager } from '@nocobase/db';
 
-import type { EnterpriseAppPortalConfig } from '../config.js';
+import {
+  CASDOOR_ISSUER_ENV,
+  type EnterpriseAppPortalConfig,
+} from '../config.js';
 import type { DnsLookup } from './url-guard.js';
 import { AccessAuditLog } from './access-audit.js';
 import { AgentGrantOperationStore } from './agent-grant-operations.js';
@@ -11,12 +14,15 @@ import { ApplicationLaunchService } from './application-launch.js';
 import { CasdoorApplicationAccessAdapter } from './casdoor-application-access.js';
 import { CasdoorApplicationGrants } from './casdoor-application-grants.js';
 import { createCasdoorClientSource } from './casdoor-management-client.js';
+import { CasdoorSubjectResolver } from './casdoor-subject-resolver.js';
 import { HealthProbeService } from './health-probe.js';
 import {
   DEFAULT_OCTOP_API_TIMEOUT_MS,
   OctopManagementClient,
 } from './octop-management-client.js';
 import { resolveOctopInstance } from './octop-instance-config.js';
+import { RouteTicketService } from './route-ticket.js';
+import { RouteTicketStore } from './route-ticket-store.js';
 import { UserPreferenceService } from './user-preferences.js';
 
 export interface EnterprisePortalServices {
@@ -30,6 +36,8 @@ export interface EnterprisePortalServices {
   readonly agentGrants: AgentGrantsService;
   readonly agentGrantOps: AgentGrantOperationStore;
   readonly agentGrantsRead: AgentGrantsReadService;
+  readonly subjects: CasdoorSubjectResolver;
+  readonly routeTickets: RouteTicketService;
 }
 
 export function createEnterprisePortalServices(
@@ -98,6 +106,27 @@ export function createEnterprisePortalServices(
     options.lookup,
     launchUrlOptions,
   );
+  const subjects = new CasdoorSubjectResolver(
+    database,
+    () => {
+      const routing = config().routing ?? {};
+      const fromConfig = routing.identityIssuer?.trim();
+      if (fromConfig) return fromConfig;
+      const envName = routing.identityIssuerEnv ?? CASDOOR_ISSUER_ENV;
+      return env()[envName]?.trim() || undefined;
+    },
+    () => casdoor.client(),
+  );
+  const routeTicketStore = new RouteTicketStore(database);
+  const routeTickets = new RouteTicketService(
+    config,
+    env,
+    subjects,
+    launch,
+    routeTicketStore,
+    audit,
+    options.now,
+  );
   const fetchImpl = options.fetchImpl ?? fetch;
   const openOctop = async (app: Parameters<typeof resolveOctopInstance>[0]) => {
     const resolved = await resolveOctopInstance(app, env(), octopAllowlist(), {
@@ -138,5 +167,7 @@ export function createEnterprisePortalServices(
     agentGrants,
     agentGrantOps,
     agentGrantsRead,
+    subjects,
+    routeTickets,
   };
 }
