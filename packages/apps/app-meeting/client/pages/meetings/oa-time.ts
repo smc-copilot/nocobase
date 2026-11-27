@@ -42,6 +42,17 @@ export function isoToBeijingDateTime(iso: string): string {
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}`;
 }
 
+/** User-facing Beijing wall clock: `yyyy-MM-dd HH:mm:ss`, or `empty` when missing/invalid. */
+export function formatBeijingInstant(
+  value: string | null | undefined,
+  empty = 'N/A',
+): string {
+  if (!value) return empty;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return empty;
+  return isoToBeijingDateTime(value);
+}
+
 export function isoToBeijingInput(iso: string | null | undefined): string {
   if (!iso) return '';
   const trimmed = iso.trim();
@@ -50,6 +61,12 @@ export function isoToBeijingInput(iso: string | null | undefined): string {
   }
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) return trimmed;
   return isoToBeijingDateTime(trimmed).slice(0, 16).replace(' ', 'T');
+}
+
+/** Beijing wall clock for minutes completion: today's date at 17:00 (`yyyy-MM-ddTHH:mm`). */
+export function defaultBeijingCompleteInput(now = new Date()): string {
+  const parts = beijingParts(now);
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}T17:00`;
 }
 
 export function beijingWallToIso(value: string): string | null {

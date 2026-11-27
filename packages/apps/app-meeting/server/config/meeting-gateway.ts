@@ -8,8 +8,14 @@ import {
 } from '@nocobase/app-server/config';
 
 export interface MeetingGatewayConfig {
+  readonly enabled: boolean;
   readonly origin?: string;
   readonly originAllowlist: readonly string[];
+  readonly allowedOrigin?: string;
+  readonly contractRevision?: string;
+  readonly contractSha256?: string;
+  readonly bridgeHmacKey?: string;
+  readonly bridgeKeyringJson?: string;
   readonly applicationId?: string;
   readonly expectedApplicationId?: string;
   readonly clientId?: string;
@@ -26,10 +32,17 @@ export interface MeetingGatewayConfig {
   readonly oauthStateTtlMs: number;
   readonly instanceId?: string;
   readonly testAdapter: boolean;
+  /**
+   * When true, allow `http:` for MEETING_GATEWAY_ALLOWED_ORIGIN on non-loopback
+   * hosts (intranet local entry). Default false: HTTPS, or HTTP only on
+   * 127.0.0.1 / localhost.
+   */
+  readonly allowInsecureHttp?: boolean;
 }
 
 const meetingGateway: AppConfigFactory<MeetingGatewayConfig> = defineAppConfig({
   defaults: {
+    enabled: false,
     originAllowlist: [],
     scopes: [],
     authorizationPathAllowlist: [],
@@ -37,8 +50,13 @@ const meetingGateway: AppConfigFactory<MeetingGatewayConfig> = defineAppConfig({
     queryMaxDays: 93,
     oauthStateTtlMs: 300_000,
     testAdapter: false,
+    allowInsecureHttp: false,
   },
   env: {
+    MEETING_GATEWAY_ENABLED: envBoolean('enabled', {
+      description:
+        'Creates the meeting gateway client when the origin and REST resource are also set. A missing contract returns 503 and does not stop startup.',
+    }),
     MEETING_GATEWAY_ORIGIN: envString('origin', {
       description:
         'Allowlisted HTTPS origin of the meeting gateway. Arbitrary request URLs are rejected.',
@@ -64,8 +82,36 @@ const meetingGateway: AppConfigFactory<MeetingGatewayConfig> = defineAppConfig({
       description: 'Gateway OAuth client_secret. Never returned to the page.',
       secret: true,
     }),
-    MEETING_GATEWAY_RESOURCE: envString('resource', {
-      description: 'Token resource the gateway exchange must return unchanged.',
+    MEETING_GATEWAY_REST_RESOURCE: envString('resource', {
+      description:
+        'Resource the gateway session must match. It is not a request URL parameter.',
+    }),
+    MEETING_GATEWAY_ALLOWED_ORIGIN: envString('allowedOrigin', {
+      description:
+        'Public origin of this application. The gateway continue_to is this origin plus /meetings/done. Prefer HTTPS; non-loopback http:// needs MEETING_GATEWAY_ALLOW_INSECURE_HTTP.',
+    }),
+    MEETING_GATEWAY_ALLOW_INSECURE_HTTP: envBoolean('allowInsecureHttp', {
+      description:
+        'Allow http:// for MEETING_GATEWAY_ALLOWED_ORIGIN on intranet hostnames (not only 127.0.0.1/localhost). Prefer HTTPS in production.',
+    }),
+    MEETING_GATEWAY_CONTRACT_REVISION: envString('contractRevision', {
+      description:
+        'Published meeting-gateway contract revision. Required before business requests.',
+    }),
+    MEETING_GATEWAY_CONTRACT_SHA256: envString('contractSha256', {
+      description:
+        '64 hex characters of the meeting-gateway contract. Server only.',
+      secret: true,
+    }),
+    MEETING_GATEWAY_BRIDGE_HMAC_KEY: envString('bridgeHmacKey', {
+      description:
+        'HMAC key for this application’s bridge session. Never sent to the gateway.',
+      secret: true,
+    }),
+    MEETING_GATEWAY_BRIDGE_KEYRING_JSON: envString('bridgeKeyringJson', {
+      description:
+        'JSON keyring for this application’s bridge session. Never sent to the gateway.',
+      secret: true,
     }),
     MEETING_GATEWAY_SCOPES: envStrings('scopes', ' ', {
       description: 'Space-separated gateway OAuth scopes.',

@@ -7,9 +7,16 @@ import {
 import {
   associateTaskResults,
   createHttpMeetingOaAdapter,
+  extractRows,
   mapPerson,
 } from '../../server/meetings/oa/http-adapter.js';
-import { buildUploadSummaryBody } from '../../server/meetings/oa/oa-payload.js';
+import {
+  assertFrozenPersonNos,
+  buildCreateMeetingBody,
+  buildTaskAssignmentBody,
+  buildUploadSummaryBody,
+  isIllegalEmployeeNo,
+} from '../../server/meetings/oa/oa-payload.js';
 import { preferredDownloadArtifacts } from '../../server/meetings/gateway/record-files.js';
 import { MeetingOaError } from '../../server/meetings/oa/errors.js';
 import type { FrozenOaPayload } from '../../server/meetings/oa/adapter.js';
@@ -19,9 +26,71 @@ import {
 } from '../../server/meetings/oa/beijing-time.js';
 import { concatenateGroupTexts } from '../../server/meetings/tencent-groups.js';
 import { MeetingContentService } from '../../server/meetings/content-service.js';
+import { resolveMeetingOaApiUrls } from '../../server/config/meeting-oa.js';
+
+describe('MEETING_OA_OAUTH_URL and BASE_API_URL', () => {
+  it('uses oauthUrl for token and baseApiUrl for meeting writes only', () => {
+    expect(
+      resolveMeetingOaApiUrls({
+        oauthUrl: 'http://oa.example.test/pt/api/oauth.do',
+        baseApiUrl:
+          'http://oa.example.test/sqm/sysdata/sqmSysdataMeetingApi.do',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      }),
+    ).toEqual({
+      tokenUrl: 'http://oa.example.test/pt/api/oauth.do',
+      meetingUrl: 'http://oa.example.test/sqm/sysdata/sqmSysdataMeetingApi.do',
+    });
+  });
+
+  it('does not fill tokenUrl from baseApiUrl alone', () => {
+    expect(
+      resolveMeetingOaApiUrls({
+        baseApiUrl: 'http://oa.example.test/MeetingApi.do',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      }),
+    ).toEqual({
+      tokenUrl: undefined,
+      meetingUrl: 'http://oa.example.test/MeetingApi.do',
+    });
+  });
+
+  it('prefers oauthUrl over tokenUrl; meetingUrl over baseApiUrl', () => {
+    expect(
+      resolveMeetingOaApiUrls({
+        oauthUrl: 'http://oa.example.test/oauth',
+        tokenUrl: 'http://oa.example.test/token',
+        baseApiUrl: 'http://oa.example.test/base',
+        meetingUrl: 'http://oa.example.test/meeting',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      }),
+    ).toEqual({
+      tokenUrl: 'http://oa.example.test/oauth',
+      meetingUrl: 'http://oa.example.test/meeting',
+    });
+  });
+
+  it('marks contracts from oauthUrl + baseApiUrl + clientId', () => {
+    const adapter = createHttpMeetingOaAdapter({
+      config: {
+        oauthUrl: 'https://oa.example.test/oauth.do',
+        baseApiUrl: 'https://oa.example.test/MeetingApi.do',
+        clientId: 'client',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      },
+      fetchImpl: vi.fn() as unknown as typeof fetch,
+    });
+    expect(adapter.writeContract).toBe('configured');
+    expect(adapter.tokenContract).toBe('configured');
+  });
+});
 
 describe('OA people HTTP contract (oaPeople.js)', () => {
-  it('throws OA_NOT_CONFIGURED when no peopleUrl is saved or in env', async () => {
+  it('throws OA_NOT_CONFIGURED when peopleUrl is missing from env', async () => {
     const adapter = createHttpMeetingOaAdapter({
       config: { timeoutMs: 5_000, testAdapter: false },
       fetchImpl: vi.fn() as unknown as typeof fetch,
@@ -31,12 +100,47 @@ describe('OA people HTTP contract (oaPeople.js)', () => {
     });
   });
 
+  it('rejects http peopleUrl unless allowInsecureHttp is enabled', async () => {
+    const fetchImpl = vi.fn();
+    const blocked = createHttpMeetingOaAdapter({
+      config: {
+        peopleUrl: 'http://oa.example.test/people',
+        timeoutMs: 5_000,
+        testAdapter: false,
+        allowInsecureHttp: false,
+      },
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await expect(blocked.searchPeople('Alice')).rejects.toMatchObject({
+      reason: 'OA_NOT_CONFIGURED',
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+
+    const allowed = createHttpMeetingOaAdapter({
+      config: {
+        peopleUrl: 'http://oa.example.test/people',
+        timeoutMs: 5_000,
+        testAdapter: false,
+        allowInsecureHttp: true,
+      },
+      fetchImpl: vi.fn(async () =>
+        Response.json({
+          data: [{ fd_no: 'E1', fd_name: 'Alice', fd_department: '' }],
+        }),
+      ) as unknown as typeof fetch,
+    });
+    await expect(allowed.searchPeople('Alice')).resolves.toEqual([
+      { fd_no: 'E1', fd_name: 'Alice', fd_department: '' },
+    ]);
+  });
+
   it('GETs peopleUrl with fd_name and maps fd_no/fd_name/fd_department from data[]', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
       expect(url.origin).toBe('https://oa.example.test');
       expect(url.pathname).toBe('/people');
       expect(url.searchParams.get('fd_name')).toBe('Alice');
+      expect(url.searchParams.get('fd_no')).toBeNull();
       expect(url.username).toBe('');
       return new Response(
         JSON.stringify({
@@ -63,65 +167,53 @@ describe('OA people HTTP contract (oaPeople.js)', () => {
     ]);
   });
 
-  it('does not let env peopleUrl override a saved peopleUrl', async () => {
+  it('GETs peopleUrl with fd_no only for employeeNo mode and rejects mismatched nos', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
-      expect(url.origin).toBe('https://oa.example.test');
-      expect(url.pathname).toBe('/saved');
-      return new Response(JSON.stringify({ data: [] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
+      expect(url.searchParams.get('fd_no')).toBe('E1001');
+      expect(url.searchParams.get('fd_name')).toBeNull();
+      return Response.json({
+        fd_no: 'E1001',
+        fd_name: 'Alice',
+        fd_department: 'Meeting',
       });
     });
     const adapter = createHttpMeetingOaAdapter({
       config: {
-        peopleUrl: 'https://oa.example.test/from-env',
+        peopleUrl: 'https://oa.example.test/people',
         timeoutMs: 5_000,
         testAdapter: false,
       },
-      resolveCredentials: async () => ({
-        peopleUrl: 'https://oa.example.test/saved',
-      }),
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
-    await adapter.searchPeople('Alice');
-    expect(fetchImpl).toHaveBeenCalledOnce();
-  });
-
-  it('switches peopleUrl A to B on the next search without a process restart', async () => {
-    let peopleUrl = 'https://oa.example.test/a/people';
-    const seen: string[] = [];
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-      const url = new URL(String(input));
-      seen.push(`${url.origin}${url.pathname}`);
-      return new Response(JSON.stringify({ data: [] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    });
-    const adapter = createHttpMeetingOaAdapter({
-      config: {
-        peopleUrl: 'https://oa.example.test/from-env',
-        timeoutMs: 5_000,
-        testAdapter: false,
-      },
-      resolveCredentials: async () => ({ peopleUrl }),
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-    });
-    await adapter.searchPeople('Alice');
-    peopleUrl = 'https://oa.example.test/b/people';
-    await adapter.searchPeople('Bob');
-    expect(seen).toEqual([
-      'https://oa.example.test/a/people',
-      'https://oa.example.test/b/people',
+    await expect(adapter.searchPeople('E1001', 'employeeNo')).resolves.toEqual([
+      { fd_no: 'E1001', fd_name: 'Alice', fd_department: 'Meeting' },
     ]);
+
+    const mismatched = createHttpMeetingOaAdapter({
+      config: {
+        peopleUrl: 'https://oa.example.test/people',
+        timeoutMs: 5_000,
+        testAdapter: false,
+      },
+      fetchImpl: vi.fn(async () =>
+        Response.json({
+          fd_no: 'OTHER',
+          fd_name: 'Alice',
+          fd_department: '',
+        }),
+      ) as unknown as typeof fetch,
+    });
+    await expect(
+      mismatched.searchPeople('E1001', 'employeeNo'),
+    ).rejects.toMatchObject({ reason: 'INVALID_OA_QUERY' });
   });
 
-  it('reads peopleUrl from stored settings at call time, not boot-time env', async () => {
+  it('reads peopleUrl from env config', async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
       expect(url.origin).toBe('https://oa.example.test');
-      expect(url.pathname).toBe('/from-settings');
+      expect(url.pathname).toBe('/from-env');
       expect(url.searchParams.get('fd_name')).toBe('Alice');
       return new Response(JSON.stringify({ data: [] }), {
         status: 200,
@@ -134,7 +226,6 @@ describe('OA people HTTP contract (oaPeople.js)', () => {
         timeoutMs: 5_000,
         testAdapter: false,
       },
-      resolvePeopleUrl: async () => 'https://oa.example.test/from-settings',
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
     await adapter.searchPeople('Alice');
@@ -225,7 +316,7 @@ describe('minutes priority and source todos', () => {
     ]);
   });
 
-  it('maps oaPeople.js person fields', () => {
+  it('maps oaPeople.js person fields without id fallback', () => {
     expect(mapPerson({ fd_no: '1', fd_name: 'A', fd_department: 'D' })).toEqual(
       {
         fd_no: '1',
@@ -239,9 +330,26 @@ describe('minutes priority and source todos', () => {
       fd_department: 'D',
     });
     expect(mapPerson({ fd_name: 'A' })).toBeNull();
+    expect(mapPerson({ id: 'internal-1', fd_name: 'A' })).toBeNull();
+    expect(mapPerson({ fd_no: 'E1' })).toEqual({
+      fd_no: 'E1',
+      fd_name: '',
+      fd_department: '',
+    });
   });
 
-  it('skips empty placeholders and keeps later minutes plus 会议待办', () => {
+  it('extracts single-object people payloads for fd_no lookups', () => {
+    expect(
+      extractRows({ fd_no: 'E1', fd_name: 'Alice', fd_department: '' }),
+    ).toEqual([{ fd_no: 'E1', fd_name: 'Alice', fd_department: '' }]);
+    expect(
+      extractRows({
+        data: { fd_no: 'E1', fd_name: 'Alice', fd_department: '' },
+      }),
+    ).toEqual([{ fd_no: 'E1', fd_name: 'Alice', fd_department: '' }]);
+  });
+
+  it('skips empty DeepSeek placeholders and keeps full chapter minutes including 会议待办', () => {
     expect(isEffectiveMinutes('暂无纪要')).toBe(false);
     expect(
       resolveMinutes({
@@ -249,8 +357,18 @@ describe('minutes priority and source todos', () => {
         minutesAi: '## 会议待办：\n- Call vendor\n## 后续\nKeep this section',
       }),
     ).toEqual({
-      text: '## 后续\nKeep this section',
+      text: '## 会议待办：\n- Call vendor\n## 后续\nKeep this section',
       source: 'ai_minutes',
+    });
+    expect(
+      resolveMinutes({
+        minutesAiDs:
+          '## 会议系统集成测试\n- Device access\n## 会议待办\n- Bind ID\n内容由 AI 生成，仅供参考',
+        minutesAi: '## 章节\n- Other',
+      }),
+    ).toEqual({
+      text: '## 会议系统集成测试\n- Device access\n## 会议待办\n- Bind ID\n内容由 AI 生成，仅供参考',
+      source: 'ai_ds_minutes',
     });
     expect(
       extractSourceTodos('## 会议待办：\n- Call vendor\n## 后续\nKeep'),
@@ -467,6 +585,55 @@ describe('tencent group mapping and Beijing time', () => {
       'oa-meet-1',
     );
     expect(body.summaryCompleteTime).toBe('2026-11-16 18:15:00');
+  });
+
+  it('serializes createMeeting PersonNo objects and arrays', () => {
+    const body = buildCreateMeetingBody(frozenPayload);
+    expect(body.creator).toEqual({ PersonNo: 'E1001' });
+    expect(body.emcee).toEqual({ PersonNo: 'E1001' });
+    expect(body.host).toEqual({ PersonNo: 'E1001' });
+    expect(body.attendPersons).toEqual([{ PersonNo: 'E1001' }]);
+  });
+
+  it('serializes uploadMeetingSummary PersonNo objects and arrays', () => {
+    const body = buildUploadSummaryBody(frozenPayload, 'oa-meet-1');
+    expect(body.inputPerson).toEqual({ PersonNo: 'E1001' });
+    expect(body.actualAttendPersons).toEqual([{ PersonNo: 'E1001' }]);
+    expect(body.copyToPersons).toBeUndefined();
+  });
+
+  it('serializes createTaskByMeeting appoint object and perform arrays', () => {
+    const body = buildTaskAssignmentBody(frozenPayload, 'oa-meet-1');
+    expect(body.tasks[0]).toMatchObject({
+      appointPerson: { PersonNo: 'E1001' },
+      performPersons: [{ PersonNo: 'E1001' }],
+    });
+    expect(body.tasks[1]).toMatchObject({
+      appointPerson: { PersonNo: 'E1001' },
+      performPersons: [{ PersonNo: 'E1001' }],
+    });
+  });
+
+  it('rejects illegal employee numbers before outbound PersonNo serialization', () => {
+    expect(isIllegalEmployeeNo('')).toBe(true);
+    expect(isIllegalEmployeeNo('E1,E2')).toBe(true);
+    expect(isIllegalEmployeeNo('张三')).toBe(true);
+    expect(isIllegalEmployeeNo('E1001')).toBe(false);
+    expect(() =>
+      assertFrozenPersonNos({
+        ...frozenPayload,
+        creatorEmployeeNo: '张三',
+      }),
+    ).toThrow(MeetingOaError);
+    expect(() =>
+      buildCreateMeetingBody({
+        ...frozenPayload,
+        meeting: {
+          ...frozenPayload.meeting,
+          attendeeEmployeeNos: [''],
+        },
+      }),
+    ).toThrow(MeetingOaError);
   });
 
   it('associates unused titles once and leaves extra OA rows unmatched', () => {

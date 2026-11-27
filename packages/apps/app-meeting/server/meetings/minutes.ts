@@ -96,15 +96,19 @@ export function splitMinutes(text: string): { summary: string; todos: string } {
   };
 }
 
+/**
+ * Prefer DeepSeek minutes, then chapter minutes, then other Tencent groups.
+ * Returns the full selected source text for OA / projection prefill — do not
+ * strip 会议待办 or AI footers here; extractSourceTodos handles todo parsing.
+ */
 export function resolveMinutes(content: MeetingContentMinutesInput): {
   text: string;
   source: MinutesSource;
 } {
   if (content.localMinutesEdited) {
-    const local = String(content.localMinutes ?? '');
+    const local = String(content.localMinutes ?? '').replaceAll('\r\n', '\n');
     if (isEffectiveMinutes(local)) {
-      const extracted = splitMinutes(local);
-      return { text: extracted.summary || local, source: 'local' };
+      return { text: local.trim(), source: 'local' };
     }
   }
   const groups: ReadonlyArray<
@@ -117,9 +121,13 @@ export function resolveMinutes(content: MeetingContentMinutesInput): {
   ];
   for (const [source, value] of groups) {
     if (!isEffectiveMinutes(value)) continue;
-    const extracted = splitMinutes(String(value));
-    if (!extracted.summary) continue;
-    return { text: extracted.summary, source };
+    return {
+      text: String(value)
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .trim(),
+      source,
+    };
   }
   return { text: '', source: 'none' };
 }

@@ -1,7 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { AuthorizationContext } from '@nocobase/app-plugin-authorization/server';
+import { ApiError } from '@nocobase/app-server/router';
 import type { DatabaseConnection } from '@nocobase/db';
-import type { MeetingGatewayAdapter } from './gateway/adapter.js';
+import type {
+  GatewayRecordFileDetail,
+  MeetingGatewayAdapter,
+} from './gateway/adapter.js';
+import { MeetingGatewayError } from './gateway/errors.js';
 import { MeetingGatewayService } from './gateway-service.js';
 import {
   extractSourceTodos,
@@ -21,6 +26,8 @@ import {
   MEETING_IMPORT_RUNS,
   MEETING_RECORDINGS,
   MEETING_TRANSCRIPT_REPAIRS,
+  MEETINGS,
+  type Meeting,
   type MeetingContent,
   type MeetingImportRun,
   type MeetingRecording,
@@ -61,6 +68,24 @@ export interface MeetingContentPublic {
   lastImportError: string | null;
   transcriptProvenance: TranscriptProvenance | null;
   liveGatewayImport: 'unavailable' | 'test-adapter' | 'http';
+}
+
+export interface RecordingDetailPublic {
+  meetingId: string;
+  recordFileId: string;
+  viewAddress: GatewayRecordFileDetail['viewAddress'];
+  downloadAddress: GatewayRecordFileDetail['downloadAddress'];
+  downloadAddressFileType: GatewayRecordFileDetail['downloadAddressFileType'];
+  audioAddress: GatewayRecordFileDetail['audioAddress'];
+  audioAddressFileType: GatewayRecordFileDetail['audioAddressFileType'];
+  meetingSummary: GatewayRecordFileDetail['meetingSummary'];
+  aiMeetingTranscripts: GatewayRecordFileDetail['aiMeetingTranscripts'];
+  aiMinutes: GatewayRecordFileDetail['aiMinutes'];
+  aiTopicMinutes: GatewayRecordFileDetail['aiTopicMinutes'];
+  aiSpeakerMinutes: GatewayRecordFileDetail['aiSpeakerMinutes'];
+  aiDsMinutes: GatewayRecordFileDetail['aiDsMinutes'];
+  recordInfo: GatewayRecordFileDetail['recordInfo'];
+  fetchedAt: string;
 }
 
 function sha256(value: string): string {
@@ -194,6 +219,23 @@ export class MeetingContentService {
         'INVALID_ARGUMENT',
       );
     }
+    const meeting = await this.connection
+      .repository<Meeting>(MEETINGS)
+      .findOne({ filter: { id: meetingId } });
+    if (!meeting) {
+      throw new MeetingOaError(
+        'IMPORT_RECORDING_REJECTED',
+        'The meeting is unavailable.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    if (meeting.importState === 'importing') {
+      throw new MeetingOaError(
+        'IMPORT_RECORDING_REJECTED',
+        'A recording is already importing for this meeting.',
+        'FAILED_PRECONDITION',
+      );
+    }
     const recording = await this.connection
       .repository<MeetingRecording>(MEETING_RECORDINGS)
       .findOne({ filter: { meetingId, recordFileId } });
@@ -204,8 +246,30 @@ export class MeetingContentService {
         'FAILED_PRECONDITION',
       );
     }
+    if (recording.importability === 'blocked' || !recording.available) {
+      throw new MeetingOaError(
+        'IMPORT_RECORDING_REJECTED',
+        'The recording cannot be imported.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    const binding = await this.gateway.requireActiveBinding();
+    if (
+      !binding.connectionRef ||
+      meeting.sourceConnectionRef !== binding.connectionRef
+    ) {
+      throw new MeetingOaError(
+        'IMPORT_RECORDING_REJECTED',
+        'The meeting connection does not match the signed-in binding.',
+        'FAILED_PRECONDITION',
+      );
+    }
     const now = new Date();
     const runId = randomUUID();
+    await this.connection.repository<Meeting>(MEETINGS).updateOne({
+      filter: { id: meetingId },
+      values: { importState: 'importing', updatedAt: now },
+    });
     await this.connection
       .repository<MeetingImportRun>(MEETING_IMPORT_RUNS)
       .createOne({
@@ -230,71 +294,191 @@ export class MeetingContentService {
       };
     }
     try {
-      const binding = await this.gateway.requireActiveBinding();
       const artifacts = await this.adapter.importRecordingContent({
         accessToken: this.gateway.openBindingToken(binding),
-        connectionRef: binding.connectionRef ?? '',
+        connectionRef: binding.connectionRef,
         recordFileId,
       });
       const grouped = concatenateGroupTexts(artifacts);
       const sourceHash = sha256(
         artifacts.map((item) => `${item.group}\n${item.text}`).join('\n'),
       );
-      const minutesText =
-        grouped.ai_ds_minutes ||
-        grouped.ai_minutes ||
-        grouped.ai_topic_minutes ||
-        grouped.ai_speaker_minutes ||
-        '';
+      // Same priority as resolveMinutes: DeepSeek → chapter → topic → speaker.
+      const resolved = resolveMinutes({
+        minutesAiDs: grouped.ai_ds_minutes,
+        minutesAi: grouped.ai_minutes,
+        minutesTopic: grouped.ai_topic_minutes,
+        minutesSpeaker: grouped.ai_speaker_minutes,
+      });
+      const minutesText = resolved.text;
+      if (!minutesText.trim() && !grouped.meeting_summary?.trim()) {
+        throw new MeetingOaError(
+          'IMPORT_RECORDING_REJECTED',
+          'No complete importable recording text was downloaded.',
+          'FAILED_PRECONDITION',
+        );
+      }
+      let preservedLocal = false;
       await this.connection.transaction(async (trx) => {
         const content = await this.ensure(meetingId, trx);
+        const conflict =
+          content.localMinutesEdited || content.localTranscriptEdited;
+        preservedLocal = conflict;
         await trx.repository<MeetingContent>(MEETING_CONTENTS).updateOne({
           filter: { id: content.id },
           values: {
             contentVersion: content.contentVersion + 1,
-            sourceHash,
-            originalTranscript:
-              emptyToNull(grouped.meeting_summary) ??
-              content.originalTranscript,
-            optimizedTranscript:
-              emptyToNull(grouped.ai_meeting_transcripts) ??
-              content.optimizedTranscript,
-            minutesAiDs: emptyToNull(grouped.ai_ds_minutes),
-            minutesAi: emptyToNull(grouped.ai_minutes),
-            minutesTopic: emptyToNull(grouped.ai_topic_minutes),
-            minutesSpeaker: emptyToNull(grouped.ai_speaker_minutes),
-            sourceTodos: [...extractSourceTodos(minutesText)],
+            sourceHash: conflict ? content.sourceHash : sourceHash,
+            originalTranscript: content.localTranscriptEdited
+              ? content.originalTranscript
+              : (emptyToNull(grouped.meeting_summary) ??
+                content.originalTranscript),
+            optimizedTranscript: content.localTranscriptEdited
+              ? content.optimizedTranscript
+              : (emptyToNull(grouped.ai_meeting_transcripts) ??
+                content.optimizedTranscript),
+            minutesAiDs: content.localMinutesEdited
+              ? content.minutesAiDs
+              : emptyToNull(grouped.ai_ds_minutes),
+            minutesAi: content.localMinutesEdited
+              ? content.minutesAi
+              : emptyToNull(grouped.ai_minutes),
+            minutesTopic: content.localMinutesEdited
+              ? content.minutesTopic
+              : emptyToNull(grouped.ai_topic_minutes),
+            minutesSpeaker: content.localMinutesEdited
+              ? content.minutesSpeaker
+              : emptyToNull(grouped.ai_speaker_minutes),
+            sourceTodos: content.localMinutesEdited
+              ? content.sourceTodos
+              : [...extractSourceTodos(minutesText)],
             transcriptProvenance: {
               ...alignedProvenance(),
             } as Record<string, unknown>,
-            importStatus: 'succeeded',
-            lastImportError: null,
+            importStatus: conflict ? 'failed' : 'succeeded',
+            lastImportError: conflict ? 'LOCAL_CONTENT_PRESERVED' : null,
             updatedAt: new Date(),
           },
         });
         await trx.repository<MeetingImportRun>(MEETING_IMPORT_RUNS).updateOne({
           filter: { id: runId },
           values: {
-            status: 'succeeded',
+            status: conflict ? 'failed' : 'succeeded',
             progress: 100,
-            sourceHash,
-            errorCode: null,
+            sourceHash: conflict ? null : sourceHash,
+            errorCode: conflict ? 'LOCAL_CONTENT_PRESERVED' : null,
+            updatedAt: new Date(),
+          },
+        });
+        await trx.repository<Meeting>(MEETINGS).updateOne({
+          filter: { id: meetingId },
+          values: {
+            importState: conflict ? 'failed' : 'imported',
             updatedAt: new Date(),
           },
         });
       });
-      await this.audit(meetingId, userId, 'CONTENT_IMPORTED', {
-        recordFileId,
-        sourceHash,
-      });
+      if (!preservedLocal) {
+        await this.audit(meetingId, userId, 'CONTENT_IMPORTED', {
+          recordFileId,
+          sourceHash,
+        });
+      }
     } catch (error) {
+      // Preserve typed gateway/OA reasons (e.g. SOURCE_NOT_IMPORTABLE). Generic
+      // Error stays IMPORT_FAILED — same pattern as query-run-service.
       const code =
-        error instanceof MeetingOaError ? error.reason : 'IMPORT_FAILED';
+        error instanceof MeetingOaError
+          ? error.reason
+          : error instanceof MeetingGatewayError
+            ? error.reason
+            : 'IMPORT_FAILED';
       await this.failImport(meetingId, runId, code);
     }
     return {
       data: await this.get(meetingId),
       importRun: await this.getRun(runId),
+    };
+  }
+
+  async previewRecordingDetail(
+    meetingId: string,
+    recordFileId: string,
+  ): Promise<RecordingDetailPublic> {
+    await requireMeetingAction(this.authz, 'viewRecording');
+    await requireReadableMeeting(this.connection, this.authz, meetingId);
+    // The read policy omits sourceConnectionRef. Load the stored row only
+    // after the caller is allowed to see the meeting, the same as import.
+    const meeting = await this.connection
+      .repository<Meeting>(MEETINGS)
+      .findOne({ filter: { id: meetingId } });
+    if (!meeting) {
+      throw new ApiError({
+        status: 'PERMISSION_DENIED',
+        reason: 'ACCESS_DENIED',
+        domain: 'meetings',
+        message: 'This meeting is unavailable.',
+      });
+    }
+    if (!recordFileId.trim() || recordFileId.includes('://')) {
+      throw new ApiError({
+        status: 'INVALID_ARGUMENT',
+        reason: 'INVALID_INPUT',
+        domain: 'meetings',
+        message:
+          'Recording detail uses a stored recording id, not a download URL.',
+      });
+    }
+    const recording = await this.connection
+      .repository<MeetingRecording>(MEETING_RECORDINGS)
+      .findOne({ filter: { meetingId, recordFileId } });
+    if (!recording) {
+      throw new ApiError({
+        status: 'NOT_FOUND',
+        reason: 'RECORDING_NOT_FOUND',
+        domain: 'meetings',
+        message: 'The recording is not stored for this meeting.',
+      });
+    }
+    const binding = await this.gateway.requireActiveBinding();
+    if (
+      !binding.connectionRef ||
+      meeting.sourceConnectionRef !== binding.connectionRef
+    ) {
+      throw new MeetingGatewayError(
+        'GATEWAY_REAUTH_REQUIRED',
+        'The meeting connection does not match the signed-in binding.',
+        'FAILED_PRECONDITION',
+      );
+    }
+    if (typeof this.adapter.getRecordFileDetail !== 'function') {
+      throw new MeetingGatewayError(
+        'UPSTREAM_CONTRACT_ERROR',
+        'Recording detail preview is unavailable.',
+        'UNAVAILABLE',
+      );
+    }
+    const detail = await this.adapter.getRecordFileDetail({
+      accessToken: this.gateway.openBindingToken(binding),
+      connectionRef: binding.connectionRef,
+      recordFileId,
+    });
+    return {
+      meetingId,
+      recordFileId,
+      viewAddress: detail.viewAddress,
+      downloadAddress: detail.downloadAddress,
+      downloadAddressFileType: detail.downloadAddressFileType,
+      audioAddress: detail.audioAddress,
+      audioAddressFileType: detail.audioAddressFileType,
+      meetingSummary: detail.meetingSummary,
+      aiMeetingTranscripts: detail.aiMeetingTranscripts,
+      aiMinutes: detail.aiMinutes,
+      aiTopicMinutes: detail.aiTopicMinutes,
+      aiSpeakerMinutes: detail.aiSpeakerMinutes,
+      aiDsMinutes: detail.aiDsMinutes,
+      recordInfo: detail.recordInfo,
+      fetchedAt: new Date().toISOString(),
     };
   }
 
@@ -424,6 +608,7 @@ export class MeetingContentService {
   ): Promise<void> {
     await this.failRun(runId, errorCode);
     const content = await this.ensure(meetingId);
+    const now = new Date();
     await this.connection
       .repository<MeetingContent>(MEETING_CONTENTS)
       .updateOne({
@@ -431,9 +616,13 @@ export class MeetingContentService {
         values: {
           lastImportError: errorCode,
           importStatus: content.sourceHash ? content.importStatus : 'failed',
-          updatedAt: new Date(),
+          updatedAt: now,
         },
       });
+    await this.connection.repository<Meeting>(MEETINGS).updateOne({
+      filter: { id: meetingId },
+      values: { importState: 'failed', updatedAt: now },
+    });
   }
 
   private async getRun(runId: string): Promise<MeetingImportRunPublic> {
@@ -457,6 +646,28 @@ export class MeetingContentService {
       sourceHash: row.sourceHash,
       createdAt: toIso(row.createdAt) as string,
     };
+  }
+
+  async listRecentImportRuns(): Promise<MeetingImportRunPublic[]> {
+    await requireMeetingAction(this.authz, 'read');
+    const userId = requireUser(this.userId);
+    const rows = await this.connection
+      .repository<MeetingImportRun>(MEETING_IMPORT_RUNS)
+      .findMany({
+        filter: { requestedBy: userId },
+        sort: (sort) => sort.field('createdAt').desc(),
+        limit: 50,
+      });
+    return rows.map((row) => ({
+      id: row.id,
+      meetingId: row.meetingId,
+      recordFileId: row.recordFileId,
+      status: row.status,
+      progress: row.progress,
+      errorCode: row.errorCode,
+      sourceHash: row.sourceHash,
+      createdAt: toIso(row.createdAt) as string,
+    }));
   }
 
   private async ensure(

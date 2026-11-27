@@ -107,7 +107,7 @@ export function DatePicker({
       >
         <CalendarIcon aria-hidden='true' data-icon='inline-start' />
         {value ? (
-          format(value, 'PPP', { locale: dateLocale })
+          format(value, 'yyyy-MM-dd')
         ) : (
           <span>{placeholder ?? t('datePicker.placeholder')}</span>
         )}

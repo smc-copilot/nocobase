@@ -133,6 +133,7 @@ Standard Repository writes require an operation key through the registered submi
 | [.agents/rules/shell.md](.agents/rules/shell.md)                       | Changing layouts, the header, sidebar, breadcrumbs, the account menu or loading indicators                   |
 | [.agents/rules/build-and-deploy.md](.agents/rules/build-and-deploy.md) | Changing the build, packing a deployment, the Docker image, `CDN_BASE_URL`, or building for another platform |
 | [.agents/rules/meetings.md](.agents/rules/meetings.md)                 | Changing Meeting records, access, routes, seeds or the B0 boundary                                           |
+| [.agents/rules/local-dev-start.md](.agents/rules/local-dev-start.md)   | Starting or restarting this app locally (`start-dev.cmd` / `pnpm dev:one`)                                   |
 
 ## Visible and manageable role assignments
 

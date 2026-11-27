@@ -1,9 +1,13 @@
-import type { MeetingOaConfig } from '../../config/meeting-oa.js';
+import {
+  resolveMeetingOaApiUrls,
+  type MeetingOaConfig,
+} from '../../config/meeting-oa.js';
 import type {
   FrozenOaPayload,
   MeetingOaAdapter,
   OaContractMode,
   OaCreateMeetingResult,
+  OaPeopleSearchBy,
   OaPerson,
   OaTaskWriteResult,
   OaToken,
@@ -33,15 +37,23 @@ function asText(value: unknown): string {
     : '';
 }
 
+function looksLikePersonRow(row: Record<string, unknown>): boolean {
+  return Boolean(
+    asText(row.fd_no || row.fdNo) ||
+    asText(row.fd_name || row.fdName || row.name),
+  );
+}
+
 export function mapPerson(row: unknown): OaPerson | null {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
   const record = row as Record<string, unknown>;
-  const fd_no = asText(record.fd_no || record.fdNo || record.id);
+  // Never fall back to directory-internal `id` as PersonNo / fd_no.
+  const fd_no = asText(record.fd_no || record.fdNo);
+  if (!fd_no) return null;
   const fd_name = asText(record.fd_name || record.fdName || record.name);
   const fd_department = asText(
     record.fd_department || record.fdDepartment || record.department,
   );
-  if (!fd_no || !fd_name) return null;
   return { fd_no, fd_name, fd_department };
 }
 
@@ -50,12 +62,25 @@ export function extractRows(payload: unknown): unknown[] {
   if (!payload || typeof payload !== 'object') return [];
   const record = payload as Record<string, unknown>;
   for (const key of ['data', 'people', 'result', 'results', 'rows', 'list']) {
-    if (Array.isArray(record[key])) return record[key] as unknown[];
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const nested = value as Record<string, unknown>;
+      if (looksLikePersonRow(nested)) return [nested];
+    }
   }
+  if (looksLikePersonRow(record)) return [record];
   return [];
 }
 
-function assertSafeUrl(value: string, allowHttpLoopback: boolean): URL {
+function employeeNosMatch(returned: string, query: string): boolean {
+  return returned.trim().toLowerCase() === query.trim().toLowerCase();
+}
+
+function assertSafeUrl(
+  value: string,
+  options: { allowHttpLoopback: boolean; allowInsecureHttp: boolean },
+): URL {
   let url: URL;
   try {
     url = new URL(value);
@@ -69,11 +94,14 @@ function assertSafeUrl(value: string, allowHttpLoopback: boolean): URL {
   const loopback = url.hostname === '127.0.0.1' || url.hostname === 'localhost';
   const okProtocol =
     url.protocol === 'https:' ||
-    (allowHttpLoopback && url.protocol === 'http:' && loopback);
+    (options.allowInsecureHttp && url.protocol === 'http:') ||
+    (options.allowHttpLoopback && url.protocol === 'http:' && loopback);
   if (!okProtocol || url.username || url.password) {
     throw new MeetingOaError(
       'OA_NOT_CONFIGURED',
-      'OA URL is not configured.',
+      url.protocol === 'http:'
+        ? 'OA URL must use HTTPS, or enable meetingOa.allowInsecureHttp for intranet http:// endpoints.'
+        : 'OA URL is not configured.',
       'FAILED_PRECONDITION',
     );
   }
@@ -91,7 +119,10 @@ export function createHttpMeetingOaAdapter(options: {
     Math.max(Number(options.config.timeoutMs) || 15_000, 1),
     30_000,
   );
-  const allowHttpLoopback = options.config.testAdapter === true;
+  const urlSafety = {
+    allowHttpLoopback: options.config.testAdapter === true,
+    allowInsecureHttp: options.config.allowInsecureHttp === true,
+  };
   const tokenCache = new Map<
     string,
     { token: OaToken; refreshAt: number; pending?: Promise<OaToken> }
@@ -99,9 +130,10 @@ export function createHttpMeetingOaAdapter(options: {
 
   async function credentials(): Promise<OaHttpCredentials> {
     const stored = (await options.resolveCredentials?.()) ?? {};
+    const fromEnv = resolveMeetingOaApiUrls(options.config);
     return {
-      tokenUrl: stored.tokenUrl || options.config.tokenUrl,
-      meetingUrl: stored.meetingUrl || options.config.meetingUrl,
+      tokenUrl: stored.tokenUrl || fromEnv.tokenUrl,
+      meetingUrl: stored.meetingUrl || fromEnv.meetingUrl,
       peopleUrl:
         stored.peopleUrl ||
         (await options.resolvePeopleUrl?.()) ||
@@ -123,7 +155,7 @@ export function createHttpMeetingOaAdapter(options: {
     body: unknown;
     unknownMessage: string;
   }): Promise<{ response: Response; result: Record<string, unknown> | null }> {
-    const endpoint = assertSafeUrl(input.url, allowHttpLoopback);
+    const endpoint = assertSafeUrl(input.url, urlSafety);
     endpoint.searchParams.set('method', input.method);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -164,18 +196,32 @@ export function createHttpMeetingOaAdapter(options: {
   return {
     kind: 'http',
     get writeContract() {
-      return mode(Boolean(options.config.meetingUrl));
+      const { meetingUrl } = resolveMeetingOaApiUrls(options.config);
+      return mode(Boolean(meetingUrl));
     },
     get tokenContract() {
-      return mode(Boolean(options.config.tokenUrl && options.config.clientId));
+      const { tokenUrl } = resolveMeetingOaApiUrls(options.config);
+      return mode(Boolean(tokenUrl && options.config.clientId));
     },
 
-    async searchPeople(query: string): Promise<readonly OaPerson[]> {
+    async searchPeople(
+      query: string,
+      by: OaPeopleSearchBy = 'name',
+    ): Promise<readonly OaPerson[]> {
       const q = query.trim();
-      if (q.length < MIN_QUERY_LENGTH) {
+      const mode: OaPeopleSearchBy =
+        by === 'employeeNo' ? 'employeeNo' : 'name';
+      if (mode === 'name' && q.length < MIN_QUERY_LENGTH) {
         throw new MeetingOaError(
           'INVALID_OA_QUERY',
           `OA people query must be at least ${String(MIN_QUERY_LENGTH)} characters`,
+          'INVALID_ARGUMENT',
+        );
+      }
+      if (mode === 'employeeNo' && !q) {
+        throw new MeetingOaError(
+          'INVALID_OA_QUERY',
+          'OA employee number query must not be empty',
           'INVALID_ARGUMENT',
         );
       }
@@ -187,8 +233,14 @@ export function createHttpMeetingOaAdapter(options: {
           'FAILED_PRECONDITION',
         );
       }
-      const url = assertSafeUrl(configured, allowHttpLoopback);
-      url.searchParams.set('fd_name', q);
+      const url = assertSafeUrl(configured, urlSafety);
+      url.searchParams.delete('fd_name');
+      url.searchParams.delete('fd_no');
+      if (mode === 'employeeNo') {
+        url.searchParams.set('fd_no', q);
+      } else {
+        url.searchParams.set('fd_name', q);
+      }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeout);
       let response: Response;
@@ -225,9 +277,29 @@ export function createHttpMeetingOaAdapter(options: {
           'UNAVAILABLE',
         );
       }
-      return extractRows(payload)
+      const people = extractRows(payload)
         .map(mapPerson)
         .filter((row): row is OaPerson => row !== null);
+      if (mode === 'employeeNo') {
+        if (people.length === 0) return [];
+        if (people.length > 1) {
+          throw new MeetingOaError(
+            'INVALID_OA_QUERY',
+            'OA employee number lookup returned multiple people; cannot uniquely confirm.',
+            'INVALID_ARGUMENT',
+          );
+        }
+        const [only] = people;
+        if (!only || !employeeNosMatch(only.fd_no, q)) {
+          throw new MeetingOaError(
+            'INVALID_OA_QUERY',
+            'OA employee number lookup returned a different fd_no than requested.',
+            'INVALID_ARGUMENT',
+          );
+        }
+        return [only];
+      }
+      return people;
     },
 
     async getToken(employeeNo: string): Promise<OaToken> {
@@ -252,10 +324,7 @@ export function createHttpMeetingOaAdapter(options: {
       if (cached && cached.refreshAt > Date.now()) return cached.token;
       if (cached?.pending) return cached.pending;
       const pending = (async () => {
-        const endpoint = assertSafeUrl(
-          conf.tokenUrl as string,
-          allowHttpLoopback,
-        );
+        const endpoint = assertSafeUrl(conf.tokenUrl as string, urlSafety);
         endpoint.searchParams.set('method', 'token');
         endpoint.searchParams.set('grant_type', 'client_credentials');
         endpoint.searchParams.set('employee_no', key);

@@ -8,8 +8,16 @@ import {
   type MeetingOaDelegation,
   type MeetingOaEmployeeMap,
 } from '../resources.js';
-import type { MeetingOaAdapter, OaPerson } from './adapter.js';
+import type {
+  MeetingOaAdapter,
+  OaPeopleSearchBy,
+  OaPerson,
+} from './adapter.js';
 import { MeetingOaError } from './errors.js';
+import {
+  liveSessionDenyReason,
+  type LiveSessionProbeResult,
+} from './live-session.js';
 
 export interface IdentityPublic {
   userId: string;
@@ -18,7 +26,11 @@ export interface IdentityPublic {
   status: string | null;
   canSync: boolean;
   denyReason: string | null;
+  liveVerified: boolean;
+  liveVerifyReason: string | null;
 }
+
+export type LiveSessionProber = () => Promise<LiveSessionProbeResult>;
 
 export class MeetingOaIdentityService {
   constructor(
@@ -26,9 +38,14 @@ export class MeetingOaIdentityService {
     private readonly authz: AuthorizationContext,
     private readonly userId: string | undefined,
     private readonly adapter?: MeetingOaAdapter,
+    private readonly testAdapter = false,
+    private readonly probeLiveSession?: LiveSessionProber,
   ) {}
 
-  async searchPeople(query: string): Promise<readonly OaPerson[]> {
+  async searchPeople(
+    query: string,
+    by: OaPeopleSearchBy = 'name',
+  ): Promise<readonly OaPerson[]> {
     await requireMeetingAction(this.authz, 'oaDraftEdit');
     if (!this.adapter) {
       throw new MeetingOaError(
@@ -37,19 +54,47 @@ export class MeetingOaIdentityService {
         'FAILED_PRECONDITION',
       );
     }
-    return this.adapter.searchPeople(query);
+    return this.adapter.searchPeople(query, by);
   }
 
   async current(): Promise<IdentityPublic> {
     const userId = requireUser(this.userId);
-    const map = await this.activeMap(userId);
+    if (this.testAdapter) {
+      const map = await this.activeMap(userId);
+      return {
+        userId,
+        employeeNo: map?.employeeNo ?? null,
+        displayName: map?.displayName ?? null,
+        status: map?.status ?? null,
+        canSync: Boolean(map),
+        denyReason: map ? null : 'OA_MAPPING_MISSING',
+        liveVerified: false,
+        liveVerifyReason: null,
+      };
+    }
+    const live = await this.requireProbe();
+    if (live.liveVerified && live.employeeNo) {
+      const map = await this.activeMap(userId);
+      return {
+        userId,
+        employeeNo: live.employeeNo,
+        displayName: map?.displayName ?? null,
+        status: map?.status ?? 'active',
+        canSync: true,
+        denyReason: null,
+        liveVerified: true,
+        liveVerifyReason: live.reason,
+      };
+    }
     return {
       userId,
-      employeeNo: map?.employeeNo ?? null,
-      displayName: map?.displayName ?? null,
-      status: map?.status ?? null,
-      canSync: Boolean(map),
-      denyReason: map ? null : 'OA_MAPPING_MISSING',
+      employeeNo: live.employeeNo,
+      displayName: null,
+      status: null,
+      canSync: false,
+      denyReason: liveSessionDenyReason(live.reason),
+      liveVerified: false,
+      liveVerifyReason: live.reason,
     };
   }
 
@@ -65,6 +110,8 @@ export class MeetingOaIdentityService {
       status: row.status,
       canSync: row.status === 'active',
       denyReason: row.status === 'active' ? null : 'OA_MAPPING_MISSING',
+      liveVerified: false,
+      liveVerifyReason: null,
     }));
   }
 
@@ -193,9 +240,28 @@ export class MeetingOaIdentityService {
         return { denyReason: 'OA_DELEGATION_DENIED' };
       }
     }
-    const map = await this.activeMap(principalId);
-    if (!map) return { denyReason: 'OA_MAPPING_MISSING' };
-    return { creatorUserId: principalId, creatorEmployeeNo: map.employeeNo };
+
+    if (this.testAdapter) {
+      const map = await this.activeMap(principalId);
+      if (!map) return { denyReason: 'OA_MAPPING_MISSING' };
+      return { creatorUserId: principalId, creatorEmployeeNo: map.employeeNo };
+    }
+
+    const live = await this.requireProbe();
+    if (!live.liveVerified || !live.employeeNo) {
+      return { denyReason: liveSessionDenyReason(live.reason) };
+    }
+
+    if (principalId !== actor) {
+      const map = await this.activeMap(principalId);
+      if (!map) return { denyReason: 'OA_MAPPING_MISSING' };
+      return { creatorUserId: principalId, creatorEmployeeNo: map.employeeNo };
+    }
+
+    return {
+      creatorUserId: principalId,
+      creatorEmployeeNo: live.employeeNo,
+    };
   }
 
   async activeMap(userId: string): Promise<MeetingOaEmployeeMap | undefined> {
@@ -204,6 +270,17 @@ export class MeetingOaIdentityService {
       .findOne({ filter: { userId } });
     if (!row || row.status !== 'active') return undefined;
     return row;
+  }
+
+  private async requireProbe(): Promise<LiveSessionProbeResult> {
+    if (!this.probeLiveSession) {
+      return {
+        liveVerified: false,
+        employeeNo: null,
+        reason: 'sso_disabled',
+      };
+    }
+    return this.probeLiveSession();
   }
 
   private async publicFor(userId: string): Promise<IdentityPublic> {
@@ -217,6 +294,8 @@ export class MeetingOaIdentityService {
       status: map?.status ?? null,
       canSync: map?.status === 'active',
       denyReason: map?.status === 'active' ? null : 'OA_MAPPING_MISSING',
+      liveVerified: false,
+      liveVerifyReason: null,
     };
   }
 }

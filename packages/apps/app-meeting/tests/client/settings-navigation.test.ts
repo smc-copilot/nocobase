@@ -119,13 +119,6 @@ describe('System settings navigation', () => {
           ['permissionManagement', '/settings/roles'],
         ],
       ],
-      [
-        'settingsBusiness',
-        [
-          ['meetingConnections', '/settings/meeting-connections'],
-          ['meetingIntegrations', '/settings/meeting-integrations'],
-        ],
-      ],
     ]);
     const roles = find(routes, 'settingsRoles');
     expect(catalog(routes, new Set([routeKey(roles)]))).toEqual([
@@ -134,13 +127,6 @@ describe('System settings navigation', () => {
         [
           ['settingsUsers', '/settings/users'],
           ['permissionManagement', '/settings/default-access'],
-        ],
-      ],
-      [
-        'settingsBusiness',
-        [
-          ['meetingConnections', '/settings/meeting-connections'],
-          ['meetingIntegrations', '/settings/meeting-integrations'],
         ],
       ],
     ]);
@@ -244,13 +230,6 @@ describe('System settings navigation', () => {
         ],
       ],
       [
-        'settingsBusiness',
-        [
-          ['meetingConnections', '/settings/meeting-connections'],
-          ['meetingIntegrations', '/settings/meeting-integrations'],
-        ],
-      ],
-      [
         'settingsSystem',
         [
           ['notificationManagement', '/settings/notifications/templates'],
@@ -287,13 +266,6 @@ it('places database browsing in System and hides its card when access is denied'
         ['permissionManagement', '/settings/roles'],
       ],
     ],
-    [
-      'settingsBusiness',
-      [
-        ['meetingConnections', '/settings/meeting-connections'],
-        ['meetingIntegrations', '/settings/meeting-integrations'],
-      ],
-    ],
     ['settingsSystem', [['databaseExplorer', '/settings/database-explorer']]],
   ]);
   expect(catalog(routes, new Set([routeKey(page)]))).toEqual([
@@ -302,13 +274,6 @@ it('places database browsing in System and hides its card when access is denied'
       [
         ['settingsUsers', '/settings/users'],
         ['permissionManagement', '/settings/roles'],
-      ],
-    ],
-    [
-      'settingsBusiness',
-      [
-        ['meetingConnections', '/settings/meeting-connections'],
-        ['meetingIntegrations', '/settings/meeting-integrations'],
       ],
     ],
   ]);

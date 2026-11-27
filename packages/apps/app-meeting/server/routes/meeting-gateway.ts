@@ -28,9 +28,8 @@ import {
   GatewayBindingSchema,
   GatewayCompleteBody,
   GatewayConfigSchema,
+  GatewayOriginBody,
   GatewaySelectBody,
-  GatewaySettingsBody,
-  GatewaySettingsSchema,
   GatewayStartSchema,
   OauthCallbackQuery,
 } from './schemas.js';
@@ -60,24 +59,6 @@ export const meetingGatewayRoutes = defineApiRoutes((app: Application) => {
     app.container.resolve(authorizationToken).middleware(),
     requireManage,
   ] as const;
-  const requireIdentityManage = createMiddleware<AuthorizationEnv>(
-    async (context, next) => {
-      const decision = await context.get('authz').authorize({
-        resource: { type: 'composite', id: MEETING_RESOURCE },
-        action: 'identityManage',
-      });
-      if (decision.effect === 'deny') {
-        throw new AuthorizationDeniedError(decision);
-      }
-      await next();
-    },
-  );
-  const protectSettings = [
-    app.container.resolve(authenticationToken).required({ scopedKeys: false }),
-    app.container.resolve(authorizationToken).middleware(),
-    requireIdentityManage,
-  ] as const;
-  router.use('/meetingGateway/settings', ...protectSettings);
   router.use('/meetingGateway/config', ...protect);
   router.use('/meetingGateway/bindings', ...protect);
   router.use('/meetingGateway/bindings/start', ...protect);
@@ -104,58 +85,8 @@ export const meetingGatewayRoutes = defineApiRoutes((app: Application) => {
       describeRoute({ hide: true }),
       unavailable,
     );
-    router.get(
-      '/meetingGateway/settings',
-      describeRoute({ hide: true }),
-      unavailable,
-    );
-    router.put(
-      '/meetingGateway/settings',
-      describeRoute({ hide: true }),
-      unavailable,
-    );
     return new Hono().route('/', router);
   }
-  router.get(
-    '/meetingGateway/settings',
-    describeRoute({
-      tags: ['Meetings'],
-      operationId: 'getMeetingGatewaySettings',
-      summary: 'Read meeting gateway server settings without secrets',
-      description:
-        'Requires identityManage. Returns saved fields, source priority and deployment constraints. Never returns the client secret plaintext. Saving this resource does not bind a user, query meetings or write OA.',
-      responses: {
-        200: dataResponse(GatewaySettingsSchema),
-        ...apiErrorResponses,
-      },
-    }),
-    async (c) =>
-      c.json({
-        data: await createMeetingServices(app, c).gatewaySettings.get(),
-      }),
-  );
-  router.put(
-    '/meetingGateway/settings',
-    describeRoute({
-      tags: ['Meetings'],
-      operationId: 'saveMeetingGatewaySettings',
-      summary:
-        'Save meeting gateway server settings and seal the client secret',
-      description:
-        'Requires identityManage. Blank clientSecret keeps the current sealed secret; null clears it. Origin must already be in the deployment originAllowlist. The adapter reads saved fields at call time. This does not start OAuth, query meetings or write OA, and does not verify connectivity.',
-      responses: {
-        200: dataResponse(GatewaySettingsSchema),
-        ...apiErrorResponses,
-      },
-    }),
-    apiValidator('json', GatewaySettingsBody),
-    async (c) =>
-      c.json({
-        data: await createMeetingServices(app, c).gatewaySettings.save(
-          c.req.valid('json'),
-        ),
-      }),
-  );
   router.get(
     '/meetingGateway/config',
     describeRoute({
@@ -172,6 +103,27 @@ export const meetingGatewayRoutes = defineApiRoutes((app: Application) => {
     async (c) =>
       c.json({
         data: await createMeetingServices(app, c).gateway.configStatus(),
+      }),
+  );
+  router.put(
+    '/meetingGateway/config',
+    describeRoute({
+      tags: ['Meetings'],
+      operationId: 'saveMeetingGatewayOrigin',
+      summary: 'Rejected: gateway settings are environment-only',
+      description:
+        'Always fails with GATEWAY_SETTINGS_INVALID. Configure MEETING_GATEWAY_* in packages/apps/app-meeting/.env (or config.yml). Personal OAuth binding uses the Meetings page.',
+      responses: {
+        200: dataResponse(GatewayConfigSchema),
+        ...apiErrorResponses,
+      },
+    }),
+    apiValidator('json', GatewayOriginBody),
+    async (c) =>
+      c.json({
+        data: await createMeetingServices(app, c).gateway.saveSettings(
+          c.req.valid('json'),
+        ),
       }),
   );
   router.get(
@@ -215,19 +167,38 @@ export const meetingGatewayRoutes = defineApiRoutes((app: Application) => {
       operationId: 'completeMeetingGatewayBinding',
       summary: 'Consume local OAuth state and bind the current user',
       description:
-        'The body state must belong to the signed-in user. Replay, expiry and another user’s state are refused. userId is never taken from the body.',
+        'The body state must belong to the signed-in user. Replay, expiry and another user’s state are refused. userId is never taken from the body. Optional continue_to callback fields may be forwarded once when the gateway embeds the authorization result in the redirect.',
       responses: {
         200: dataResponse(GatewayBindingSchema),
         ...apiErrorResponses,
       },
     }),
     apiValidator('json', GatewayCompleteBody),
-    async (c) =>
-      c.json({
+    async (c) => {
+      const body = c.req.valid('json');
+      const callback =
+        body.accessToken &&
+        body.tokenType &&
+        body.expiresIn !== undefined &&
+        body.connectionId &&
+        body.memberId &&
+        body.status
+          ? {
+              accessToken: body.accessToken,
+              tokenType: body.tokenType,
+              expiresIn: body.expiresIn,
+              connectionId: body.connectionId,
+              memberId: body.memberId,
+              status: body.status,
+            }
+          : undefined;
+      return c.json({
         data: await createMeetingServices(app, c).gateway.complete(
-          c.req.valid('json').state,
+          body.state,
+          callback,
         ),
-      }),
+      });
+    },
   );
   router.post(
     '/meetingGateway/bindings/:bindingId/select',

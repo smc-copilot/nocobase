@@ -132,6 +132,7 @@
   "scripts": {
     "postinstall": "nocobase skills sync",
     "dev": "nocobase dev",
+    "dev:one": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/start-dev.ps1",
     "build": "nocobase build",
     "start": "nocobase start",
     "check": "pnpm check:packages && pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build",

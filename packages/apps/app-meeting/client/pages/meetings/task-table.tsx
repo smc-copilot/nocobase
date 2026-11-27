@@ -22,7 +22,11 @@ import { useTranslation } from '@nocobase/i18n/client';
 import { PlusIcon, Trash2Icon } from 'lucide-react';
 import { useState, type ReactElement } from 'react';
 import { formatWallDate, parseWallDate } from './oa-time.js';
-import { oaPersonFrom, type OaPersonChip } from './oa-person.js';
+import {
+  oaPersonFrom,
+  type OaPeopleSearchFn,
+  type OaPersonChip,
+} from './oa-person.js';
 import { OaPersonMultiSelect, OaPersonSelect } from './oa-person-pickers.js';
 
 export interface DraftTaskRow {
@@ -57,7 +61,7 @@ export function TaskTable({
   readonly onTaskTitle: (value: string) => void;
   readonly onAdd: () => void;
   readonly onChange: (next: DraftTaskRow[]) => void;
-  readonly onSearch: (query: string) => Promise<OaPersonChip[]>;
+  readonly onSearch: OaPeopleSearchFn;
 }): ReactElement {
   const { t } = useTranslation();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -205,25 +209,27 @@ export function TaskTable({
           </TableBody>
         </Table>
       </div>
-      <FieldGroup className='max-w-xl'>
-        <Field>
-          <FieldLabel htmlFor='oa-task'>
-            {t('meetingOa.fields.taskTitle')}
-          </FieldLabel>
-          <div className='flex flex-col gap-2 sm:flex-row'>
-            <Input
-              id='oa-task'
-              value={taskTitle}
-              disabled={disabled || busy}
-              onChange={(event) => onTaskTitle(event.target.value)}
-            />
-            <Button type='button' disabled={disabled || busy} onClick={onAdd}>
-              <PlusIcon />
-              {t('meetingOa.addTask')}
-            </Button>
-          </div>
-        </Field>
-      </FieldGroup>
+      {disabled ? null : (
+        <FieldGroup className='max-w-xl'>
+          <Field>
+            <FieldLabel htmlFor='oa-task'>
+              {t('meetingOa.fields.taskTitle')}
+            </FieldLabel>
+            <div className='flex flex-col gap-2 sm:flex-row'>
+              <Input
+                id='oa-task'
+                value={taskTitle}
+                disabled={busy}
+                onChange={(event) => onTaskTitle(event.target.value)}
+              />
+              <Button type='button' disabled={busy} onClick={onAdd}>
+                <PlusIcon />
+                {t('meetingOa.addTask')}
+              </Button>
+            </div>
+          </Field>
+        </FieldGroup>
+      )}
       <Dialog
         open={editingId != null}
         onOpenChange={(open) => {

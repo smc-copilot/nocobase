@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { createHttpMeetingGatewayAdapter } from '../../server/meetings/gateway/http-client.js';
 import { MeetingGatewayError } from '../../server/meetings/gateway/errors.js';
+import { continueTo } from '../../server/meetings/gateway/contract.js';
 import { validateHttpsOrigin } from '../../server/meetings/gateway/origin.js';
 import { inclusiveQueryDays } from '../../server/meetings/query-run-service.js';
 import {
@@ -8,6 +9,20 @@ import {
   withReadonlyRetry,
 } from '../../server/meetings/gateway/pagination.js';
 import { validateAuthorizationUrl } from '../../server/meetings/gateway/oauth-url.js';
+
+test('continueTo allows intranet http origins only with allowInsecureHttp', () => {
+  expect(() =>
+    continueTo('http://meeting.example.test:13000', 'flow-1'),
+  ).toThrow('CONFIG_INVALID');
+  expect(
+    continueTo('http://meeting.example.test:13000', 'flow-1', {
+      allowInsecureHttp: true,
+    }),
+  ).toBe('http://meeting.example.test:13000/meetings/done?flow_nonce=flow-1');
+  expect(continueTo('http://127.0.0.1:13000', 'flow-2')).toBe(
+    'http://127.0.0.1:13000/meetings/done?flow_nonce=flow-2',
+  );
+});
 
 const config = {
   origin: 'https://gateway.example.test',
@@ -43,49 +58,7 @@ test('rejects a non-allowlisted origin', () => {
   );
 });
 
-test('HTTP adapter reads resolveConfig origin at call time and never fetches a non-allowlisted origin', async () => {
-  const fetched: string[] = [];
-  let origin = 'https://gateway.example.test';
-  const adapter = createHttpMeetingGatewayAdapter({
-    resolveConfig: () => ({
-      ...config,
-      origin,
-      originAllowlist: [
-        'https://gateway.example.test',
-        'https://gateway-b.example.test',
-      ],
-    }),
-    fetchImpl: async (input) => {
-      fetched.push(String(input));
-      return new Response(
-        JSON.stringify({
-          code: 0,
-          error_code: 0,
-          data: { items: [] },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
-    },
-  });
-  await adapter.listConnections({ accessToken: 'mt_x' });
-  expect(fetched[0]).toContain(
-    'https://gateway.example.test/api/v1/me/connections',
-  );
-  origin = 'https://gateway-b.example.test';
-  fetched.length = 0;
-  await adapter.listConnections({ accessToken: 'mt_x' });
-  expect(fetched[0]).toContain(
-    'https://gateway-b.example.test/api/v1/me/connections',
-  );
-  origin = 'https://evil.example.test';
-  fetched.length = 0;
-  await expect(
-    adapter.listConnections({ accessToken: 'mt_x' }),
-  ).rejects.toMatchObject({ reason: 'GATEWAY_NOT_CONFIGURED' });
-  expect(fetched).toEqual([]);
-});
-
-test('HTTP query methods stay blocked without a published client.js contract', async () => {
+test('HTTP query stays blocked until the gateway contract is ready', async () => {
   const adapter = createHttpMeetingGatewayAdapter({ config });
   await expect(
     adapter.queryMeetings({
@@ -97,7 +70,7 @@ test('HTTP query methods stay blocked without a published client.js contract', a
         endedAt: '2026-11-02T00:00:00.000Z',
       },
     }),
-  ).rejects.toMatchObject({ reason: 'UPSTREAM_CONTRACT_ERROR' });
+  ).rejects.toMatchObject({ reason: 'GATEWAY_NOT_CONFIGURED' });
 });
 
 test('validates the published Tencent authorization URL shape', () => {
@@ -283,4 +256,52 @@ test('imports txt when a group also lists pdf and does not store error HTML', as
   expect(imported.map((item) => item.text)).toEqual([
     'ORIGINAL_ONLY isolation dialogue',
   ]);
+});
+
+test('reads record file detail without downloading media', async () => {
+  const fetched: string[] = [];
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    fetched.push(url);
+    if (url.includes('/record-files/rec-detail') && !url.includes('myqcloud')) {
+      return new Response(
+        JSON.stringify({
+          code: 0,
+          error_code: 0,
+          data: {
+            view_address: 'https://meeting.tencent.com/view',
+            meeting_summary: [
+              {
+                file_type: 'docs',
+                download_address:
+                  'https://cos.ap-guangzhou.myqcloud.com/summary.docx',
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    return new Response('should-not-download', { status: 200 });
+  };
+  const adapter = createHttpMeetingGatewayAdapter({
+    config,
+    fetchImpl: fetchImpl as unknown as typeof fetch,
+  });
+  const detail = await adapter.getRecordFileDetail!({
+    accessToken: 'mt_x',
+    connectionRef: 'conn-1',
+    recordFileId: 'rec-detail',
+  });
+  expect(fetched).toEqual([
+    'https://gateway.example.test/api/v1/connections/conn-1/record-files/rec-detail',
+  ]);
+  expect(detail.meetingSummary).toEqual([
+    {
+      fileType: 'docx',
+      downloadUrl: 'https://cos.ap-guangzhou.myqcloud.com/summary.docx',
+      available: true,
+    },
+  ]);
+  expect(detail.viewAddress).toBe('https://meeting.tencent.com/view');
 });

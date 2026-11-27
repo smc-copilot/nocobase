@@ -65,18 +65,10 @@ it('groups the modules an administrator may open into categories of cards that o
   ]);
   expect(cards[0]).toHaveAttribute('href', '/main/settings/users');
   expect(cards[1]).toHaveAttribute('href', '/main/settings/roles');
-  const business = screen.getByRole('region', {
-    name: 'Business configuration',
-  });
   expect(
-    within(business)
-      .getAllByRole('link')
-      .map((card) => card.getAttribute('href')),
-  ).toEqual([
-    '/main/settings/meeting-connections',
-    '/main/settings/meeting-integrations',
-  ]);
-  expect(screen.getAllByRole('region')).toHaveLength(2);
+    screen.queryByRole('region', { name: 'Business configuration' }),
+  ).toBeNull();
+  expect(screen.getAllByRole('region')).toHaveLength(1);
   cards[1].focus();
   await user.keyboard('{Enter}');
   await waitFor(() =>

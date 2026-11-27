@@ -1,4 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+
+process.env.MEETING_GATEWAY_ORIGIN = 'https://gateway.example.test';
+process.env.MEETING_GATEWAY_ORIGIN_ALLOWLIST = 'https://gateway.example.test';
+process.env.MEETING_GATEWAY_INSTANCE_ID = 'gw-test';
 import { expect } from 'vitest';
 import { findUndeclaredApiRoutes } from '@nocobase/app-server/router';
 import { createAppTest } from '@nocobase/app-testing/server';
@@ -161,8 +165,9 @@ test('documents meeting gateway routes and keeps tokens off the wire', async ({
     await alice.fetch('/meetingGateway/config'),
   )) as { data: Record<string, unknown> };
   assertNoSecrets(config);
-  expect(JSON.stringify(config)).not.toContain('gateway.example.test');
   expect(config.data).toMatchObject({
+    origin: 'https://gateway.example.test',
+    originSource: 'env',
     testAdapter: true,
     queryHttpContract: 'unavailable',
     disconnectRevokesUpstream: false,
@@ -188,6 +193,33 @@ test('documents meeting gateway routes and keeps tokens off the wire', async ({
   const complete = await alice.fetch(
     '/meetingGateway/bindings/complete',
     write({ state: started.data.state }),
+  );
+  const bound = (await expectOk(complete)) as { data: { status: string } };
+  assertNoSecrets(bound);
+  expect(bound.data.status).toBe('active');
+});
+
+test('accepts continue_to callback fields on complete without returning secrets', async ({
+  app,
+  testApp,
+}) => {
+  const alice = await createUser(testApp, 'alice');
+  await grantOperator(testApp, alice.user.id);
+  adapter(app);
+  const started = (await expectOk(
+    await alice.fetch('/meetingGateway/bindings/start', write({})),
+  )) as { data: { state: string } };
+  const complete = await alice.fetch(
+    '/meetingGateway/bindings/complete',
+    write({
+      state: started.data.state,
+      accessToken: 'mt_callback_token_must_not_echo',
+      tokenType: 'Bearer',
+      expiresIn: 899,
+      connectionId: '02bd3c85-ae8d-4a05-b24b-4cffecdb6c7b',
+      memberId: '6c1e5490-b111-423d-baa9-f8ab840d4e07',
+      status: 'ACTIVE',
+    }),
   );
   const bound = (await expectOk(complete)) as { data: { status: string } };
   assertNoSecrets(bound);
@@ -422,11 +454,9 @@ test('repeats a query without duplicating meetings and keeps rows after a later 
     data: { id: string; title: string }[];
     meta: { total: number };
   };
-  expect(list.meta.total).toBe(2);
-  expect(list.data.map((row) => row.title).sort()).toEqual([
-    'Keep me',
-    'Other cycle',
-  ]);
+  // Same meeting_code for the user collapses to one row; later cycle wins title.
+  expect(list.meta.total).toBe(1);
+  expect(list.data.map((row) => row.title)).toEqual(['Other cycle']);
   const stored = (await connection.repository('meetings').findMany({})) as {
     sourceGatewayInstance: string;
     meetingCode: string | null;
@@ -437,7 +467,7 @@ test('repeats a query without duplicating meetings and keeps rows after a later 
   );
   expect(
     stored.map((row) => `${row.meetingCode}:${row.sourceCycleKey}`).sort(),
-  ).toEqual(['same-code:cycle-a', 'same-code:cycle-b']);
+  ).toEqual(['same-code:cycle-b']);
   gateway.queryError = new MeetingGatewayError(
     'UPSTREAM_CONTRACT_ERROR',
     'boom',
@@ -448,7 +478,7 @@ test('repeats a query without duplicating meetings and keeps rows after a later 
   const kept = (await (await alice.fetch('/meetings')).json()) as {
     meta: { total: number };
   };
-  expect(kept.meta.total).toBe(2);
+  expect(kept.meta.total).toBe(1);
 });
 
 test('a successful participant refetch drops rows the upstream no longer returns', async ({
@@ -473,15 +503,21 @@ test('a successful participant refetch drops rows the upstream no longer returns
   gateway.participants.set('up-people', [
     {
       upstreamParticipantId: 'p-old',
+      joinName: null,
       displayName: 'Old',
       department: null,
       joinedAt: null,
+      jobTitle: null,
+      isCorpMember: null,
     },
     {
       upstreamParticipantId: 'p-keep',
+      joinName: 'Keep Join',
       displayName: 'Keep',
       department: null,
       joinedAt: null,
+      jobTitle: null,
+      isCorpMember: null,
     },
   ]);
   await bindUser(alice);
@@ -499,9 +535,12 @@ test('a successful participant refetch drops rows the upstream no longer returns
   gateway.participants.set('up-people', [
     {
       upstreamParticipantId: 'p-keep',
+      joinName: 'Keep Join',
       displayName: 'Keep',
       department: null,
       joinedAt: null,
+      jobTitle: null,
+      isCorpMember: null,
     },
   ]);
   expect((await alice.fetch('/meetingQueryRuns', write(window))).status).toBe(
@@ -509,8 +548,9 @@ test('a successful participant refetch drops rows the upstream no longer returns
   );
   const people = (await (
     await alice.fetch(`/meetings/${meetingId}/participants`)
-  ).json()) as { data: { displayName: string }[] };
+  ).json()) as { data: { displayName: string; joinName: string | null }[] };
   expect(people.data.map((row) => row.displayName)).toEqual(['Keep']);
+  expect(people.data.map((row) => row.joinName)).toEqual(['Keep Join']);
 });
 
 test('hides titles from another user on list and detail', async ({

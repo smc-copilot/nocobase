@@ -70,11 +70,17 @@ export interface OaTaskWriteResult {
 
 export type OaContractMode = 'unavailable' | 'test' | 'configured';
 
+/** Directory search mode: name → fd_name; employeeNo → fd_no exact lookup. */
+export type OaPeopleSearchBy = 'name' | 'employeeNo';
+
 export interface MeetingOaAdapter {
   readonly kind: 'http' | 'test';
   readonly writeContract: OaContractMode;
   readonly tokenContract: OaContractMode;
-  searchPeople(query: string): Promise<readonly OaPerson[]>;
+  searchPeople(
+    query: string,
+    by?: OaPeopleSearchBy,
+  ): Promise<readonly OaPerson[]>;
   getToken(employeeNo: string): Promise<OaToken>;
   createMeeting(
     token: OaToken,

@@ -15,6 +15,15 @@ const enUS = {
     ...systemEnUS.navigation,
     meetings: 'Meetings',
   },
+  settings: {
+    ...systemEnUS.settings,
+    usernameHint:
+      'Used to sign in. 3–30 characters: letters in any language, digits, underscores, dots, or hyphens.',
+    invalidUsername:
+      'Username must be 3–30 characters: letters, digits, underscores, dots, or hyphens.',
+    staleAttempt:
+      'The previous attempt did not finish, so this form was locked. It is released now. Submit again.',
+  },
   home: {
     ...systemEnUS.home,
     platform: 'Meeting',
@@ -32,12 +41,54 @@ const enUS = {
     unavailable: 'This meeting is unavailable.',
     listDescription: 'Stored meetings you are allowed to open.',
     queryNotConnected:
-      'This list only shows meetings already stored for you. Use Query to call the bound gateway; opening the page does not sync by itself.',
+      'The list below shows stored meetings you can open now. Sign in and use Query only to sync new meetings from the gateway.',
+    gatewayNotConfigured:
+      'The meeting gateway is not configured yet, so login and query stay disabled.',
+    loginTencent: 'Sign in to Tencent Meeting',
+    loggedIn: 'Signed in',
+    logout: 'Sign out',
+    loginHint:
+      'Sign in to sync new meetings from Tencent by time range. Stored meetings are listed below without signing in.',
+    loginFailed:
+      'Meeting gateway authorization could not start. Check the server configuration and try again.',
+    loginCompleteFailed: 'Sign-in could not be completed. Try again.',
     query: 'Query',
     queryStart: 'From',
     queryEnd: 'To',
     queryStarted: 'Query finished',
     queryFailed: 'The gateway query could not be completed.',
+    queryRetryLater:
+      'The online meeting query is not finished yet. Try again later.',
+    queryWindowInvalid: 'The start time must not be after the end time.',
+    import: 'Import',
+    importing: 'Importing',
+    imported: 'Imported',
+    oaMeetingCreated: 'OA meeting created',
+    viewMeeting: 'View',
+    importTasks: 'Import tasks',
+    importPickTitle: 'Choose a recording (meeting {{code}})',
+    importPickHint: 'Import only one file at a time.',
+    importConfirm: 'Import the selected file',
+    importNoFiles: 'No importable recordings yet.',
+    importRecheck: 'Check again',
+    importWait: 'A recording is already importing. Wait for it to finish.',
+    allowDownloadYes: 'Yes',
+    allowDownloadNo: 'No',
+    allowDownloadUnknown: 'Unknown',
+    importabilityImportable: 'Importable',
+    importabilityUnknown: 'Permission unknown; you can continue',
+    importabilityBlocked: 'Not importable',
+    na: 'N/A',
+    corpMemberYes: 'Yes',
+    corpMemberNo: 'No',
+    participantsTitle: 'Participants',
+    jobTitle: 'Job title',
+    corpMember: 'Internal member',
+    taskCreated: 'Created',
+    taskRunning: 'Running',
+    taskSucceeded: 'Completed',
+    taskFailed: 'Failed',
+    taskRetry: 'Retry',
     detailDescription:
       'OA workspace is the default meeting detail. People, recordings, and the read-only Tencent source page stay on this meeting.',
     retry: 'Retry',
@@ -51,10 +102,46 @@ const enUS = {
     meetingCodeLabel: 'Meeting number {{code}}',
     participantsEmpty: 'No participant rows are stored for this meeting.',
     recordingsEmpty: 'No recording rows are stored for this meeting.',
+    viewParticipants: 'View',
+    viewParticipantsTitle: 'Participants · {{title}} · {{code}}',
+    participantsUnavailable: 'Fetch failed or no participants',
+    participantsLoading: 'Loading participants…',
+    participantsFailed: 'Participants could not be loaded.',
+    joinName: 'Join name',
+    status: 'Status',
+    actions: 'Actions',
+    viewRecordings: 'View recordings',
+    recordingDetails: 'Recording details',
+    recordingListTitle: 'Recordings · {{code}}',
+    viewDetail: 'View details',
+    openSharing: 'Open sharing page',
+    cancel: 'Cancel',
+    openTencentRecording: 'Open Tencent recording',
+    downloadMedia: 'Download media',
+    openAudio: 'Open audio',
+    downloadDocument: 'Download document',
+    refreshDetail: 'Refresh details',
+    noRecordInfo: 'No recording information.',
+    noDownloadableFiles: 'No downloadable files.',
+    formatNotProvided: 'Format not provided',
+    importingFileHint: 'The file to import is {{recordFileId}}.',
+    mediaSection: 'Media files',
+    documentsSection: 'Documents',
+    recordInfoSection: 'Recording information',
+    docMeetingSummary: 'Recording transcript',
+    docAiTranscripts: 'AI meeting transcripts',
+    docAiMinutes: 'AI minutes',
+    docTopicMinutes: 'Topic minutes',
+    docSpeakerMinutes: 'Speaker minutes',
+    docDsMinutes: 'DeepSeek minutes',
+    recordInfoUserId: 'User ID',
+    recordInfoTopic: 'Topic',
+    recordInfoStart: 'Start',
+    recordInfoEnd: 'End',
     recordingAvailable: 'Recording available',
     recordingUnavailable: 'Recording not available',
     department: 'Department',
-    joinedAt: 'Joined',
+    joinedAt: 'Join time',
     recordingFormat: 'Format',
     recordingReason: 'Unavailable reason',
     tabs: {
@@ -72,6 +159,11 @@ const enUS = {
       dialogues: 'Dialogue',
       original: 'Original',
       optimized: 'Optimized',
+      searchPlaceholder: 'Search keyword',
+      searchPrev: 'Previous match',
+      searchNext: 'Next match',
+      searchMatches: '{{current}} / {{total}}',
+      searchNoMatch: 'No matches',
     },
     fetchStatus: {
       not_fetched: 'Not fetched yet',
@@ -86,7 +178,7 @@ const enUS = {
       createdAt: 'Created',
       startedAt: 'Started',
       endedAt: 'Ended',
-      participants: 'People',
+      participants: 'Participants',
       recordings: 'Recordings',
     },
   },
@@ -105,15 +197,41 @@ const enUS = {
       'Disconnect stops later remote access from this application. It does not revoke the upstream Tencent or gateway grant; that revoke API is not supported here.',
     noConnection: 'No connection is selected yet.',
     currentConnection: 'Selected connection: {{name}}',
+    enabledLabel: 'Enable gateway',
+    resourceLabel: 'REST resource',
+    instanceLabel: 'Gateway instance',
+    allowedOriginLabel: 'Application origin',
+    allowedOriginHint:
+      'No user, path, query, or fragment. The return address is this origin plus /meetings/done.',
+    revisionLabel: 'Contract revision',
+    shaLabel: 'Contract hash',
+    hmacLabel: 'Bridge HMAC key',
+    keyringLabel: 'Bridge keyring JSON',
+    secretKept: 'Stored on the server. Leave blank to keep it.',
+    secretMissing:
+      'Not stored yet. It stays on the server and is not shown again.',
+    originTitle: 'Gateway setup',
+    originDescription:
+      'Administrators set the HTTPS address of the meeting gateway. Tokens stay on the server.',
+    originLabel: 'Connection address',
+    originHint:
+      'Use a public https origin with no path, such as https://gateway.example.com.',
+    saveOrigin: 'Save address',
+    originSaved: 'Gateway address saved',
+    originMissing:
+      'The meeting gateway address is not set. Enter it above to connect this application.',
+    originSourceSettings: 'This address is the one saved on this page.',
+    originSourceEnv:
+      'This address comes from the server environment. Saving replaces it for this application.',
+    originSourceNone: 'No gateway address is saved yet.',
+    applicationMissing:
+      'The gateway address is saved. The application id still has to be set in the server configuration before binding can start.',
     notConfigured:
-      'The meeting gateway origin and application are not configured. This app is not connected. Maintain the gateway server on Meeting integrations.',
+      'The meeting gateway origin and application are not configured. This app is not connected.',
+    contractMissing:
+      'The meeting gateway is not configured yet, so login and query stay disabled. Missing: {{names}}',
     identityUnavailable:
       'The first gateway access token comes from account-login and token exchange in the published gateway client. This app does not collect a gateway password or a pasted token, so live OAuth start stays blocked until that contract is confirmed.',
-    serverConfigLink: 'Maintain the meeting-gateway server',
-    serverConfigHint:
-      'User binding is separate from the gateway server settings. Saving server settings does not start OAuth.',
-    serverConfigAdminOnly:
-      'An administrator with Meeting integrations access maintains the gateway server. This page does not grant that permission.',
     rootUnrestricted:
       'A platform root (unrestricted) user can read every stored meeting. Ordinary administrators and members do not receive that bypass.',
     completing: 'Finishing gateway authorization…',
@@ -133,7 +251,8 @@ const enUS = {
     isolationBanner: 'Local test data, real OA was not called.',
     mappingMissing:
       'No trusted employee mapping. You can still save a valid draft; formal sync will write nothing to OA.',
-    mappedAs: 'Signed-in identity maps to employee {{employeeNo}}.',
+    mappedAs: 'OA employee {{employeeNo}}',
+    oaUnauthorized: 'OA authorization not granted',
     importContractMissing:
       'Gateway recording download is not in the published client. Local content can still be edited.',
     importFailed:
@@ -144,6 +263,16 @@ const enUS = {
     sourceTodosNotAssigned:
       'Source to-dos are not treated as assigned tasks until you add a draft task with an employee number.',
     peopleSearch: 'Search OA people',
+    peopleSearchMode: 'People search mode',
+    peopleSearchByName: 'Name',
+    peopleSearchByEmployeeNo: 'Employee no.',
+    peopleFind: 'Find',
+    peopleNameMissing: 'Name not provided',
+    peopleNamePending: 'Name not loaded yet',
+    peopleEmployeeNoNeed: 'Enter the full employee number, then find',
+    peopleEmployeeNoEmpty: 'No person found for this employee number',
+    peopleEmployeeNoAmbiguous:
+      'This employee number could not be uniquely confirmed. Check and try again.',
     search: 'Search',
     peopleFailed: 'OA people search could not be completed.',
     peopleLoading: 'Searching people…',
@@ -178,7 +307,32 @@ const enUS = {
       'Minutes or tasks are not complete. This is not fully done.',
     externalMeetingId: 'OA meeting id',
     externalSummaryId: 'OA summary id',
-    liveVerified: 'Live OA verified: no',
+    liveVerified: 'Live OA verified: {{value}}',
+    liveVerifiedYes: 'yes',
+    liveVerifiedNo: 'no',
+    liveSessionRequired:
+      'OA OAuth token verification for this Meeting username failed. Formal sync stays blocked until verification succeeds.',
+    liveVerifyReason: 'Reason: {{reason}}',
+    liveVerifyReasons: {
+      cookie_missing:
+        'No OA session cookie reached Meeting (legacy SSO path; not used for workspace verify).',
+      cookie_ambiguous:
+        'Multiple OA cookie values were sent (legacy SSO path; not used for workspace verify).',
+      rejected:
+        'OA rejected the OAuth token request (check client id/secret or employee_no).',
+      unavailable:
+        'Meeting could not reach the OA OAuth URL (network, timeout, or OA down).',
+      contract_error:
+        'OA OAuth response did not match the expected token contract.',
+      username_missing:
+        'This Meeting account has no username; set username to the full OA employee number.',
+      username_mismatch:
+        'OA employee number from the token response does not match this Meeting username.',
+      oauth_not_configured:
+        'OA OAuth URL, client id and secret are not configured (MEETING_OA_OAUTH_URL / MEETING_OA_CLIENT_*).',
+      sso_disabled: 'OA SSO validate is disabled or not configured.',
+      verified: 'Verified.',
+    },
     beijingHint: 'Times are edited as Beijing wall-clock and stored as ISO.',
     filesTitle: 'Supplemental files',
     filesCount: '{{count}} files, {{bytes}} bytes',
@@ -209,6 +363,9 @@ const enUS = {
     saveDraft: 'Save draft',
     submitSync: 'Submit OA sync',
     saveWritesZeroOa: 'Saving a draft writes zero OA side effects.',
+    tasksShow: 'Show tasks',
+    tasksHide: 'Hide tasks',
+    tasksCount: 'Task assignment ({{count}})',
     draftSaved: 'Draft saved locally.',
     draftFailed: 'The draft could not be saved.',
     syncFailed: 'OA sync was not submitted.',
@@ -230,11 +387,9 @@ const enUS = {
     reconcileSaved: 'Evidence recorded. OA was not written.',
     reconcileFailed: 'Evidence could not be recorded.',
     recoverFailed: 'Recovery could not continue.',
-    integrationsTitle: 'Meeting integrations',
+    integrationsTitle: 'Meeting OA',
     integrationsDescription:
-      'Maintain the OA server and the meeting-gateway server. User binding stays on Meeting gateway. Saving settings does not bind, query meetings or write OA.',
-    tabOa: 'OA server',
-    tabGateway: 'meeting-gateway server',
+      'Seal OA credentials with native secrets. Root is never a default employee. Secrets are never echoed.',
     writeContract: 'Write contract: {{value}}',
     hasSecret: 'Client secret: {{value}}',
     secretSealed: 'sealed',
@@ -268,7 +423,7 @@ const enUS = {
       host: 'Host',
       otherAttendPerson: 'External attendees',
       summaryTitle: 'Minutes title',
-      summary: 'Minutes to upload',
+      summary: 'Meeting minutes',
       summaryCompleteTime: 'Minutes completed at (Beijing)',
       time: 'Time',
       actualAttend: 'Actual attendees',
@@ -285,7 +440,7 @@ const enUS = {
       requestId: 'Request id',
       creator: 'Frozen creator',
       steps: 'Steps',
-      tasks: 'Task results',
+      tasks: 'Task assignment',
       tokenUrl: 'Token URL',
       peopleUrl: 'People search URL',
       meetingUrl: 'OA meeting URL',
@@ -297,79 +452,29 @@ const enUS = {
       employeeNo: 'OA employee number',
     },
   },
-  meetingGatewaySettings: {
-    title: 'meeting-gateway server',
-    description:
-      'Persist the gateway origin, application id, client identity and public callback origin. This is not user OAuth binding. Saving does not verify the connection.',
-    savedNotVerified: 'Settings saved is not a live connection check.',
-    localFormatOnly:
-      'The page only checks HTTPS origin format locally. It does not call the gateway.',
-    identityUnavailable:
-      'Gateway identity token issuance is unavailable (GATEWAY_IDENTITY_TOKEN_UNAVAILABLE). clientId, client secret, resource and scopes are stored for that issuance and are not sent on save.',
-    queryUnavailable:
-      'HTTP queryMeetings and listParticipants are not implemented (upstream contract missing). Saving settings does not query meetings.',
-    testAdapter:
-      'Isolation test adapter is on for this process. It is a deployment switch, not a production-write control, and changing it here is not supported. Restart the process after changing MEETING_GATEWAY_TEST_ADAPTER.',
-    httpAdapter:
-      'This process uses the HTTP gateway adapter. Origin, application id and related fields are read at call time from saved settings, then env, then defaults.',
-    originAllowlist:
-      'Deployment origin allowlist (read-only). An admin-saved origin must already be in this list. Saving does not expand it.',
-    authorizationPaths:
-      'Deployment authorization path allowlist (read-only). Used when validating Tencent authorization URLs.',
-    allowlistEmpty:
-      'The deployment origin allowlist is empty, so a saved origin cannot be used until MEETING_GATEWAY_ORIGIN_ALLOWLIST (or config.yml) lists it.',
-    sourceSettings: 'Currently used from saved settings',
-    sourceEnv: 'Currently used from environment / config.yml (field not saved)',
-    sourceNone: 'Not configured',
-    runtimeOrigin: 'Origin in use: {{value}}',
-    runtimeApplication: 'Application id in use: {{value}}',
-    runtimeInstance: 'Instance id in use: {{value}}',
-    runtimeConfigured: 'Runtime configured: {{value}}',
-    yes: 'yes',
-    no: 'no',
-    hasSecret: 'Client secret: {{value}}',
-    secretSealed: 'sealed (not echoed)',
-    secretMissing: 'not stored',
-    clearSecret: 'Clear the stored client secret',
-    clearSecretHint:
-      'Leave the secret blank to keep the current value. Check this box to remove it. Changing the secret does not request a token.',
-    credentialVersion: 'Credential version {{value}}',
-    bindPage: 'User binding and OAuth',
-    saveSettings: 'Save gateway server',
-    settingsSaved:
-      'Gateway server settings saved. The secret is not returned. The connection was not verified.',
-    settingsFailed: 'Gateway server settings could not be saved.',
-    originHint:
-      'HTTPS origin of meeting-gateway. Must already be in the deployment allowlist. http, credentials, paths and unsafe hosts are rejected.',
-    applicationHint:
-      'Gateway application_id used when starting authorization. Not the Tencent corp/sdk id.',
-    clientIdHint:
-      'Gateway OAuth client_id for identity-token issuance. Distinct from applicationId and from Tencent corp_id / sdk_id. Issuance is currently unavailable.',
-    expectedHint:
-      'Expected application_id on listed connections. Must equal applicationId when both are set.',
-    resourceHint:
-      'Token resource the unpublished identity exchange must return unchanged. Stored only; not sent on save.',
-    scopesHint:
-      'Space-separated gateway OAuth scopes for unpublished identity issuance. Stored only.',
-    publicBaseHint:
-      'Public origin of this App for the OAuth return path. This is not the gateway origin and does not change the deployment allowlist.',
-    tencentHint:
-      'Tencent corp_id, sdk_id and callback ref are used only to validate authorization URLs. They are not the gateway client identity.',
-    instanceHint:
-      'Stable instance id stored on meeting source keys and bindings. Changing it isolates old bindings; they are kept for history and are not reused.',
-    fields: {
-      origin: 'Gateway origin',
-      applicationId: 'Application id',
-      expectedApplicationId: 'Expected application id',
-      clientId: 'Gateway client id',
-      clientSecret: 'Gateway client secret (write-only)',
-      resource: 'Token resource',
-      scopes: 'Scopes',
-      publicBaseUrl: 'Public callback origin',
-      tencentCorpId: 'Tencent corp_id',
-      tencentSdkId: 'Tencent sdk_id',
-      callbackRef: 'Gateway callback ref',
-      instanceId: 'Gateway instance id',
+  meetingOaSso: {
+    providerLabel: 'OA',
+    signingIn: 'Signing in with OA…',
+    openOaLogin: 'Open the OA login page',
+    errors: {
+      OA_SESSION_REQUIRED:
+        'Sign in to OA in this browser first, or use your username and password.',
+      OA_SESSION_INVALID:
+        'Your OA login has expired. Sign in to OA again, then retry.',
+      INVALID_SSO_REQUEST: 'The OA sign-in request was invalid. Try again.',
+      MEETING_ACCOUNT_UNAVAILABLE:
+        'This OA account cannot sign in to Meeting. Contact an administrator.',
+      SESSION_CONFLICT:
+        'Sign out of the current Meeting account before using OA login.',
+      OA_CONTRACT_ERROR:
+        'OA returned an unexpected validate response. Sign in at the same OA host configured for Meeting (intranet :2166), then retry; or use username and password.',
+      OA_VALIDATION_UNAVAILABLE:
+        'Meeting reached OA but validation failed (often HTTP 500). Use the same OA login host as MEETING_OA_SSO_VALIDATE_URL, refresh OA login, then retry; or use username and password.',
+      OA_SSO_NOT_ENABLED: 'OA single sign-on is not enabled.',
+      MEETING_SESSION_FAILED:
+        'Meeting sign-in could not be completed. Try again or use a password.',
+      OA_SSO_RATE_LIMITED: 'Too many attempts. Wait a moment and try again.',
+      unknown: 'OA sign-in failed. Try again or use a password.',
     },
   },
 };

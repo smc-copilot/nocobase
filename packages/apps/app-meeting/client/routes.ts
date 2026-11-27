@@ -22,6 +22,16 @@ const appRoutes: AppClientRouteContribution = defineAppRoutes([
     path: '/',
   },
   {
+    // Gateway continue_to uses /meetings/done (see contract.continueTo). A host
+    // redirect maps the absolute callback onto this basePath route so the
+    // session cookie under publicBasePath is sent.
+    auth: 'required',
+    authz: 'skip',
+    componentLoader: () => import('./pages/meetings/done.js'),
+    name: 'meetingsDone',
+    path: '/meetings/done',
+  },
+  {
     authz: { resource: { type: 'page', id: 'meetings' }, action: 'access' },
     auth: 'required',
     componentLoader: () => import('./pages/meetings/index.js'),

@@ -124,13 +124,11 @@ export default function MeetingOperationPage(): ReactElement {
         title={t('meetingOa.operationTitle')}
         description={t('meetingOa.operationDescription')}
       />
-      <Alert>
-        <AlertDescription>
-          {row?.isolationAdapter
-            ? t('meetingOa.isolationBanner')
-            : t('meetingOa.liveWriteBlocked')}
-        </AlertDescription>
-      </Alert>
+      {row?.isolationAdapter ? (
+        <Alert>
+          <AlertDescription>{t('meetingOa.isolationBanner')}</AlertDescription>
+        </Alert>
+      ) : null}
       {request.error ? (
         <MeetingUnavailable onRetry={() => request.reload()} />
       ) : null}

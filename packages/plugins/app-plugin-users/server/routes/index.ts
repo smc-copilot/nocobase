@@ -418,7 +418,7 @@ export const apiRoutes: AppApiRouteContribution<AppPluginApplication> =
           ...apiErrorResponses,
           400: apiErrorResponse(
             400,
-            'The password is too short or too long (`PASSWORD_TOO_SHORT`, `PASSWORD_TOO_LONG`), a role scope does not exist or is missing (`ROLE_SCOPE_NOT_FOUND`, `ROLE_SCOPE_REQUIRED`), a role value is invalid (`INVALID_ROLE_SCOPE_VALUE`), or a protected role cannot be assigned here (`PROTECTED_ROLE_ASSIGNMENT`).',
+            'The password is too short or too long (`PASSWORD_TOO_SHORT`, `PASSWORD_TOO_LONG`), the username is not an allowed sign-in name (`INVALID_USERNAME`), a role scope does not exist or is missing (`ROLE_SCOPE_NOT_FOUND`, `ROLE_SCOPE_REQUIRED`), a role value is invalid (`INVALID_ROLE_SCOPE_VALUE`), or a protected role cannot be assigned here (`PROTECTED_ROLE_ASSIGNMENT`).',
           ),
           409: apiErrorResponse(
             409,
@@ -507,7 +507,7 @@ export const apiRoutes: AppApiRouteContribution<AppPluginApplication> =
           ...apiErrorResponses,
           400: apiErrorResponse(
             400,
-            'A role scope refuses the caller acting on this account (`FAILED_PRECONDITION`, the reason the scope chose).',
+            'The username is not an allowed sign-in name (`INVALID_USERNAME`), or a role scope refuses the caller acting on this account (`FAILED_PRECONDITION`, the reason the scope chose).',
           ),
           404: apiErrorResponse(404),
           409: apiErrorResponse(

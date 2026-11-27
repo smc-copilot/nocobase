@@ -5,7 +5,6 @@ import { secretsServiceToken } from '@nocobase/app-server/secrets';
 import type { MeetingGatewayConfig } from '../config/meeting-gateway.js';
 import { createHttpMeetingGatewayAdapter } from '../meetings/gateway/http-client.js';
 import { createMeetingGatewaySecretsStores } from '../meetings/gateway/secrets.js';
-import { loadMeetingGatewayRuntime } from '../meetings/gateway/settings-service.js';
 import { TestMeetingGatewayAdapter } from '../meetings/gateway/test-adapter.js';
 import { meetingGatewayAdapterToken } from '../meetings/gateway/token.js';
 
@@ -16,6 +15,7 @@ export default class MeetingGatewayProvider extends ServiceProvider<Application>
     const config =
       this.app.config.get<MeetingGatewayConfig>('meetingGateway') ??
       ({
+        enabled: false,
         originAllowlist: [],
         scopes: [],
         authorizationPathAllowlist: [],
@@ -28,21 +28,9 @@ export default class MeetingGatewayProvider extends ServiceProvider<Application>
       config.testAdapter
         ? new TestMeetingGatewayAdapter()
         : createHttpMeetingGatewayAdapter({
-            resolveConfig: async () => {
-              if (
-                !this.app.container.has(databaseManagerToken) ||
-                !this.app.container.has(secretsServiceToken)
-              ) {
-                return config;
-              }
-              return loadMeetingGatewayRuntime({
-                connection: this.app.container
-                  .resolve(databaseManagerToken)
-                  .connection(),
-                secrets: this.app.container.resolve(secretsServiceToken),
-                deployment: config,
-              });
-            },
+            config,
+            // Connection material comes from env / config.yml only.
+            getConfig: async () => config,
           }),
     );
   }

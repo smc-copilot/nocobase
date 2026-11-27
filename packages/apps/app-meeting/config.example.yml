@@ -230,6 +230,17 @@ logging:
     # Set true for human-readable terminal output.
     pretty: false
 
+# Meeting OA HTTP endpoints (env-only; PUT /meetingOa/settings is rejected). Prefer HTTPS.
+# Intranet deployments that only expose http:// (for example http://api.smart-core.com.hk/oa/person)
+# must set allowInsecureHttp / MEETING_OA_ALLOW_INSECURE_HTTP. Without that flag, http:// fails as OA_NOT_CONFIGURED.
+# MEETING_OA_OAUTH_URL (oauth.do) is the token + liveVerified probe. MEETING_OA_BASE_API_URL (MeetingApi.do)
+# is business writes only. Also: MEETING_OA_CLIENT_ID, MEETING_OA_CLIENT_SECRET, MEETING_OA_PEOPLE_URL.
+# meetingOa:
+#   allowInsecureHttp: true
+#   oauthUrl: https://oa.example.test/pt/api/oauth.do
+#   baseApiUrl: https://oa.example.test/sqm/sysdata/sqmSysdataMeetingApi.do
+#   peopleUrl: https://oa.example.test/people
+
 # Meeting gateway origin is an allowlisted HTTPS URL. The application never accepts an arbitrary request URL.
 # Tokens and client secrets stay on the server. MEETING_GATEWAY_TEST_ADAPTER is isolation tests only.
 # Saved settings on Meeting integrations take precedence over these values when a field is stored.
@@ -247,3 +258,18 @@ logging:
 #   authorizationPathAllowlist:
 #     - /oauth
 #   publicBaseUrl: https://meetings.example.test
+
+# OA Ltpa single sign-on. Off by default until Cookie Domain and getTokenLoginName are confirmed (PRD-MEETING-OA-SSO-001).
+# MEETING_OA_SSO_ENABLED, MEETING_OA_SSO_VALIDATE_URL, MEETING_OA_SSO_COOKIE_NAME, MEETING_OA_SSO_TIMEOUT_MS,
+# MEETING_OA_SSO_OA_LOGIN_URL and MEETING_OA_SSO_VALIDATE_METHOD map the same fields from the environment.
+# Local PRE-02 Cookie checks require the Meeting host to share OA's parent domain, for example:
+#   hosts: 127.0.0.1 meeting.smart-core.com.hk
+#   app.publicOrigin / auth.trustedOrigins: http://meeting.smart-core.com.hk:13000
+# Opening via localhost or 127.0.0.1 will not receive a Domain=.smart-core.com.hk LtpaToken.
+# meetingOaSso:
+#   enabled: false
+#   validateUrl: https://oa.example.test/api/sys-authentication/loginService.do?method=getTokenLoginName
+#   cookieName: LtpaToken
+#   timeoutMs: 10000
+#   oaLoginUrl: https://oa.example.test
+#   validateMethod: GET

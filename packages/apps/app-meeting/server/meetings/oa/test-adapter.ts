@@ -1,6 +1,7 @@
 import type {
   FrozenOaPayload,
   MeetingOaAdapter,
+  OaPeopleSearchBy,
   OaCreateMeetingResult,
   OaPerson,
   OaTaskWriteResult,
@@ -38,7 +39,7 @@ export class TestMeetingOaAdapter implements MeetingOaAdapter {
   uploadSummaryCalls: FrozenOaPayload[] = [];
   createTaskCalls: FrozenOaPayload[] = [];
   tokenCalls: string[] = [];
-  searchCalls: string[] = [];
+  searchCalls: Array<{ query: string; by: OaPeopleSearchBy }> = [];
   private readonly tokenCache = new Map<
     string,
     { token: OaToken; fetchedAt: number }
@@ -72,20 +73,45 @@ export class TestMeetingOaAdapter implements MeetingOaAdapter {
     this.clock = () => Date.now();
   }
 
-  async searchPeople(query: string): Promise<readonly OaPerson[]> {
-    this.searchCalls.push(query);
-    const q = query.trim().toLowerCase();
-    if (q.length < 2) {
+  async searchPeople(
+    query: string,
+    by: OaPeopleSearchBy = 'name',
+  ): Promise<readonly OaPerson[]> {
+    const mode: OaPeopleSearchBy = by === 'employeeNo' ? 'employeeNo' : 'name';
+    this.searchCalls.push({ query, by: mode });
+    const q = query.trim();
+    if (mode === 'name' && q.length < 2) {
       throw new MeetingOaError(
         'INVALID_OA_QUERY',
         'OA people query must be at least 2 characters',
         'INVALID_ARGUMENT',
       );
     }
+    if (mode === 'employeeNo' && !q) {
+      throw new MeetingOaError(
+        'INVALID_OA_QUERY',
+        'OA employee number query must not be empty',
+        'INVALID_ARGUMENT',
+      );
+    }
+    if (mode === 'employeeNo') {
+      const matches = this.people.filter(
+        (row) => row.fd_no.toLowerCase() === q.toLowerCase(),
+      );
+      if (matches.length > 1) {
+        throw new MeetingOaError(
+          'INVALID_OA_QUERY',
+          'OA employee number lookup returned multiple people; cannot uniquely confirm.',
+          'INVALID_ARGUMENT',
+        );
+      }
+      return matches;
+    }
+    const needle = q.toLowerCase();
     return this.people.filter(
       (row) =>
-        row.fd_name.toLowerCase().includes(q) ||
-        row.fd_no.toLowerCase().includes(q),
+        row.fd_name.toLowerCase().includes(needle) ||
+        row.fd_no.toLowerCase().includes(needle),
     );
   }
 

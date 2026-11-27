@@ -1,16 +1,16 @@
 import { z } from 'zod';
+import type { RecordingDetailPublic } from '../meetings/content-service.js';
 import type {
   GatewayBindingPublic,
   GatewayConfigPublic,
   GatewayStartResult,
 } from '../meetings/gateway-service.js';
-import type { GatewaySettingsPublic } from '../meetings/gateway/settings-service.js';
+import type { QueryRunPublic } from '../meetings/query-run-service.js';
 import type {
   MeetingParticipantPublic,
   MeetingPublic,
   MeetingRecordingPublic,
 } from '../meetings/service.js';
-import type { QueryRunPublic } from '../meetings/query-run-service.js';
 
 export const MeetingId = z.string().min(1).max(64);
 
@@ -31,6 +31,9 @@ export const MeetingSchema: z.ZodType<MeetingPublic> = z
     endedAt: z.string().nullable(),
     participantFetchStatus: FetchStatusSchema,
     recordingFetchStatus: FetchStatusSchema,
+    queryAnomaly: z.string().nullable(),
+    importState: z.string(),
+    oaMeetingCreated: z.boolean(),
     createdAt: z.string(),
   })
   .meta({ ref: 'Meeting' });
@@ -48,32 +51,108 @@ export const MeetingListMeta = z.object({
 
 export const MeetingParams = z.object({ meetingId: MeetingId });
 
+export const RecordingDetailParams = z.object({
+  meetingId: MeetingId,
+  recordFileId: z.string().min(1).max(128),
+});
+
 export const MeetingParticipantSchema: z.ZodType<MeetingParticipantPublic> = z
   .object({
     id: MeetingId,
+    joinName: z.string().nullable(),
     displayName: z.string().nullable(),
     department: z.string().nullable(),
     joinedAt: z.string().nullable(),
+    jobTitle: z.string().nullable(),
+    isCorpMember: z.boolean().nullable(),
   })
   .meta({ ref: 'MeetingParticipant' });
 
 export const MeetingRecordingSchema: z.ZodType<MeetingRecordingPublic> = z
   .object({
     id: MeetingId,
+    recordFileId: z.string(),
     available: z.boolean(),
     format: z.string().nullable(),
     unavailableReason: z.string().nullable(),
+    sharingUrl: z.string().nullable(),
+    allowDownload: z.boolean().nullable(),
+    importability: z.string(),
   })
   .meta({ ref: 'MeetingRecording' });
 
+const RecordingDetailDocSchema = z.object({
+  fileType: z.string().nullable(),
+  downloadUrl: z.string().nullable(),
+  available: z.boolean(),
+});
+
+const RecordingDetailInfoSchema = z.object({
+  userId: z.string().nullable(),
+  topic: z.string().nullable(),
+  startAt: z.string().nullable(),
+  endAt: z.string().nullable(),
+});
+
+export const RecordingDetailSchema: z.ZodType<RecordingDetailPublic> = z
+  .object({
+    meetingId: MeetingId,
+    recordFileId: z.string(),
+    viewAddress: z.string().nullable(),
+    downloadAddress: z.string().nullable(),
+    downloadAddressFileType: z.string().nullable(),
+    audioAddress: z.string().nullable(),
+    audioAddressFileType: z.string().nullable(),
+    meetingSummary: z.array(RecordingDetailDocSchema),
+    aiMeetingTranscripts: z.array(RecordingDetailDocSchema),
+    aiMinutes: z.array(RecordingDetailDocSchema),
+    aiTopicMinutes: z.array(RecordingDetailDocSchema),
+    aiSpeakerMinutes: z.array(RecordingDetailDocSchema),
+    aiDsMinutes: z.array(RecordingDetailDocSchema),
+    recordInfo: z.array(RecordingDetailInfoSchema),
+    fetchedAt: z.string(),
+  })
+  .meta({ ref: 'RecordingDetail' });
+
 export const TotalMeta = z.object({ total: z.number() });
+
+export const GatewayOriginBody = z
+  .object({
+    enabled: z.boolean().optional(),
+    origin: z.string().nullable().optional(),
+    resource: z.string().nullable().optional(),
+    instanceId: z.string().nullable().optional(),
+    allowedOrigin: z.string().nullable().optional(),
+    contractRevision: z.string().nullable().optional(),
+    contractSha256: z.string().nullable().optional(),
+    bridgeHmacKey: z.string().nullable().optional(),
+    bridgeKeyringJson: z.string().nullable().optional(),
+  })
+  .meta({ ref: 'MeetingGatewayOriginBody' });
 
 export const GatewayConfigSchema: z.ZodType<GatewayConfigPublic> = z
   .object({
     configured: z.boolean(),
+    enabled: z.boolean(),
+    origin: z.string().nullable(),
+    resource: z.string().nullable(),
+    instanceId: z.string().nullable(),
+    allowedOrigin: z.string().nullable(),
+    contractRevision: z.string().nullable(),
+    hasContractSha256: z.boolean(),
+    hasBridgeHmacKey: z.boolean(),
+    hasBridgeKeyring: z.boolean(),
+    originSource: z.enum(['settings', 'env', 'none']),
     originConfigured: z.boolean(),
+    contractReady: z.boolean(),
+    missingContract: z.array(z.string()),
     applicationConfigured: z.boolean(),
-    identityIssuance: z.enum(['unavailable', 'test-adapter', 'stored']),
+    identityIssuance: z.enum([
+      'unavailable',
+      'test-adapter',
+      'stored',
+      'ready',
+    ]),
     testAdapter: z.boolean(),
     queryHttpContract: z.literal('unavailable'),
     disconnectRevokesUpstream: z.literal(false),
@@ -116,82 +195,46 @@ export const GatewayStartSchema: z.ZodType<GatewayStartResult> = z
   })
   .meta({ ref: 'MeetingGatewayStart' });
 
-const GatewayFieldSourceSchema = z.enum(['settings', 'env', 'none']);
-
-export const GatewaySettingsSchema: z.ZodType<GatewaySettingsPublic> = z
-  .object({
-    origin: z.string().nullable(),
-    applicationId: z.string().nullable(),
-    expectedApplicationId: z.string().nullable(),
-    clientId: z.string().nullable(),
-    resource: z.string().nullable(),
-    scopes: z.array(z.string()),
-    publicBaseUrl: z.string().nullable(),
-    tencentCorpId: z.string().nullable(),
-    tencentSdkId: z.string().nullable(),
-    callbackRef: z.string().nullable(),
-    instanceId: z.string().nullable(),
-    hasSecret: z.boolean(),
-    credentialVersion: z.number(),
-    sources: z.object({
-      origin: GatewayFieldSourceSchema,
-      applicationId: GatewayFieldSourceSchema,
-      expectedApplicationId: GatewayFieldSourceSchema,
-      clientId: GatewayFieldSourceSchema,
-      resource: GatewayFieldSourceSchema,
-      scopes: GatewayFieldSourceSchema,
-      publicBaseUrl: GatewayFieldSourceSchema,
-      tencentCorpId: GatewayFieldSourceSchema,
-      tencentSdkId: GatewayFieldSourceSchema,
-      callbackRef: GatewayFieldSourceSchema,
-      instanceId: GatewayFieldSourceSchema,
-      clientSecret: GatewayFieldSourceSchema,
-    }),
-    runtime: z.object({
-      origin: z.string().nullable(),
-      applicationId: z.string().nullable(),
-      clientId: z.string().nullable(),
-      instanceId: z.string(),
-      configured: z.boolean(),
-    }),
-    deployment: z.object({
-      originAllowlist: z.array(z.string()),
-      authorizationPathAllowlist: z.array(z.string()),
-      testAdapter: z.boolean(),
-      adapterKind: z.enum(['http', 'test']),
-      identityIssuance: z.enum(['unavailable', 'test-adapter']),
-      queryHttpContract: z.literal('unavailable'),
-      liveVerified: z.literal(false),
-      testAdapterRequiresRestart: z.literal(true),
-      originHotReload: z.literal(true),
-    }),
-    savedDoesNotVerify: z.literal(true),
-    saveDoesNotBind: z.literal(true),
-    updatedAt: z.string().nullable(),
+export const GatewayCompleteBody = z
+  .strictObject({
+    state: z.string().min(1).max(64),
+    // Optional continue_to callback fields. When the gateway embeds the
+    // authorization result in the redirect URL, the done page forwards them
+    // once so the server can seal the bridge without the hanging
+    // transaction_id poll. All-or-nothing when any field is present.
+    accessToken: z.string().min(4).max(4096).optional(),
+    tokenType: z.string().min(1).max(32).optional(),
+    expiresIn: z.number().int().min(1).max(86_400).optional(),
+    connectionId: z.string().uuid().optional(),
+    memberId: z.string().uuid().optional(),
+    status: z.string().min(1).max(64).optional(),
   })
-  .meta({ ref: 'MeetingGatewaySettings' });
-
-export const GatewaySettingsBody = z.strictObject({
-  origin: z.string().max(500).nullable().optional(),
-  applicationId: z.string().max(128).nullable().optional(),
-  expectedApplicationId: z.string().max(128).nullable().optional(),
-  clientId: z.string().max(128).nullable().optional(),
-  clientSecret: z.string().max(500).nullable().optional(),
-  resource: z.string().max(255).nullable().optional(),
-  scopes: z
-    .union([z.array(z.string().max(128)).max(32), z.string().max(2000)])
-    .nullable()
-    .optional(),
-  publicBaseUrl: z.string().max(500).nullable().optional(),
-  tencentCorpId: z.string().max(128).nullable().optional(),
-  tencentSdkId: z.string().max(128).nullable().optional(),
-  callbackRef: z.string().max(128).nullable().optional(),
-  instanceId: z.string().max(64).nullable().optional(),
-});
-
-export const GatewayCompleteBody = z.strictObject({
-  state: z.string().min(1).max(64),
-});
+  .superRefine((value, context) => {
+    const hasCallback =
+      value.accessToken !== undefined ||
+      value.tokenType !== undefined ||
+      value.expiresIn !== undefined ||
+      value.connectionId !== undefined ||
+      value.memberId !== undefined ||
+      value.status !== undefined;
+    if (!hasCallback) return;
+    for (const key of [
+      'accessToken',
+      'tokenType',
+      'expiresIn',
+      'connectionId',
+      'memberId',
+      'status',
+    ] as const) {
+      if (value[key] === undefined) {
+        context.addIssue({
+          code: 'custom',
+          path: [key],
+          message: 'Callback authorization fields must be sent together.',
+        });
+      }
+    }
+  });
 
 export const GatewaySelectBody = z.strictObject({
   connectionId: z.string().min(1).max(128),
@@ -293,6 +336,19 @@ export const MeetingImportBody = z.strictObject({
   recordFileId: z.string().min(1).max(128),
 });
 
+export const MeetingImportRunSchema = z
+  .object({
+    id: z.string(),
+    meetingId: MeetingId,
+    recordFileId: z.string(),
+    status: z.string(),
+    progress: z.number(),
+    errorCode: z.string().nullable(),
+    sourceHash: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .meta({ ref: 'MeetingImportRun' });
+
 const OaPersonSnapshotSchema = z.object({
   fd_no: z.string(),
   fd_name: z.string(),
@@ -388,6 +444,8 @@ export const OaIdentitySchema = z
     status: z.string().nullable(),
     canSync: z.boolean(),
     denyReason: z.string().nullable(),
+    liveVerified: z.boolean(),
+    liveVerifyReason: z.string().nullable(),
   })
   .meta({ ref: 'MeetingOaIdentity' });
 
@@ -398,9 +456,21 @@ export const OaMapBody = z.strictObject({
   status: z.enum(['active', 'revoked']).optional(),
 });
 
-export const OaPeopleQuery = z.object({
-  q: z.string().min(2).max(100),
-});
+export const OaPeopleQuery = z
+  .object({
+    q: z.string().min(1).max(100),
+    by: z.enum(['name', 'employeeNo']).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const by = value.by ?? 'name';
+    if (by === 'name' && value.q.trim().length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['q'],
+        message: 'Name search requires at least 2 characters',
+      });
+    }
+  });
 
 export const OaPersonSchema = z.object({
   fd_no: z.string(),
@@ -424,10 +494,11 @@ export const OaSettingsSchema = z
     writeContract: z.enum(['unavailable', 'test', 'configured']),
     tokenContract: z.enum(['unavailable', 'test', 'configured']),
     peopleContract: z.enum(['oaPeople.js', 'test']),
-    peopleUrlSource: z.enum(['settings', 'env', 'test', 'none']),
+    peopleUrlSource: z.enum(['env', 'test', 'none']),
     testAdapter: z.boolean(),
     isolationNote: z.string().nullable(),
-    liveVerified: z.literal(false),
+    liveVerified: z.boolean(),
+    liveVerifyReason: z.string().nullable(),
     updatedAt: z.string().nullable(),
   })
   .meta({ ref: 'MeetingOaSettings' });
