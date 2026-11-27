@@ -48,7 +48,11 @@ export interface IdentityHarness {
   readonly directory: { current: IdentityDirectory | undefined };
   /** A second, independent service graph over the same database (another "process"). */
   readonly spawnServices: () => IdentityServices;
-  readonly createLocalUser: (email: string, name?: string) => Promise<string>;
+  readonly createLocalUser: (
+    email: string,
+    name?: string,
+    username?: string,
+  ) => Promise<string>;
   readonly signIn: (email: string) => Promise<void>;
   readonly sessionCount: (userId: string) => Promise<number>;
   readonly bind: (subject: string, userId: string) => Promise<string>;
@@ -123,8 +127,15 @@ export async function createIdentityHarness(
     config,
     directory,
     spawnServices: spawn,
-    createLocalUser: async (email, name = email) =>
-      (await users.create({ name, email, password: PASSWORD })).id,
+    createLocalUser: async (email, name = email, username?: string) =>
+      (
+        await users.create({
+          name,
+          email,
+          password: PASSWORD,
+          ...(username ? { username } : {}),
+        })
+      ).id,
     signIn: async (email) => {
       const response = await auth.handler(
         new Request(`${BASE_URL}/sign-in/email`, {

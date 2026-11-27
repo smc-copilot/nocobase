@@ -1,0 +1,36 @@
+{
+  "schema_source": "live_probe_2026-11-21",
+  "openapi_available": false,
+  "required": ["username"],
+  "allowed_fields": [
+    "username",
+    "display_name",
+    "email",
+    "directory",
+    "password",
+    "role",
+    "role_name",
+    "permissions",
+    "workspace_root_dir",
+    "token_quota",
+    "max_agents",
+    "allowed_backend_types",
+    "create_default_expert",
+    "expert_template_source",
+    "expert_template_id"
+  ],
+  "v1_defaults": {
+    "directory": true,
+    "role": "user",
+    "create_default_expert": true,
+    "expert_template_source": "published"
+  },
+  "v1_forbidden": {
+    "password_when_directory_true": true,
+    "admin_system_role": true,
+    "unknown_additional_properties": true
+  },
+  "expert_template_source_enum": ["catalog", "published"],
+  "conflict_code": "USERNAME_TAKEN",
+  "conflict_http": 409
+}

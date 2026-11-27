@@ -1,0 +1,47 @@
+[
+  {
+    "id": "01M7VWN48SJ8R4GCFEF5SPK9ZR",
+    "slug": "ai",
+    "name": "AI 编程实战导师",
+    "description": "源自 ai-coding-guide 的 66 个 Claude Code 技巧与 9+ 款工具最佳实践，教你如何把 AI 编程工具（Claude Code / Cursor / Codex / Copilot / Aider 等）用出生产力：上下文管理、任务分解、提示词、调试、测试、安全与代码审查。",
+    "created_by": "19",
+    "creator_username": null,
+    "source_agent_id": "CC53N2",
+    "icon_name": "code",
+    "icon_url": "/api/experts/published/01M7VWN48SJ8R4GCFEF5SPK9ZR/avatar?v=1795158610",
+    "color": "#3b82f6",
+    "skill_count": 9,
+    "created_at": 1795158610,
+    "updated_at": 1795158610
+  },
+  {
+    "id": "01M7T8C1HYQJP658S3EVD6BC4N",
+    "slug": "ops-2",
+    "name": "Ops · 运维工程师2",
+    "description": "精通 Linux 运维、Kubernetes、Docker、数据库、网络诊断的 Shell 命令专家，专为 AI 终端设计。",
+    "created_by": "10",
+    "creator_username": null,
+    "source_agent_id": "S9AJDA",
+    "icon_name": "terminal",
+    "icon_url": "/api/experts/published/01M7T8C1HYQJP658S3EVD6BC4N/avatar?v=1795103786",
+    "color": "#16a34a",
+    "skill_count": 1,
+    "created_at": 1795103786,
+    "updated_at": 1795103786
+  },
+  {
+    "id": "01M7SH5HEGK5VC8MR87F2T185F",
+    "slug": "expert",
+    "name": "通用专家",
+    "description": "从空白模板开始：只包含一份可编辑的 AGENTS.md，可按需添加技能和子智能体。",
+    "created_by": "3",
+    "creator_username": null,
+    "source_agent_id": "BM6CXD",
+    "icon_name": "home",
+    "icon_url": "/experts/avatars/default.svg",
+    "color": "#6c757d",
+    "skill_count": 0,
+    "created_at": 1795079456,
+    "updated_at": 1795079456
+  }
+]

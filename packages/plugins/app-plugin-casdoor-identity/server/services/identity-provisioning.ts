@@ -116,6 +116,42 @@ export class IdentityProvisioningService {
       };
     }
     this.assertAdmitted(provider, identity);
+    const existingEmployee = await this.findUniqueEmployee(identity.employeeNo);
+    if (existingEmployee) {
+      if (toDateOrNull(existingEmployee.disabledAt) != null) {
+        throw identityError(
+          'PERMISSION_DENIED',
+          'ACCOUNT_DISABLED',
+          'The bound local user is disabled.',
+        );
+      }
+      const other = await this.runtime
+        .database()
+        .connection()
+        .query.selectFrom('externalIdentities')
+        .select(['id', 'providerSubject'])
+        .where('providerIssuer', '=', identity.issuer)
+        .where('localUserId', '=', existingEmployee.id)
+        .executeTakeFirst();
+      if (other && str(other.providerSubject) !== identity.subject) {
+        throw identityError(
+          'ALREADY_EXISTS',
+          'LOCAL_USER_ALREADY_BOUND',
+          'This local employee is already bound to a different Casdoor subject.',
+        );
+      }
+      return this.bindExisting(identity, provider, existingEmployee.id);
+    }
+    if (identity.employeeNo) {
+      const matches = await this.countEmployees(identity.employeeNo);
+      if (matches > 1) {
+        throw identityError(
+          'FAILED_PRECONDITION',
+          'EMPLOYEE_NO_AMBIGUOUS',
+          'The employee number matches more than one local username; bind it by hand.',
+        );
+      }
+    }
     return this.provision(identity, provider);
   }
 
@@ -292,6 +328,97 @@ export class IdentityProvisioningService {
       row.directoryAttributes as Readonly<Record<string, unknown>>,
       provider.claimMapping,
     );
+  }
+
+  /**
+   * Trusted employee-number match: `user.username` is stored lowercase, so the claim is
+   * compared after trim+lowercase. E-mail is never consulted here.
+   */
+  private async findUniqueEmployee(
+    employeeNo: string | undefined,
+  ): Promise<{ id: string; disabledAt: unknown } | undefined> {
+    const username = employeeNo?.trim().toLowerCase();
+    if (!username) return undefined;
+    const rows = await this.runtime
+      .database()
+      .connection()
+      .query.selectFrom('user')
+      .select(['id', 'disabledAt'])
+      .where('username', '=', username)
+      .where('deletedAt', 'is', null)
+      .execute();
+    if (rows.length !== 1) return undefined;
+    return { id: str(rows[0].id), disabledAt: rows[0].disabledAt };
+  }
+
+  private async countEmployees(employeeNo: string): Promise<number> {
+    const username = employeeNo.trim().toLowerCase();
+    const rows = await this.runtime
+      .database()
+      .connection()
+      .query.selectFrom('user')
+      .select('id')
+      .where('username', '=', username)
+      .where('deletedAt', 'is', null)
+      .execute();
+    return rows.length;
+  }
+
+  private async bindExisting(
+    identity: ExternalIdentityClaims,
+    provider: IdentityProviderRecord,
+    localUserId: string,
+  ): Promise<LoginBinding> {
+    const database = this.runtime.database();
+    const now = nowOf(this.runtime);
+    const bindingId = randomUUID();
+    try {
+      await database.transaction(async (connection) => {
+        await connection.query
+          .insertInto('externalIdentities')
+          .values({
+            id: bindingId,
+            providerIssuer: identity.issuer,
+            providerSubject: identity.subject,
+            localUserId,
+            lastSyncedAt: now,
+            lastSeenEnabled: true,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .execute();
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const winner = await this.findBinding(identity.issuer, identity.subject);
+      if (winner) {
+        return {
+          bindingId: winner.id,
+          localUserId: winner.localUserId,
+          created: false,
+        };
+      }
+      throw error;
+    }
+    await this.audit.record({
+      action: 'identity.bind_employee_no',
+      actorId: null,
+      targetType: 'externalIdentity',
+      targetId: bindingId,
+      details: {
+        providerId: provider.providerId,
+        issuer: identity.issuer,
+        subject: identity.subject,
+        employeeNo: identity.employeeNo,
+        localUserId,
+      },
+    });
+    await this.mapping.reconcileIdentity(
+      localUserId,
+      provider.providerId,
+      identity,
+    );
+    return { bindingId, localUserId, created: false };
   }
 
   private async provision(

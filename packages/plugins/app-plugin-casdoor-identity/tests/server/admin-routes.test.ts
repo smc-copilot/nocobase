@@ -4,6 +4,7 @@ import type { MiddlewareHandler } from 'hono';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  SETTINGS_EXTERNAL_IDENTITIES,
   SETTINGS_MAPPING,
   SETTINGS_SUBJECT_BINDINGS,
   SETTINGS_SYNC,
@@ -125,6 +126,21 @@ describe('identity administration routes (IAM-009, IAM-010)', () => {
           ],
         },
       ],
+      ['GET', '/externalIdentities'],
+      [
+        'POST',
+        '/externalIdentities/preview',
+        {
+          rows: [{ issuer: ISSUER, subject: 's', employeeNo: '10001' }],
+        },
+      ],
+      [
+        'POST',
+        '/externalIdentities/commit',
+        {
+          rows: [{ issuer: ISSUER, subject: 's', employeeNo: '10001' }],
+        },
+      ],
     ] as const) {
       const response = await send(method, path, body);
       expect(response.status, `${method} ${path}`).toBe(403);
@@ -139,6 +155,7 @@ describe('identity administration routes (IAM-009, IAM-010)', () => {
       `${SETTINGS_SYNC}:read`,
       `${SETTINGS_MAPPING}:read`,
       `${SETTINGS_SUBJECT_BINDINGS}:read`,
+      `${SETTINGS_EXTERNAL_IDENTITIES}:read`,
     );
     expect((await send('GET', '/syncStatus')).status).toBe(200);
     expect((await send('POST', '/syncRuns/preview', {})).status).toBe(403);
@@ -151,6 +168,14 @@ describe('identity administration routes (IAM-009, IAM-010)', () => {
           rows: [
             { connectionId: 'c', octopSubject: 's', externalIdentityId: 'e' },
           ],
+        })
+      ).status,
+    ).toBe(403);
+    expect((await send('GET', '/externalIdentities')).status).toBe(200);
+    expect(
+      (
+        await send('POST', '/externalIdentities/commit', {
+          rows: [{ issuer: ISSUER, subject: 's', employeeNo: '10001' }],
         })
       ).status,
     ).toBe(403);

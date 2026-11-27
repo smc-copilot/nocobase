@@ -1,0 +1,12 @@
+{
+  "agent_id": "8NVXZ8",
+  "kind": "expert",
+  "state": "starting",
+  "bootstrap_pending": true,
+  "published_expert_id": "01M7SH5HEGK5VC8MR87F2T185F",
+  "last_error": null,
+  "bootstrap_oracle": {
+    "completed": false,
+    "note": "pending may persist; never treat timeout as failure"
+  }
+}

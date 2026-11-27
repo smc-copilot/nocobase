@@ -1,3 +1,4 @@
+import { classifyError as classifyProtocolError } from '../../server/adapters/imap-smtp/errors.js';
 import {
   authenticationToken,
   type Auth,
@@ -17,6 +18,7 @@ import { MailIdempotencyConflictError } from '../../server/operations/send-mail.
 import { mailApiRoutes } from '../../server/routes/api.js';
 import {
   MailError,
+  MailProviderRequestError,
   mailInvalidArgument,
 } from '../../server/services/errors.js';
 import { mailServiceToken } from '../../server/tokens.js';
@@ -24,6 +26,136 @@ import type { MailService, MailSyncRunView } from '../../server/types.js';
 import serverLocales from '../../server/locales/index.js';
 
 describe('[API][SEC] mail API routes and permission boundaries', () => {
+  it.each([
+    [
+      'imapAuthenticationFailed',
+      'authentication',
+      'IMAP authentication failed',
+      'IMAP 认证失败',
+    ],
+    [
+      'smtpAuthenticationFailed',
+      'authentication',
+      'SMTP authentication failed',
+      'SMTP 认证失败',
+    ],
+    [
+      'smtpHostNotFound',
+      'network',
+      'SMTP host could not be resolved',
+      '无法解析 SMTP 主机',
+    ],
+    [
+      'imapConnectionRefused',
+      'network',
+      'IMAP connection was refused',
+      'IMAP 连接被拒绝',
+    ],
+    [
+      'smtpConnectionTimeout',
+      'timeout',
+      'SMTP connection timed out',
+      'SMTP 连接超时',
+    ],
+    [
+      'imapCertificateInvalid',
+      'configuration',
+      'IMAP certificate validation failed',
+      'IMAP 证书验证失败',
+    ],
+    [
+      'smtpTlsFailed',
+      'configuration',
+      'SMTP TLS negotiation failed',
+      'SMTP TLS 协商失败',
+    ],
+  ] as const)(
+    'localizes %s without exposing SDK text',
+    async (reasonCode, category, english, chinese) => {
+      const failure = new MailProviderRequestError({
+        code: 'EAUTH',
+        category,
+        retryable: false,
+        reasonCode,
+        message: 'Private SDK diagnostic password token',
+      });
+      const connectAccount: MailService['connectAccount'] = async () => {
+        if (category === 'authentication')
+          throw new MailError({
+            status: 'INVALID_ARGUMENT',
+            reason: 'MAIL_ACCOUNT_CREDENTIALS_INVALID',
+            message: 'The mail Provider rejected the account credentials.',
+            field: 'password',
+            cause: failure,
+          });
+        throw failure;
+      };
+      const router = await createRouter(true, service({ connectAccount }));
+      for (const [locale, expected] of [
+        ['en-US', english],
+        ['zh-CN', chinese],
+      ]) {
+        const response = await router.request('/api/mail/accounts/connect', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'accept-language': locale,
+          },
+          body: JSON.stringify({
+            type: 'imap-smtp',
+            name: 'test',
+            address: 'test@example.com',
+            password: 'test-password',
+            initialSyncReceivedAfter: '2026-01-01T00:00:00.000Z',
+          }),
+        });
+        const body = await response.json();
+        expect(body).toMatchObject({
+          error: {
+            localizedMessage: {
+              locale,
+              message: expect.stringContaining(expected),
+            },
+          },
+        });
+        expect(JSON.stringify(body)).not.toContain('Private SDK diagnostic');
+      }
+    },
+  );
+
+  it.each([
+    {
+      code: 'NO',
+      serverResponseCode: 'NONEXISTENT',
+      message: 'No such message',
+    },
+    { code: 'EENVELOPE', responseCode: 550, message: 'Recipient refused' },
+    new DOMException('Cancelled', 'AbortError'),
+  ])(
+    'keeps operation failures on the request-failed UI channel: %j',
+    async (cause) => {
+      const error = classifyProtocolError(cause, 'IMAP_GET_ATTACHMENT', 'imap');
+      const router = await createRouter(
+        true,
+        service({
+          getAttachment: async () => {
+            throw new MailProviderRequestError(error);
+          },
+        }),
+      );
+      const response = await router.request(
+        '/api/mail/accounts/account-1/messages/message-1/attachments/attachment-1',
+        { headers: { 'accept-language': 'en-US' } },
+      );
+      const body = await response.json();
+      expect(body.error.localizedMessage.message).toBe(
+        'The mail request could not be completed.',
+      );
+      expect(body.error.metadata.reasonCode).toBeUndefined();
+      expect(body.error.localizedMessage.message).not.toMatch(/connection/i);
+    },
+  );
+
   it('accepts a structured Unicode display name and rejects the second bulk recipient at its exact path', async () => {
     const send = vi.fn<MailService['sendMessage']>(async (_context, input) => ({
       id: 'submission',
@@ -182,6 +314,101 @@ describe('[API][SEC] mail API routes and permission boundaries', () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({
       data: { id: 'account-1', status: 'active' },
+    });
+  });
+
+  it('accepts sync folder selections, previews them and connects accounts waiting for one', async () => {
+    const mail = service();
+    const updateAccount = vi.spyOn(mail, 'updateAccount');
+    const preview = vi
+      .spyOn(mail, 'previewSyncFolders')
+      .mockResolvedValue({ removedMessageCount: 3 });
+    const connect = vi.spyOn(mail, 'connectAccount');
+    const router = await createRouter(true, mail);
+    const patch = (body: unknown) =>
+      router.request('/api/mail/accounts/account-1', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+    for (const syncFolderIds of [[], [''], 'INBOX'])
+      expect((await patch({ syncFolderIds })).status).toBe(400);
+    expect(updateAccount).not.toHaveBeenCalled();
+    expect((await patch({ syncFolderIds: ['INBOX', 'Archive'] })).status).toBe(
+      200,
+    );
+    expect((await patch({ syncFolderIds: null })).status).toBe(200);
+    expect(updateAccount.mock.calls.map(([, input]) => input)).toEqual([
+      { accountId: 'account-1', syncFolderIds: ['INBOX', 'Archive'] },
+      { accountId: 'account-1', syncFolderIds: null },
+    ]);
+
+    const previewed = await router.request(
+      '/api/mail/accounts/account-1/previewSyncFolders',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ syncFolderIds: ['INBOX'] }),
+      },
+    );
+    expect(previewed.status).toBe(200);
+    expect(await previewed.json()).toEqual({
+      data: { removedMessageCount: 3 },
+    });
+    expect(preview).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: 'user-1' }),
+      'account-1',
+      ['INBOX'],
+    );
+
+    const connectBody = (syncFolderIds: unknown) =>
+      JSON.stringify({
+        type: 'imap-smtp',
+        name: 'company-mail',
+        address: 'user@example.com',
+        password: 'secret',
+        initialSyncReceivedAfter: '2026-01-01T00:00:00Z',
+        syncFolderIds,
+      });
+    const rejected = await router.request('/api/mail/accounts/connect', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: connectBody(['INBOX']),
+    });
+    expect(rejected.status).toBe(400);
+    const connected = await router.request('/api/mail/accounts/connect', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: connectBody([]),
+    });
+    expect(connected.status).toBe(201);
+    expect(connect).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ syncFolderIds: [] }),
+    );
+
+    const listFolderChoices = vi
+      .spyOn(mail, 'listFolderChoices')
+      .mockResolvedValueOnce({
+        folders: [],
+        complete: false,
+        failed: true,
+        initialSyncCompleted: false,
+      });
+    const choices = await router.request(
+      '/api/mail/accounts/account-1/folders?includeUnsynced=true',
+    );
+    expect(listFolderChoices).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'account-1',
+    );
+    // A selection waits for a complete list, and a stopped listing is reported so it can be started again.
+    expect((await choices.json()).meta).toEqual({
+      total: 0,
+      complete: false,
+      failed: true,
+      initialSyncCompleted: false,
     });
   });
 
@@ -2147,7 +2374,14 @@ function service(overrides: Partial<MailService> = {}): MailService {
     listManagedFolders: async () => [],
     listManagedMessages: async () => ({ items: [] }),
     manageMessages: async () => ({ items: [], succeeded: 0, failed: 0 }),
+    previewSyncFolders: async () => ({ removedMessageCount: 0 }),
     listFolders: async () => [],
+    listFolderChoices: async () => ({
+      folders: [],
+      complete: true,
+      failed: false,
+      initialSyncCompleted: false,
+    }),
     listLabels: async () => [],
     listIdentities: async () => [],
     updateIdentity: async () => {

@@ -1,0 +1,37 @@
+{
+  "acceptance_id": "GOLDEN-AG-001",
+  "status": "PASS",
+  "requirement_ids": [
+    "REQ-AG-001",
+    "REQ-AG-003",
+    "REQ-AG-004",
+    "REQ-AG-005",
+    "REQ-AG-006",
+    "REQ-AG-007",
+    "REQ-AG-008",
+    "REQ-AG-009"
+  ],
+  "repository": "smc-copilot/nocobase",
+  "branch": "cursor/casdoor-octop-portal-e860",
+  "commit": "24324a7952dd8e5aaecdfd7192fd8faafd6a81a2",
+  "timestamp": "2026-11-21T16:34:05.025Z",
+  "command": "OCTOP_API_BASE_URL=... OCTOP_BEARER_TOKEN=... node scripts/golden-agent-grants-probe.mjs",
+  "exit_code": 0,
+  "oracle": {
+    "create_http": 201,
+    "duplicate_http": 409,
+    "deleted_http": 204,
+    "user_cleaned": true,
+    "contract_fingerprint_sha256": "0f1e6321b28d4239a8cd35586fce9f05a7a5fa3b578396d89fb5f36c315d189c"
+  },
+  "evidence_files": [
+    "octop_health.json",
+    "octop_roles.json",
+    "octop_permissions.json",
+    "octop_published_experts.json",
+    "octop_create_request.redacted.json",
+    "octop_create_response.redacted.json",
+    "octop_duplicate_create.json",
+    "octop_agents_after.json"
+  ]
+}

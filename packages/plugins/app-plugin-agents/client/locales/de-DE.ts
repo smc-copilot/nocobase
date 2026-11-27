@@ -192,6 +192,7 @@ const deDE: LocaleResource<typeof enUS> = {
       title: '{{name}} bearbeiten',
       enabled: 'Aktiviert',
       done: '{{name}} gespeichert',
+      model: 'Modell',
     },
     available: {
       open: 'Agent hinzufügen',
@@ -265,10 +266,6 @@ const deDE: LocaleResource<typeof enUS> = {
     save: 'Fähigkeiten speichern',
     descriptionOnline:
       'Handbücher, die der Agent liest, wenn eine Aufgabe mit ihrer Beschreibung übereinstimmt, in einer schreibgeschützten Sandbox auf dem Server.',
-    onlineScripts:
-      'Skripte werden für Online-Agents nicht ausgeführt: Der Agent kann sie lesen, nicht ausführen.',
-    skippedScripts: ': {{paths}}',
-    pathSeparator: ', ',
   },
   brief: {
     preview: 'Vorschau der vollständigen Eingabeaufforderung',
@@ -615,6 +612,15 @@ const deDE: LocaleResource<typeof enUS> = {
     pathHint:
       'Der Runner findet Coding-Tools über seinen eigenen PATH. Führen Sie in einem Terminal, in dem which codex / which claude funktioniert, nocobase-runner service install erneut aus und starten Sie den Dienst neu (oder führen Sie nocobase-runner start erneut aus), damit er den richtigen PATH erhält.',
     quota: {
+      ceilingReached: 'Quotenschwelle erreicht',
+      ceilingLabel: 'Pausieren bei',
+      ceilingInput: 'Neue {{tool}}-Aufträge ab Prozent Verbrauch pausieren',
+      ceilingSave: 'Anwenden',
+      ceilingInvalid:
+        'Eine ganze Prozentzahl von 1 bis 100 eingeben oder leer lassen.',
+      ceilingPaused:
+        'Ein Quotenfenster hat das Limit erreicht; betroffene neue Arbeit wartet auf die Rücksetzung oder eine Limitänderung.',
+
       workspaceStatus: {
         active: 'Die Arbeiten gehen weiter',
         ended: 'Beendet · Bereinigung erlaubt',
@@ -645,6 +651,9 @@ const deDE: LocaleResource<typeof enUS> = {
       workspaceSize: 'Arbeitsbereichsgröße: {{value}}',
       providers_one: '{{count}}-Anbieter mit Kontingent',
       providers_other: '{{count}}-Anbieter mit Kontingent',
+      models_one: '{{count}} Modell mit Kontingent',
+      models_other: '{{count}} Modelle mit Kontingent',
+      percent: '{{percent}}%',
       runColumns: {
         issue: 'Aufgabe / Unterhaltung',
         agent: 'Agent',
@@ -687,7 +696,7 @@ const deDE: LocaleResource<typeof enUS> = {
         'Löschen Sie sie erst, wenn das Kontingent wiederhergestellt ist. {{target}} bekommt sofort wieder Arbeit; ist das Kontingent noch erschöpft, markiert der nächste Lauf es erneut.',
       observed: 'Zuletzt gemeldet {{time}}',
       usedPercent: '{{percent}}% verwendet',
-      ok: 'OK',
+      noUsage: 'Noch keine Kontingentdaten',
       hint: 'Eine Markierung verschwindet zur bekannten Reset-Zeit oder sobald das Tool wieder verfügbares Kontingent meldet. Löschen Sie sie manuell erst, wenn das Kontingent wiederhergestellt ist. Nur der Laufzeitumgebungbesitzer und Administratoren können Markierungen löschen.',
     },
     workspaces: {
@@ -766,8 +775,8 @@ const deDE: LocaleResource<typeof enUS> = {
       offlineNever: 'Offline',
     },
     toolUsage: {
-      label: 'Wird vom Codierungstool ausgeführt',
-      item: '{{tool}} {{used}}/{{limit}}',
+      short: 'Läufe {{used}}/{{limit}}',
+      hint: 'Höchstens {{limit}} {{tool}}-Läufe gleichzeitig; {{used}} laufen gerade',
     },
     toolSlots: {
       label: 'Beschränkungen pro Codierungstool',
@@ -908,6 +917,8 @@ const deDE: LocaleResource<typeof enUS> = {
       show: 'Version {{version}}: Ein neuerer Runner ist verfügbar',
       available: 'Update verfügbar',
       badge: 'Aktualisierbar',
+      latest: 'Aktuell',
+      installed: 'Version {{version}}',
       title: 'Ein neuerer Runner für {{name}}',
       description:
         '{{version}} installiert, diese Anwendung bedient {{latest}}.',
@@ -979,6 +990,23 @@ const deDE: LocaleResource<typeof enUS> = {
     },
   },
   chat: {
+    thinking: {
+      levels: {
+        'provider-default': 'Standard',
+        none: 'Aus',
+        minimal: 'Minimal',
+        low: 'Niedrig',
+        medium: 'Mittel',
+        high: 'Hoch',
+        xhigh: 'Sehr hoch',
+      },
+      adjusted:
+        'Dieses Modell unterstützt die Denkstufe „{{requested}}“ nicht; für diese Antwort wurde „{{used}}“ verwendet.',
+      adjustedToDefault:
+        'Dieses Modell unterstützt die Denkstufe „{{requested}}“ nicht; für diese Antwort wurde die Standardeinstellung des Anbieters verwendet.',
+      warning:
+        'Das Modell hat die Denkstufe „{{level}}“ für diese Antwort möglicherweise nicht angewendet.',
+    },
     // Keep new guidance available in English until this locale is translated.
     executionFailed:
       'Die Ausführung ist fehlgeschlagen. Prüfen Sie die gespeicherte Unterhaltung, bevor Sie es erneut versuchen.',
@@ -1310,8 +1338,6 @@ const deDE: LocaleResource<typeof enUS> = {
     binaryFile: 'Binärdatei, {{size}}. Es kann hier nicht bearbeitet werden.',
     executable: 'Ausführbar',
     scriptBadge: 'Skript',
-    scriptsNote:
-      'Verfügt über Skripte: Online-Agents können sie lesen, aber niemals ausführen',
     compatibility: 'Kompatibilität: {{value}}',
     fileContent: 'Inhalt von {{path}}',
     export: 'Exportieren',
@@ -1346,8 +1372,7 @@ const deDE: LocaleResource<typeof enUS> = {
       name: 'Name',
       renameTitle: '„{{name}}“ umbenennen',
       conventional: {
-        scripts:
-          'Code-Agents können ausgeführt werden. Online-Agents lesen es nur.',
+        scripts: 'Code, den Agents ausführen können.',
         references: 'Dokumentationsagenten lesen, wenn sie es brauchen.',
         assets: 'Vorlagen, Bilder und andere Ressourcen.',
       },

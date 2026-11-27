@@ -1,3 +1,4 @@
+import type { ManagementEvent } from './management.js';
 import type {
   JsonObject,
   JsonValue,
@@ -11,6 +12,7 @@ export interface TransitionEntry {
   readonly lifecycle: string;
   readonly recordId: string;
   readonly transition: string;
+  readonly management?: ManagementEvent;
   /** Null on the entry `runtime.create()` writes: the record came from nothing. */
   readonly from: string | null;
   readonly to: string;
@@ -181,6 +183,10 @@ export interface RecordCondition {
   readonly versionField: string;
   /** Null matches a record written before it had a version. */
   readonly version: number | null;
+  readonly managementRevision?: {
+    readonly field: string;
+    readonly value: number | null;
+  };
 }
 
 /**
@@ -228,6 +234,8 @@ export interface EffectRunQuery {
    * have waited longest.
    */
   readonly continuationDueBy?: string;
+  /** Resume a due-ordered continuation scan strictly after this run. */
+  readonly continuationAfter?: { readonly id: string; readonly dueAt: string };
   readonly limit?: number;
 }
 
@@ -255,6 +263,14 @@ export interface IdleRecordQuery {
   readonly changedBefore: string;
   readonly limit: number;
   readonly after?: IdleRecordCursor;
+  /**
+   * Only records whose `field` equals `value`: the records one version of a
+   * process created, when several share the collection.
+   */
+  readonly match?: {
+    readonly field: string;
+    readonly value: string;
+  };
 }
 
 /** Where the previous page of {@link IdleRecordQuery} ended. */
@@ -311,6 +327,12 @@ export interface LifecycleStore {
    * callbacks have finished.
    */
   afterCommit(callback: () => void | Promise<void>): void;
+
+  /** Bounded primary-key batch, used by trigger pages. */
+  findRecords(
+    collection: string,
+    ids: readonly RecordId[],
+  ): Promise<LifecycleRecord[]>;
 
   findRecord(
     collection: string,
