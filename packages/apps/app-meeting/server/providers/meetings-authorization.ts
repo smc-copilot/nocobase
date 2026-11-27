@@ -43,7 +43,6 @@ export default class MeetingsAuthorizationProvider extends ServiceProvider<Appli
       ['meetingContents', 'Meeting contents'],
       ['meetingImportRuns', 'Meeting import runs'],
       ['meetingOaSettings', 'Meeting OA settings'],
-      ['meetingGatewaySettings', 'Meeting gateway settings'],
       ['meetingOaEmployeeMaps', 'Meeting OA employee maps'],
       ['meetingOaDelegations', 'Meeting OA delegations'],
       ['meetingOaDrafts', 'Meeting OA drafts'],

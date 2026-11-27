@@ -33,9 +33,6 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
   participantError: MeetingGatewayError | undefined;
   recordingError: MeetingGatewayError | undefined;
   importError: Error | undefined = undefined;
-  listConnectionsError: MeetingGatewayError | undefined;
-  listConnectionsHook:
-    ((input: { accessToken: string }) => Promise<void>) | undefined;
   queryCalls: unknown[] = [];
   startCalls: unknown[] = [];
 
@@ -51,8 +48,6 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     this.participantError = undefined;
     this.recordingError = undefined;
     this.importError = undefined;
-    this.listConnectionsError = undefined;
-    this.listConnectionsHook = undefined;
     this.queryCalls = [];
     this.startCalls = [];
   }
@@ -118,8 +113,6 @@ export class TestMeetingGatewayAdapter implements MeetingGatewayAdapter {
     accessToken: string;
   }): Promise<readonly GatewayConnection[]> {
     this.requireToken(input.accessToken);
-    if (this.listConnectionsHook) await this.listConnectionsHook(input);
-    if (this.listConnectionsError) throw this.listConnectionsError;
     return this.connections;
   }
 

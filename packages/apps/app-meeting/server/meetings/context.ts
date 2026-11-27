@@ -21,7 +21,6 @@ import { probeLiveOaOAuth } from './oa/live-session.js';
 import { MeetingOaOperationService } from './oa/operation-service.js';
 import { MeetingOaSettingsService } from './oa/settings-service.js';
 import { meetingOaAdapterToken } from './oa/token.js';
-import { MeetingGatewaySettingsService } from './gateway/settings-service.js';
 import { MeetingQueryRunService } from './query-run-service.js';
 import { MeetingQueryService } from './service.js';
 import { MeetingSupplementalFileService } from './supplemental-files.js';
@@ -32,13 +31,11 @@ export function currentUserId(
   return context.get('auth')?.user.id;
 }
 
-export function meetingReturnTo(
-  app: Application,
-  publicBaseUrl?: string,
-): string {
+export function meetingReturnTo(app: Application): string {
   const identity = app.config.get<AppIdentityConfig>('app');
+  const gateway = app.config.get<MeetingGatewayConfig>('meetingGateway');
   const origin = (
-    publicBaseUrl ||
+    gateway?.publicBaseUrl ||
     identity?.publicOrigin ||
     'http://localhost'
   ).replace(/\/$/, '');
@@ -67,21 +64,14 @@ export function createMeetingServices(
       oauthStateTtlMs: 300_000,
       testAdapter: false,
     } satisfies MeetingGatewayConfig);
-  const gatewaySettings = new MeetingGatewaySettingsService(
-    connection,
-    authz,
-    secrets,
-    config,
-    currentUserId(context),
-  );
   const gateway = new MeetingGatewayService(
     connection,
     authz,
     secrets,
     adapter,
-    () => gatewaySettings.resolveRuntime(),
+    config,
     currentUserId(context),
-    (runtime) => meetingReturnTo(app, runtime.publicBaseUrl),
+    meetingReturnTo(app),
   );
   const oaConfig =
     app.config.get<MeetingOaConfig>('meetingOa') ??
@@ -135,9 +125,7 @@ export function createMeetingServices(
       config,
       userId,
       config.testAdapter ? async () => undefined : undefined,
-      () => gatewaySettings.resolveRuntime(),
     ),
-    gatewaySettings,
     contents,
     identity,
     drafts,
