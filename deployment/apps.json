@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "apps": {
+    "enterprise-portal": {
+      "path": "packages/apps/app-enterprise-portal",
+      "packageName": "@superice/app-enterprise-portal"
+    },
+    "meeting": {
+      "path": "packages/apps/app-meeting",
+      "packageName": "@nocobase/app-meeting"
+    }
+  }
+}

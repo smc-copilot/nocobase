@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/smc-copilot/nocobase/deployment/apps.schema.json",
+  "title": "Business application catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "apps"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Catalog schema version. Unsupported versions must fail closed."
+    },
+    "apps": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "packageName"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^packages/apps/app-[a-z][a-z0-9-]*$",
+            "description": "Repository-relative application directory."
+          },
+          "packageName": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact package.json name for the application."
+          }
+        }
+      }
+    }
+  }
+}

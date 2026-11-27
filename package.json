@@ -37,6 +37,7 @@
     "deps:check": "node ./scripts/check-runtime-deps.mjs && node ./scripts/check-cross-package-paths.mjs",
     "db-tests:check": "node ./scripts/check-db-test-portability.mjs",
     "agents:check": "node ./scripts/check-agents-md.mjs",
+    "app-engineering:check": "node ./scripts/check-app-engineering.mjs",
     "openapi:check": "node ./scripts/check-openapi.mjs",
     "ui-library-catalog": "node ./scripts/gen-ui-library-catalog.mjs",
     "ui-library-catalog:check": "node ./scripts/gen-ui-library-catalog.mjs --check",

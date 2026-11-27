@@ -16,6 +16,10 @@ Prefer the `Local:` URL printed by `pnpm dev`. For an existing run without avail
 
 The exception is remote-backend proxy development (`PROXY_TARGET_URL`): no local Hono server runs, and the local Vite process is the application entry. In that mode, use the printed `Local:` URL; `APP_SERVER_PORT` selects that local entry port (default 5173).
 
+## Multi-app engineering (this fork)
+
+Business apps live under `packages/apps/app-*` and are registered only in `deployment/apps.json`. Resolve App key → path → package name through `scripts/lib/app-catalog.mjs` / `pnpm app-engineering:check`; unknown keys, missing paths, path escape, and package-name drift must fail before install or build, with no fallback to another app or template. Integration PRs target `develop/v3.0.1`. Details: [docs/engineering/README.md](docs/engineering/README.md) and [docs/engineering/application-architecture.md](docs/engineering/application-architecture.md).
+
 ## Markdown Paragraph Formatting
 
 Write each prose paragraph in Markdown source on a single physical line, including in README, AGENTS.md, Skills, and other documentation. Do not insert manual line breaks to fit a column width or put each sentence on its own line; let the editor or renderer wrap the text visually. Separate paragraphs with blank lines. Preserve line breaks required by Markdown structure, such as headings, list items, tables, blockquotes, and code blocks.
@@ -100,6 +104,7 @@ The workflow files under `.github/workflows/` still carry Chinese comments writt
 | [.agents/rules/http-api.md](.agents/rules/http-api.md)                                             | Adding or changing an `/api` route, API documentation, `pnpm openapi:check` failures                                                        |
 | [.agents/rules/cli-json-output.md](.agents/rules/cli-json-output.md)                               | Adding or changing `--json` output of a command-line tool                                                                                   |
 | [.agents/rules/docs-site.md](.agents/rules/docs-site.md)                                           | Changing anything under `docs/`                                                                                                             |
+| [docs/engineering/README.md](docs/engineering/README.md)                                           | Multi-app catalog, `develop/v3.0.1` integration, and business-app engineering contracts for this fork                                       |
 | [.agents/rules/typescript-libraries.md](.agents/rules/typescript-libraries.md)                     | Changing the exported API of a library package that emits declarations                                                                      |
 
 For application themes and UI styling, also read `packages/app/app-skills/skills/nocobase-app-development/references/frontend/references/theme.md` from the repository root.
