@@ -1,0 +1,239 @@
+import { Hono } from 'hono';
+import { createMiddleware } from 'hono/factory';
+import type { Application } from '@nocobase/app-server/application';
+import {
+  authenticationToken,
+  type AuthEnv,
+} from '@nocobase/app-plugin-authentication';
+import {
+  authorizationToken,
+  type AuthorizationEnv,
+} from '@nocobase/app-plugin-authorization/server';
+import { databaseManagerToken } from '@nocobase/db';
+import {
+  ApiError,
+  apiErrorHandler,
+  apiErrorResponses,
+  apiValidator,
+  dataResponse,
+  defineApiRoutes,
+  describeRoute,
+  listResponse,
+} from '@nocobase/app-server/router';
+import { AuthorizationDeniedError } from '@nocobase/authorization/core';
+import { MEETING_RESOURCE } from '../meetings/resources.js';
+import { createMeetingServices } from '../meetings/context.js';
+import { MeetingGatewayError } from '../meetings/gateway/errors.js';
+import {
+  MeetingListMeta,
+  MeetingListQuery,
+  MeetingParams,
+  MeetingParticipantSchema,
+  MeetingRecordingSchema,
+  MeetingSchema,
+  RecordingDetailParams,
+  RecordingDetailSchema,
+  TotalMeta,
+} from './schemas.js';
+
+const listDoc = describeRoute({
+  tags: ['Meetings'],
+  operationId: 'listMeetings',
+  summary: 'List meetings the caller may read',
+  description:
+    'Returns meetings granted to the signed-in user. The list is empty until a query run stores access. It does not call a meeting gateway by itself.',
+  responses: {
+    200: listResponse(MeetingSchema, MeetingListMeta),
+    ...apiErrorResponses,
+  },
+});
+
+const getDoc = describeRoute({
+  tags: ['Meetings'],
+  operationId: 'getMeeting',
+  summary: 'Read one granted meeting',
+  description:
+    'Hidden and missing meetings both return 403. The response never includes gateway credentials, source tokens or signed recording URLs.',
+  responses: {
+    200: dataResponse(MeetingSchema),
+    ...apiErrorResponses,
+  },
+});
+
+const participantsDoc = describeRoute({
+  tags: ['Meetings'],
+  operationId: 'listMeetingParticipants',
+  summary: 'List stored participants of a granted meeting',
+  description:
+    'Returns locally stored participants. Unknown names stay null rather than guessed. Hidden meetings return 403 without participant rows.',
+  responses: {
+    200: listResponse(MeetingParticipantSchema, TotalMeta),
+    ...apiErrorResponses,
+  },
+});
+
+const recordingsDoc = describeRoute({
+  tags: ['Meetings'],
+  operationId: 'listMeetingRecordings',
+  summary: 'List stored recordings of a granted meeting',
+  description:
+    'Returns availability of stored recordings. Signed download URLs are never stored or returned.',
+  responses: {
+    200: listResponse(MeetingRecordingSchema, TotalMeta),
+    ...apiErrorResponses,
+  },
+});
+
+const recordingDetailDoc = describeRoute({
+  tags: ['Meetings'],
+  operationId: 'getMeetingRecordingDetail',
+  summary: 'Read one stored recording from the gateway for preview',
+  description:
+    'Loads the signed-in binding and returns the gateway record-file detail for a recording already stored on this meeting. Signed URLs are not persisted. The response is not cacheable.',
+  responses: {
+    200: dataResponse(RecordingDetailSchema),
+    ...apiErrorResponses,
+  },
+});
+
+export const meetingsRoutes = defineApiRoutes((app: Application) => {
+  const router = new Hono<AuthEnv & AuthorizationEnv>();
+  router.onError((error, c) =>
+    apiErrorHandler(
+      error instanceof MeetingGatewayError ? error.toApiError() : error,
+      c,
+    ),
+  );
+  const requireMeetingRead = createMiddleware<AuthorizationEnv>(
+    async (context, next) => {
+      const decision = await context.get('authz').authorize({
+        resource: { type: 'composite', id: MEETING_RESOURCE },
+        action: 'read',
+      });
+      if (decision.effect === 'deny') {
+        throw new AuthorizationDeniedError(decision);
+      }
+      await next();
+    },
+  );
+  const protect = [
+    app.container.resolve(authenticationToken).required({ scopedKeys: false }),
+    app.container.resolve(authorizationToken).middleware(),
+    requireMeetingRead,
+  ] as const;
+  const requireViewRecording = createMiddleware<AuthorizationEnv>(
+    async (context, next) => {
+      const decision = await context.get('authz').authorize({
+        resource: { type: 'composite', id: MEETING_RESOURCE },
+        action: 'viewRecording',
+      });
+      if (decision.effect === 'deny') {
+        throw new AuthorizationDeniedError(decision);
+      }
+      await next();
+    },
+  );
+  const protectRecordingDetail = [
+    app.container.resolve(authenticationToken).required({ scopedKeys: false }),
+    app.container.resolve(authorizationToken).middleware(),
+    requireViewRecording,
+  ] as const;
+  router.use('/meetings', ...protect);
+  router.use('/meetings/:meetingId', ...protect);
+  router.use('/meetings/:meetingId/participants', ...protect);
+  router.use('/meetings/:meetingId/recordings', ...protect);
+  router.use(
+    '/meetings/:meetingId/recordings/:recordFileId/detail',
+    ...protectRecordingDetail,
+  );
+  if (!app.container.has(databaseManagerToken)) {
+    const unavailable = () => {
+      throw new ApiError({
+        status: 'UNAVAILABLE',
+        reason: 'DATABASE_UNAVAILABLE',
+        domain: 'meetings',
+        message: 'The database is unavailable.',
+      });
+    };
+    // Hidden because this fallback exists only while the database is unconfigured.
+    router.get('/meetings', describeRoute({ hide: true }), unavailable);
+    router.get(
+      '/meetings/:meetingId',
+      describeRoute({ hide: true }),
+      unavailable,
+    );
+    router.get(
+      '/meetings/:meetingId/participants',
+      describeRoute({ hide: true }),
+      unavailable,
+    );
+    router.get(
+      '/meetings/:meetingId/recordings',
+      describeRoute({ hide: true }),
+      unavailable,
+    );
+    router.get(
+      '/meetings/:meetingId/recordings/:recordFileId/detail',
+      describeRoute({ hide: true }),
+      unavailable,
+    );
+    return new Hono().route('/', router);
+  }
+  router.get(
+    '/meetings',
+    listDoc,
+    apiValidator('query', MeetingListQuery),
+    async (c) =>
+      c.json(
+        await createMeetingServices(app, c).meetings.list(c.req.valid('query')),
+      ),
+  );
+  router.get(
+    '/meetings/:meetingId/participants',
+    participantsDoc,
+    apiValidator('param', MeetingParams),
+    async (c) =>
+      c.json(
+        await createMeetingServices(app, c).meetings.listParticipants(
+          c.req.valid('param').meetingId,
+        ),
+      ),
+  );
+  router.get(
+    '/meetings/:meetingId/recordings',
+    recordingsDoc,
+    apiValidator('param', MeetingParams),
+    async (c) =>
+      c.json(
+        await createMeetingServices(app, c).meetings.listRecordings(
+          c.req.valid('param').meetingId,
+        ),
+      ),
+  );
+  router.get(
+    '/meetings/:meetingId/recordings/:recordFileId/detail',
+    recordingDetailDoc,
+    apiValidator('param', RecordingDetailParams),
+    async (c) => {
+      const params = c.req.valid('param');
+      const data = await createMeetingServices(
+        app,
+        c,
+      ).contents.previewRecordingDetail(params.meetingId, params.recordFileId);
+      c.header('Cache-Control', 'no-store');
+      return c.json({ data });
+    },
+  );
+  router.get(
+    '/meetings/:meetingId',
+    getDoc,
+    apiValidator('param', MeetingParams),
+    async (c) =>
+      c.json({
+        data: await createMeetingServices(app, c).meetings.get(
+          c.req.valid('param').meetingId,
+        ),
+      }),
+  );
+  return new Hono().route('/', router);
+});

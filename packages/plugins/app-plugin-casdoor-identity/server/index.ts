@@ -37,3 +37,17 @@ export type {
   ClaimMapping,
   ExternalIdentityClaims,
 } from './identity/model.js';
+export { ExternalIdentityBindingService } from './services/external-identity-bindings.js';
+export type {
+  ExternalIdentityBindingConflict,
+  ExternalIdentityBindingInput,
+  ExternalIdentityBindingPreview,
+  ExternalIdentityBindingPreviewRow,
+  ExternalIdentityBindingRecord,
+} from './services/external-identity-bindings.js';
+export {
+  SETTINGS_EXTERNAL_IDENTITIES,
+  SETTINGS_MAPPING,
+  SETTINGS_SUBJECT_BINDINGS,
+  SETTINGS_SYNC,
+} from './config.js';

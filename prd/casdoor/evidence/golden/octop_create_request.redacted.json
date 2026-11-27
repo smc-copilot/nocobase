@@ -1,0 +1,31 @@
+{
+  "username": "nb-golden-mwqmo6e9",
+  "display_name": "NB Golden Probe",
+  "email": null,
+  "directory": true,
+  "role": "user",
+  "permissions": [
+    "agent_plugins",
+    "connector_builtin",
+    "connector_enabled",
+    "experts",
+    "mbti",
+    "memory",
+    "skill_builtin",
+    "skill_packages",
+    "skills",
+    "subagents",
+    "tasks",
+    "token_usage",
+    "tools"
+  ],
+  "role_name": "用户",
+  "workspace_root_dir": null,
+  "token_quota": null,
+  "max_agents": 1,
+  "allowed_backend_types": ["docker"],
+  "create_default_expert": true,
+  "expert_template_source": "published",
+  "expert_template_id": "01M7SH5HEGK5VC8MR87F2T185F",
+  "note": "directory=true; password omitted"
+}

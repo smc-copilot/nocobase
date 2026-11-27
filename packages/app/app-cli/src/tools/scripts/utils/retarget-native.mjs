@@ -123,8 +123,13 @@ if (natives.length === 0) {
 }
 
 /** Runs a command and returns its result rather than throwing, so one failure can be reported in context. */
+// On Windows, `npm` / `npx` / `tar` resolve as `.cmd` shims; spawnSync without a shell returns ENOENT.
 const run = (command, args, options = {}) =>
-  spawnSync(command, args, { encoding: 'utf8', ...options });
+  spawnSync(command, args, {
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+    ...options,
+  });
 
 let failures = 0;
 

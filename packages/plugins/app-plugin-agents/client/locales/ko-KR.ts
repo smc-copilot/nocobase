@@ -183,6 +183,7 @@ const koKR: LocaleResource<typeof enUS> = {
       title: '{{name}} 편집',
       enabled: '사용',
       done: '{{name}}을(를) 저장했습니다',
+      model: '모델',
     },
     available: {
       open: 'Agent 추가',
@@ -255,10 +256,6 @@ const koKR: LocaleResource<typeof enUS> = {
     save: '스킬 저장',
     descriptionOnline:
       '작업이 설명과 맞을 때 Agent가 서버의 읽기 전용 샌드박스에서 읽는 매뉴얼입니다.',
-    onlineScripts:
-      '온라인 Agent는 스크립트를 실행하지 않습니다. 읽을 수는 있지만 실행할 수는 없습니다.',
-    skippedScripts: ': {{paths}}',
-    pathSeparator: ', ',
   },
   brief: {
     preview: '전체 프롬프트 미리 보기',
@@ -577,6 +574,14 @@ const koKR: LocaleResource<typeof enUS> = {
   },
   runtimes: {
     quota: {
+      ceilingReached: '할당량 임계값 도달',
+      ceilingLabel: '접수 중지 임계값',
+      ceilingInput: '{{tool}} 사용률이 지정한 비율에 도달하면 새 작업 중지',
+      ceilingSave: '적용',
+      ceilingInvalid: '1~100 사이의 정수 백분율을 입력하거나 비워 두세요.',
+      ceilingPaused:
+        '할당량 구간이 임계값에 도달했습니다. 해당 새 작업은 초기화되거나 임계값이 변경될 때까지 대기합니다.',
+
       workspaceStatus: {
         active: '작업 계속 중',
         ended: '종료 · 정리 가능',
@@ -607,6 +612,9 @@ const koKR: LocaleResource<typeof enUS> = {
       workspaceSize: '작업 공간 크기: {{value}}',
       providers_one: '할당량이 소진된 제공자 {{count}}개',
       providers_other: '할당량이 소진된 제공자 {{count}}개',
+      models_one: '할당량이 소진된 모델 {{count}}개',
+      models_other: '할당량이 소진된 모델 {{count}}개',
+      percent: '{{percent}}%',
       runColumns: {
         issue: '작업 / 대화',
         agent: 'Agent',
@@ -649,7 +657,7 @@ const koKR: LocaleResource<typeof enUS> = {
         '할당량이 복구된 것을 확인한 뒤에만 해제하세요. {{target}}은(는) 즉시 다시 작업을 받으며, 할당량이 아직 소진되어 있으면 다음 실행에서 다시 표시됩니다.',
       observed: '마지막 보고 {{time}}',
       usedPercent: '{{percent}}% 사용',
-      ok: '정상',
+      noUsage: '아직 할당량 데이터가 없습니다',
       hint: '표시는 알려진 초기화 시각이나 도구가 다시 남은 할당량을 보고하면 자동으로 해제됩니다. 할당량이 복구된 것을 확인한 뒤에만 직접 해제하세요. 실행 환경 소유자와 관리자만 표시를 해제할 수 있습니다.',
     },
     workspaces: {
@@ -717,8 +725,8 @@ const koKR: LocaleResource<typeof enUS> = {
       offlineNever: '오프라인',
     },
     toolUsage: {
-      label: '코딩 도구별 실행',
-      item: '{{tool}} {{used}}/{{limit}}',
+      short: '동시 {{used}}/{{limit}}',
+      hint: '{{tool}} 동시 실행 최대 {{limit}}개, 현재 {{used}}개',
     },
     toolSlots: {
       label: '코딩 도구별 한도',
@@ -858,6 +866,8 @@ const koKR: LocaleResource<typeof enUS> = {
       show: '버전 {{version}}: 새 runner를 사용할 수 있습니다',
       available: '업데이트 가능',
       badge: '업그레이드 가능',
+      latest: '최신',
+      installed: '버전 {{version}}',
       title: '{{name}}용 새 runner',
       description:
         '{{version}}이(가) 설치되어 있으며 이 애플리케이션은 {{latest}}을(를) 제공합니다.',
@@ -927,6 +937,23 @@ const koKR: LocaleResource<typeof enUS> = {
     },
   },
   chat: {
+    thinking: {
+      levels: {
+        'provider-default': '기본값',
+        none: '끄기',
+        minimal: '최소',
+        low: '낮음',
+        medium: '중간',
+        high: '높음',
+        xhigh: '매우 높음',
+      },
+      adjusted:
+        '이 모델은 사고 수준 "{{requested}}"을(를) 지원하지 않아 이번 답변에는 "{{used}}"을(를) 사용했습니다.',
+      adjustedToDefault:
+        '이 모델은 사고 수준 "{{requested}}"을(를) 지원하지 않아 이번 답변에는 제공업체 기본값을 사용했습니다.',
+      warning:
+        '모델이 이번 답변에 사고 수준 "{{level}}"을(를) 적용하지 않았을 수 있습니다.',
+    },
     executionFailed:
       '실행에 실패했습니다. 다시 시도하기 전에 저장된 대화를 확인하세요.',
     untitled: '제목 없는 대화',
@@ -1248,8 +1275,6 @@ const koKR: LocaleResource<typeof enUS> = {
     binaryFile: '바이너리 파일, {{size}}. 여기서 편집할 수 없습니다.',
     executable: '실행 가능',
     scriptBadge: '스크립트',
-    scriptsNote:
-      '스크립트 포함: 온라인 Agent는 읽을 수 있지만 실행하지 않습니다',
     compatibility: '호환성: {{value}}',
     fileContent: '{{path}}의 내용',
     export: '내보내기',
@@ -1281,8 +1306,7 @@ const koKR: LocaleResource<typeof enUS> = {
       name: '이름',
       renameTitle: '"{{name}}" 이름 바꾸기',
       conventional: {
-        scripts:
-          'Agent가 실행할 수 있는 코드입니다. 온라인 Agent는 읽기만 합니다.',
+        scripts: 'Agent가 실행할 수 있는 코드입니다.',
         references: 'Agent가 필요할 때 읽는 문서입니다.',
         assets: '템플릿, 이미지 및 기타 리소스입니다.',
       },

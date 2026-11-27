@@ -8,6 +8,8 @@ import type { RealtimeService } from '@nocobase/app-server/realtime';
 
 import { randomUUID } from 'node:crypto';
 
+import { APIError } from 'better-auth';
+
 import type { Auth, UserKind } from './auth.js';
 
 export interface AdministratedUser {
@@ -141,6 +143,7 @@ export class UserAdministrationError extends Error {
       | 'USER_IDENTITY_CONFLICT'
       | 'PASSWORD_TOO_SHORT'
       | 'PASSWORD_TOO_LONG'
+      | 'INVALID_USERNAME'
       | 'SERVICE_ACCOUNT_NO_PASSWORD',
     message: string,
   ) {
@@ -608,12 +611,35 @@ function normalizedEmail(value: string): string {
   return requiredText(value, 'User email').toLowerCase();
 }
 
+const USERNAME_INPUT_CODES = new Set([
+  'INVALID_USERNAME',
+  'USERNAME_TOO_SHORT',
+  'USERNAME_TOO_LONG',
+  'INVALID_DISPLAY_USERNAME',
+]);
+
+/**
+ * Better Auth rejects a username inside the user-create hook. That refusal is
+ * invalid input; leaving it uncaught turns the administration request into a 500.
+ */
 function throwIdentityConflict(error: unknown): never {
   if (isUniqueConstraintViolation(error)) {
     throw new UserAdministrationError(
       'USER_IDENTITY_CONFLICT',
       'A user with this email or username already exists',
     );
+  }
+  if (error instanceof APIError) {
+    const code = typeof error.body?.code === 'string' ? error.body.code : '';
+    if (code === 'USERNAME_IS_ALREADY_TAKEN') {
+      throw new UserAdministrationError(
+        'USER_USERNAME_CONFLICT',
+        'A user with this username already exists',
+      );
+    }
+    if (USERNAME_INPUT_CODES.has(code)) {
+      throw new UserAdministrationError('INVALID_USERNAME', error.message);
+    }
   }
   throw error;
 }

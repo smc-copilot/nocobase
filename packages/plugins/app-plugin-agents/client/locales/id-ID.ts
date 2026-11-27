@@ -187,6 +187,7 @@ const idID: LocaleResource<typeof enUS> = {
       title: 'Sunting {{name}}',
       enabled: 'Aktif',
       done: '{{name}} disimpan',
+      model: 'Model',
     },
     available: {
       open: 'Tambahkan Agent',
@@ -260,10 +261,6 @@ const idID: LocaleResource<typeof enUS> = {
     save: 'Simpan keterampilan',
     descriptionOnline:
       'Manual yang dibaca Agent ketika tugas cocok dengan deskripsinya, dalam kotak pasir hanya-baca di server.',
-    onlineScripts:
-      'Skrip tidak dijalankan untuk Agent online: Agent dapat membacanya, bukan menjalankannya.',
-    skippedScripts: ': {{paths}}',
-    pathSeparator: ', ',
   },
   brief: {
     preview: 'Pratinjau perintah lengkap',
@@ -594,6 +591,14 @@ const idID: LocaleResource<typeof enUS> = {
     pathHint:
       'Runner mencari alat pemrograman menggunakan PATH miliknya sendiri. Di terminal tempat which codex / which claude berfungsi, jalankan lagi nocobase-runner service install dan mulai ulang layanan (atau jalankan lagi nocobase-runner start) agar runner mendapat PATH yang benar.',
     quota: {
+      ceilingReached: 'Ambang kuota tercapai',
+      ceilingLabel: 'Jeda pada',
+      ceilingInput: 'Jeda pekerjaan {{tool}} baru pada persentase terpakai',
+      ceilingSave: 'Terapkan',
+      ceilingInvalid: 'Masukkan persentase bulat 1 hingga 100, atau kosongkan.',
+      ceilingPaused:
+        'Satu jendela kuota mencapai batas; pekerjaan baru terkait menunggu reset atau perubahan batas.',
+
       workspaceStatus: {
         active: 'Pekerjaan berlanjut',
         ended: 'Berakhir · pembersihan diperbolehkan',
@@ -624,6 +629,9 @@ const idID: LocaleResource<typeof enUS> = {
       workspaceSize: 'Ukuran ruang kerja: {{value}}',
       providers_one: 'Penyedia {{count}} dengan kuota',
       providers_other: 'Penyedia {{count}} dengan kuota',
+      models_one: '{{count}} model mencapai kuota',
+      models_other: '{{count}} model mencapai kuota',
+      percent: '{{percent}}%',
       runColumns: {
         issue: 'Tugas / percakapan',
         agent: 'Agen',
@@ -666,7 +674,7 @@ const idID: LocaleResource<typeof enUS> = {
         'Hapus hanya setelah memastikan kuota sudah pulih. {{target}} langsung menerima pekerjaan lagi; jika kuota masih habis, eksekusi berikutnya menandainya lagi.',
       observed: 'Terakhir dilaporkan {{time}}',
       usedPercent: '{{percent}}% digunakan',
-      ok: 'Oke',
+      noUsage: 'Belum ada data kuota',
       hint: 'Tanda hilang dengan sendirinya pada waktu reset yang diketahui, atau saat alat melaporkan kuota tersedia lagi. Hapus secara manual hanya setelah memastikan kuota sudah pulih. Hanya pemilik runtime dan administrator yang dapat menghapus tanda.',
     },
     workspaces: {
@@ -742,8 +750,8 @@ const idID: LocaleResource<typeof enUS> = {
       offlineNever: 'Luring',
     },
     toolUsage: {
-      label: 'Dijalankan dengan alat pengkodean',
-      item: '{{tool}} {{used}}/{{limit}}',
+      short: 'Jalan {{used}}/{{limit}}',
+      hint: 'Paling banyak {{limit}} jalannya {{tool}} sekaligus; {{used}} berjalan sekarang',
     },
     toolSlots: {
       label: 'Batasan per alat pengkodean',
@@ -881,6 +889,8 @@ const idID: LocaleResource<typeof enUS> = {
       show: 'Versi {{version}}: runner yang lebih baru tersedia',
       available: 'Pembaruan tersedia',
       badge: 'Dapat diupgrade',
+      latest: 'Terbaru',
+      installed: 'Versi {{version}}',
       title: 'Runner baru untuk {{name}}',
       description:
         'Menginstal {{version}}, aplikasi ini menyajikan {{latest}}.',
@@ -951,6 +961,23 @@ const idID: LocaleResource<typeof enUS> = {
     },
   },
   chat: {
+    thinking: {
+      levels: {
+        'provider-default': 'Bawaan',
+        none: 'Mati',
+        minimal: 'Minimal',
+        low: 'Rendah',
+        medium: 'Sedang',
+        high: 'Tinggi',
+        xhigh: 'Sangat tinggi',
+      },
+      adjusted:
+        'Model ini tidak mendukung tingkat berpikir "{{requested}}"; jawaban ini menggunakan "{{used}}".',
+      adjustedToDefault:
+        'Model ini tidak mendukung tingkat berpikir "{{requested}}"; jawaban ini menggunakan bawaan penyedia.',
+      warning:
+        'Model mungkin tidak menerapkan tingkat berpikir "{{level}}" pada jawaban ini.',
+    },
     // Keep new guidance available in English until this locale is translated.
     executionFailed:
       'Eksekusi gagal. Tinjau percakapan yang tersimpan sebelum mencoba lagi.',
@@ -1276,8 +1303,6 @@ const idID: LocaleResource<typeof enUS> = {
     binaryFile: 'File biner, {{size}}. Itu tidak dapat diedit di sini.',
     executable: 'Dapat dieksekusi',
     scriptBadge: 'Naskah',
-    scriptsNote:
-      'Memiliki skrip: Agent online dapat membacanya tetapi tidak pernah menjalankannya',
     compatibility: 'Kompatibilitas: {{value}}',
     fileContent: 'Konten {{path}}',
     export: 'Ekspor',
@@ -1310,7 +1335,7 @@ const idID: LocaleResource<typeof enUS> = {
       name: 'Nama',
       renameTitle: 'Ganti nama "{{name}}"',
       conventional: {
-        scripts: 'Agent kode dapat berjalan. Agent online hanya membacanya.',
+        scripts: 'Kode yang dapat dijalankan Agent.',
         references: 'Agent dokumentasi membaca saat mereka membutuhkannya.',
         assets: 'Templat, gambar, dan sumber daya lainnya.',
       },

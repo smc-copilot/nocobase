@@ -18,6 +18,7 @@ import {
 import {
   IDENTITY_SYNC_SCHEDULE_KEY,
   IDENTITY_SYNC_TARGET_TYPE,
+  SETTINGS_EXTERNAL_IDENTITIES,
   SETTINGS_MAPPING,
   SETTINGS_SUBJECT_BINDINGS,
   SETTINGS_SYNC,
@@ -45,6 +46,7 @@ describe('authz.settings registration', () => {
       [SETTINGS_SYNC, ['read', 'run']],
       [SETTINGS_MAPPING, ['read', 'configure']],
       [SETTINGS_SUBJECT_BINDINGS, ['read', 'import', 'revoke']],
+      [SETTINGS_EXTERNAL_IDENTITIES, ['read', 'import']],
     ] as const) {
       expect(
         authz.resourceTypes

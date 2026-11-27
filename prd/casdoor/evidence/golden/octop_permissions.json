@@ -1,0 +1,387 @@
+[
+  {
+    "key": "experts",
+    "category": "nav",
+    "label": "Experts",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "tasks",
+    "category": "nav",
+    "label": "Automation",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "token_usage",
+    "category": "nav",
+    "label": "Token usage",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "skills",
+    "category": "settings",
+    "label": "Installed skills",
+    "page": "personalization",
+    "page_label": "Personalization"
+  },
+  {
+    "key": "skill_builtin",
+    "category": "settings",
+    "label": "Built-in skills",
+    "page": "personalization",
+    "page_label": "Personalization"
+  },
+  {
+    "key": "skill_market",
+    "category": "settings",
+    "label": "Skill market",
+    "page": "personalization",
+    "page_label": "Personalization"
+  },
+  {
+    "key": "subagents",
+    "category": "settings",
+    "label": "Subagents",
+    "page": "personalization",
+    "page_label": "Personalization"
+  },
+  {
+    "key": "tools",
+    "category": "settings",
+    "label": "Tools",
+    "page": "personalization",
+    "page_label": "Personalization"
+  },
+  {
+    "key": "agent_plugins",
+    "category": "settings",
+    "label": "Plugins",
+    "page": "personalization",
+    "page_label": "Personalization"
+  },
+  {
+    "key": "mbti",
+    "category": "settings",
+    "label": "MBTI",
+    "page": "personalization",
+    "page_label": "Personalization"
+  },
+  {
+    "key": "memory",
+    "category": "settings",
+    "label": "Memory",
+    "page": "personalization",
+    "page_label": "Personalization"
+  },
+  {
+    "key": "channels",
+    "category": "settings",
+    "label": "Channels",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "connector_enabled",
+    "category": "settings",
+    "label": "Enabled connectors",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "connector_builtin",
+    "category": "settings",
+    "label": "Built-in connectors",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "connector_custom",
+    "category": "settings",
+    "label": "Custom connectors",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "skill_packages",
+    "category": "settings",
+    "label": "Skill Packages",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "knowledge_bases",
+    "category": "settings",
+    "label": "Knowledge Base",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "bridge",
+    "category": "settings",
+    "label": "Cloud collab",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "terminal",
+    "category": "control",
+    "label": "Workbench / Terminal",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "browser",
+    "category": "control",
+    "label": "Workbench / Browser",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "cloud",
+    "category": "control",
+    "label": "Workbench / Cloud",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "desktop",
+    "category": "control",
+    "label": "Remote Desktop",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "mobile",
+    "category": "control",
+    "label": "Remote Phone",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "users",
+    "category": "admin",
+    "label": "User management",
+    "page": "users",
+    "page_label": "Users"
+  },
+  {
+    "key": "user_roles",
+    "category": "admin",
+    "label": "Roles",
+    "page": "users",
+    "page_label": "Users"
+  },
+  {
+    "key": "user_groups",
+    "category": "admin",
+    "label": "Groups",
+    "page": "users",
+    "page_label": "Users"
+  },
+  {
+    "key": "sso_feishu",
+    "category": "admin",
+    "label": "Feishu login",
+    "page": "users",
+    "page_label": "Users"
+  },
+  {
+    "key": "sso_wecom",
+    "category": "admin",
+    "label": "WeCom login",
+    "page": "users",
+    "page_label": "Users"
+  },
+  {
+    "key": "sso_dingtalk",
+    "category": "admin",
+    "label": "DingTalk login",
+    "page": "users",
+    "page_label": "Users"
+  },
+  {
+    "key": "sso_oidc",
+    "category": "admin",
+    "label": "Generic OIDC",
+    "page": "users",
+    "page_label": "Users"
+  },
+  {
+    "key": "sso_ldap",
+    "category": "admin",
+    "label": "LDAP",
+    "page": "users",
+    "page_label": "Users"
+  },
+  {
+    "key": "app_config",
+    "category": "admin",
+    "label": "App config",
+    "page": "advanced",
+    "page_label": "App settings"
+  },
+  {
+    "key": "providers",
+    "category": "admin",
+    "label": "Cloud",
+    "page": "models",
+    "page_label": "Models"
+  },
+  {
+    "key": "ollama_models",
+    "category": "admin",
+    "label": "Ollama",
+    "page": "models",
+    "page_label": "Models"
+  },
+  {
+    "key": "onnx_models",
+    "category": "admin",
+    "label": "ONNX",
+    "page": "models",
+    "page_label": "Models"
+  },
+  {
+    "key": "storage_backends",
+    "category": "admin",
+    "label": "Storage",
+    "page": "",
+    "page_label": ""
+  },
+  {
+    "key": "plugins",
+    "category": "admin",
+    "label": "Installed plugins",
+    "page": "plugins",
+    "page_label": "Plugins"
+  },
+  {
+    "key": "plugin_market",
+    "category": "admin",
+    "label": "Plugin market",
+    "page": "plugins",
+    "page_label": "Plugins"
+  },
+  {
+    "key": "security_hitl",
+    "category": "admin",
+    "label": "Tool approval",
+    "page": "security",
+    "page_label": "Security"
+  },
+  {
+    "key": "security_filesystem",
+    "category": "admin",
+    "label": "File access",
+    "page": "security",
+    "page_label": "Security"
+  },
+  {
+    "key": "security_pii",
+    "category": "admin",
+    "label": "Sensitive data",
+    "page": "security",
+    "page_label": "Security"
+  },
+  {
+    "key": "security_tool_guard",
+    "category": "admin",
+    "label": "Command guard",
+    "page": "security",
+    "page_label": "Security"
+  },
+  {
+    "key": "security_skill_scan",
+    "category": "admin",
+    "label": "Skill scan",
+    "page": "security",
+    "page_label": "Security"
+  },
+  {
+    "key": "admin_console",
+    "category": "admin",
+    "label": "Audit log",
+    "page": "security",
+    "page_label": "Security"
+  },
+  {
+    "key": "envs",
+    "category": "admin",
+    "label": "Environment",
+    "page": "advanced",
+    "page_label": "App settings"
+  },
+  {
+    "key": "search",
+    "category": "admin",
+    "label": "Search engines",
+    "page": "models",
+    "page_label": "Models"
+  },
+  {
+    "key": "knowledge_settings",
+    "category": "admin",
+    "label": "Knowledge-base settings",
+    "page": "advanced",
+    "page_label": "App settings"
+  },
+  {
+    "key": "model_generation",
+    "category": "admin",
+    "label": "Generation models",
+    "page": "models",
+    "page_label": "Models"
+  },
+  {
+    "key": "model_decision",
+    "category": "admin",
+    "label": "Decision models",
+    "page": "models",
+    "page_label": "Models"
+  },
+  {
+    "key": "voice",
+    "category": "admin",
+    "label": "Voice models",
+    "page": "models",
+    "page_label": "Models"
+  },
+  {
+    "key": "observability",
+    "category": "admin",
+    "label": "Observability",
+    "page": "advanced",
+    "page_label": "App settings"
+  },
+  {
+    "key": "backup",
+    "category": "admin",
+    "label": "Backup & restore",
+    "page": "advanced",
+    "page_label": "App settings"
+  },
+  {
+    "key": "tls",
+    "category": "admin",
+    "label": "HTTPS",
+    "page": "advanced",
+    "page_label": "App settings"
+  },
+  {
+    "key": "update",
+    "category": "admin",
+    "label": "Updates",
+    "page": "advanced",
+    "page_label": "App settings"
+  },
+  {
+    "key": "captcha",
+    "category": "admin",
+    "label": "Login captcha",
+    "page": "advanced",
+    "page_label": "App settings"
+  }
+]

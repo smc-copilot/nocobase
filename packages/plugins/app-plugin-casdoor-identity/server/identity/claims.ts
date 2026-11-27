@@ -7,6 +7,7 @@ export const DEFAULT_CLAIM_MAPPING: Required<ClaimMapping> = {
   name: 'displayName',
   organization: 'owner',
   groups: 'groups',
+  employeeNo: 'employeeNo',
 };
 
 /** Reads a dotted path such as `properties.department` from an attribute bag. */
@@ -48,6 +49,9 @@ export function extractIdentity(
     asStrings(readClaim(attributes, paths.name))[0] ??
     asStrings(readClaim(attributes, 'name'))[0];
   const organization = asStrings(readClaim(attributes, paths.organization))[0];
+  const employeeNo =
+    asStrings(readClaim(attributes, paths.employeeNo))[0] ??
+    asStrings(readClaim(attributes, 'properties.employeeNo'))[0];
   return {
     issuer,
     subject,
@@ -55,6 +59,7 @@ export function extractIdentity(
     emailVerified: readClaim(attributes, paths.emailVerified) === true,
     ...(name ? { name } : {}),
     ...(organization ? { organization } : {}),
+    ...(employeeNo ? { employeeNo: employeeNo.trim() } : {}),
     groups: asStrings(readClaim(attributes, paths.groups)),
     attributes,
   };

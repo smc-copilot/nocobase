@@ -195,6 +195,7 @@ const frFR: LocaleResource<typeof enUS> = {
       title: 'Modifier {{name}}',
       enabled: 'Activé',
       done: '{{name}} enregistré',
+      model: 'Modèle',
     },
     available: {
       open: 'Ajouter un Agent',
@@ -274,10 +275,6 @@ const frFR: LocaleResource<typeof enUS> = {
     save: 'Sauvegarder les compétences',
     descriptionOnline:
       "Manuels que l'Agent lit lorsqu'une tâche correspond à sa description, dans un bac à sable en lecture seule sur le serveur.",
-    onlineScripts:
-      "Les scripts ne sont pas exécutés pour les Agents en ligne : l'Agent peut les lire, pas les exécuter.",
-    skippedScripts: ': {{paths}}',
-    pathSeparator: ', ',
   },
   brief: {
     preview: "Aperçu de l'invite complète",
@@ -620,6 +617,16 @@ const frFR: LocaleResource<typeof enUS> = {
     pathHint:
       'Le runner trouve les outils de développement avec son propre PATH. Dans un terminal où which codex / which claude fonctionne, relancez nocobase-runner service install et redémarrez le service (ou relancez nocobase-runner start) pour qu’il obtienne le bon PATH.',
     quota: {
+      ceilingReached: 'Seuil de quota atteint',
+      ceilingLabel: 'Suspendre à',
+      ceilingInput:
+        'Suspendre les nouveaux travaux {{tool}} au pourcentage utilisé',
+      ceilingSave: 'Appliquer',
+      ceilingInvalid:
+        'Saisissez un pourcentage entier de 1 à 100, ou laissez vide.',
+      ceilingPaused:
+        'Une fenêtre a atteint le plafond ; les nouveaux travaux concernés attendent la réinitialisation ou un changement du plafond.',
+
       workspaceStatus: {
         active: 'Les travaux continuent',
         ended: 'Terminé · nettoyage autorisé',
@@ -650,6 +657,10 @@ const frFR: LocaleResource<typeof enUS> = {
       workspaceSize: "Taille de l'espace de travail : {{value}}",
       providers_one: 'Fournisseur {{count}} au quota',
       providers_other: 'Fournisseurs {{count}} au quota',
+      models_one: '{{count}} modèle au quota',
+      models_other: '{{count}} modèles au quota',
+      models_many: '{{count}} modèles au quota',
+      percent: '{{percent}}%',
       runColumns: {
         issue: 'Tâche / conversation',
         agent: 'Agent',
@@ -692,7 +703,7 @@ const frFR: LocaleResource<typeof enUS> = {
         'Ne l’effacez qu’après avoir confirmé que le quota est rétabli. {{target}} retrouve du travail immédiatement ; si le quota est encore épuisé, la prochaine exécution le marque à nouveau.',
       observed: 'Dernier rapport {{time}}',
       usedPercent: '{{percent}}% utilisé',
-      ok: "D'accord",
+      noUsage: 'Aucune donnée de quota pour le moment',
       hint: 'Une marque s’efface d’elle-même à l’heure de réinitialisation connue, ou quand l’outil signale à nouveau du quota disponible. Ne l’effacez à la main qu’après avoir confirmé que le quota est rétabli. Seuls le propriétaire du runtime et les administrateurs peuvent effacer les marques.',
       marks_many: 'Quotas {{count}}',
       providers_many: 'Fournisseurs {{count}} au quota',
@@ -771,8 +782,8 @@ const frFR: LocaleResource<typeof enUS> = {
       offlineNever: 'Hors ligne',
     },
     toolUsage: {
-      label: "Exécuté par l'outil de codage",
-      item: '{{tool}} {{used}}/{{limit}}',
+      short: 'Exécutions {{used}}/{{limit}}',
+      hint: 'Au plus {{limit}} exécutions {{tool}} à la fois ; {{used}} en cours',
     },
     toolSlots: {
       label: 'Limites par outil de codage',
@@ -911,6 +922,8 @@ const frFR: LocaleResource<typeof enUS> = {
       show: 'Version {{version}} : un runner plus récent est disponible',
       available: 'Mise à jour disponible',
       badge: 'Évolutif',
+      latest: 'À jour',
+      installed: 'Version {{version}}',
       title: 'Un environnement d’exécution plus récent pour {{name}}',
       description: '{{version}} installée, cette application sert {{latest}}.',
       hint: "Il se met à jour lorsqu'aucun Agent n'est en cours d'exécution. Pour le mettre à jour maintenant, exécutez-le sur son hôte.",
@@ -982,6 +995,23 @@ const frFR: LocaleResource<typeof enUS> = {
     },
   },
   chat: {
+    thinking: {
+      levels: {
+        'provider-default': 'Par défaut',
+        none: 'Désactivé',
+        minimal: 'Minimal',
+        low: 'Faible',
+        medium: 'Moyen',
+        high: 'Élevé',
+        xhigh: 'Très élevé',
+      },
+      adjusted:
+        'Ce modèle ne prend pas en charge le niveau de réflexion « {{requested}} » ; cette réponse a utilisé « {{used}} ».',
+      adjustedToDefault:
+        'Ce modèle ne prend pas en charge le niveau de réflexion « {{requested}} » ; cette réponse a utilisé la valeur par défaut du fournisseur.',
+      warning:
+        'Le modèle n’a peut-être pas appliqué le niveau de réflexion « {{level}} » à cette réponse.',
+    },
     // Keep new guidance available in English until this locale is translated.
     executionFailed:
       'L’exécution a échoué. Relisez la conversation enregistrée avant de réessayer.',
@@ -1311,8 +1341,6 @@ const frFR: LocaleResource<typeof enUS> = {
     binaryFile: 'Fichier binaire, {{size}}. Il ne peut pas être modifié ici.',
     executable: 'Exécutable',
     scriptBadge: 'Scénario',
-    scriptsNote:
-      'Possède des scripts : les Agents en ligne peuvent les lire mais ne les exécutent jamais',
     compatibility: 'Compatibilité : {{value}}',
     fileContent: 'Contenu de {{path}}',
     export: 'Exporter',
@@ -1346,8 +1374,7 @@ const frFR: LocaleResource<typeof enUS> = {
       name: 'Nom',
       renameTitle: 'Renommer "{{name}}"',
       conventional: {
-        scripts:
-          "Les Agents de code peuvent s'exécuter. Les Agents en ligne le lisent uniquement.",
+        scripts: 'Du code que les Agents peuvent exécuter.',
         references:
           'Les Agents de documentation lisent quand ils en ont besoin.',
         assets: 'Modèles, images et autres ressources.',
