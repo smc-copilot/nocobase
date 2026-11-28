@@ -19,6 +19,16 @@ const resetState = vi.hoisted(() => ({
   retry: vi.fn(),
 }));
 
+vi.mock('../../client/auth/oa-ltpa/use-oa-ltpa-login.js', () => ({
+  useOaLtpaLogin: () => ({
+    status: { enabled: false },
+    statusLoading: false,
+    isPending: false,
+    error: undefined,
+    submit: vi.fn(),
+  }),
+}));
+
 vi.mock('@nocobase/app-plugin-authentication/client', () => ({
   useSignUpAvailable: () => true,
   usePasswordResetCapability: () => ({

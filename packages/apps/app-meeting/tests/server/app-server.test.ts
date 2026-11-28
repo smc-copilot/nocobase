@@ -371,11 +371,65 @@ describe('app server', () => {
   });
 
   it('routes authentication requests through the configured public auth URL', async () => {
+    const lookup = vi.fn();
+    const database = createMockDatabase([]);
+    const userRows = [{ username: 'another-user' }];
+    let matchingRows = userRows;
+    const selectQuery = {
+      where: (expression: (builder: typeof lookup) => unknown) => {
+        const predicate = expression(lookup);
+        if (typeof predicate !== 'function')
+          throw new Error('Unexpected auth predicate');
+        matchingRows = matchingRows.filter(
+          predicate as (row: (typeof userRows)[number]) => boolean,
+        );
+        return selectQuery;
+      },
+      select: () => selectQuery,
+      executeTakeFirst: () => Promise.resolve(matchingRows[0]),
+    };
+    lookup.mockImplementation((field, operator, value) => {
+      if (field !== 'username' || operator !== '=') {
+        throw new Error('Unexpected auth lookup');
+      }
+      return (row: (typeof userRows)[number]) => row.username === value;
+    });
+    const originalConnection = database.connection();
+    const selectFrom = vi.fn((table: string) => {
+      if (table === 'user') return selectQuery;
+      return originalConnection.query.selectFrom(table);
+    });
+    database.connection = (() => ({
+      query: { selectFrom },
+    })) as DatabaseManager['connection'];
     const app = createTestApp({
+      database,
       publicOrigin: 'http://localhost',
       publicBasePath: '/main',
     });
     const mounted = createPublicBasePathAdapter(app, '/main');
+
+    const missingUserResponse = await requestApp(
+      mounted,
+      'http://localhost/main/api/auth/sign-in/username',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          username: 'missing-user',
+          password: 'not-the-password',
+        }),
+      },
+    );
+    expect(missingUserResponse.status).toBe(401);
+    expect(selectFrom.mock.calls.filter(([table]) => table === 'user')).toEqual(
+      [['user']],
+    );
+    expect(lookup).toHaveBeenCalledExactlyOnceWith(
+      'username',
+      '=',
+      'missing-user',
+    );
 
     const response = await requestApp(
       mounted,
@@ -384,7 +438,7 @@ describe('app server', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          username: 'missing-user',
+          username: 'invalid!user',
           password: 'not-the-password',
         }),
       },

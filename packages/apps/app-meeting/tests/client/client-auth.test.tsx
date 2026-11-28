@@ -38,6 +38,18 @@ const passwordResetRequest = vi.hoisted(() => ({
   submit: vi.fn(),
 }));
 
+const oaLogin = vi.hoisted(() => ({
+  status: { enabled: false, oaLoginUrl: 'https://oa.example.invalid/login' },
+  statusLoading: false,
+  isPending: false,
+  error: undefined as string | undefined,
+  submit: vi.fn(),
+}));
+
+vi.mock('../../client/auth/oa-ltpa/use-oa-ltpa-login.js', () => ({
+  useOaLtpaLogin: () => oaLogin,
+}));
+
 vi.mock('@nocobase/app-plugin-authentication/client/actions', () => ({
   usePasswordLogin: () => passwordLoginAction,
   usePasswordRegistration: () => ({ isPending: false, submit: vi.fn() }),
@@ -67,11 +79,30 @@ function renderAt(path: string, page: ReactElement) {
 }
 
 describe('application authentication pages', () => {
+  it('offers OA login only when enabled and submits the OA action', () => {
+    oaLogin.status.enabled = true;
+    oaLogin.submit.mockClear();
+    try {
+      renderAt('/', <LoginPage />);
+      fireEvent.click(screen.getByRole('button', { name: 'Continue with OA' }));
+      expect(oaLogin.submit).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole('link', { name: 'Open the OA login page' }),
+      ).toHaveAttribute('href', 'https://oa.example.invalid/login');
+    } finally {
+      oaLogin.status.enabled = false;
+      oaLogin.submit.mockReset();
+    }
+  });
+
   it('wires the login form to the plugin authentication action', async () => {
     passwordLoginAction.submit.mockClear();
     renderAt('/', <LoginPage />);
 
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Continue with OA' }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Username or email'), {
       target: { value: 'alice' },
