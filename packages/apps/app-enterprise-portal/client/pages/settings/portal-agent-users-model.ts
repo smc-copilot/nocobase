@@ -29,7 +29,8 @@ export interface AgentGrantUser {
 
 export interface AgentGrantUserFilters {
   readonly appCode: string;
-  readonly department: string;
+  /** Casdoor group ids; empty means all departments. */
+  readonly departments: readonly string[];
   readonly sync: EmployeeSyncFilter;
   readonly query: string;
 }
@@ -116,11 +117,15 @@ export function filterAgentGrantUsers(
   const needle = filters.query.trim().toLowerCase();
   const appCode =
     filters.appCode === AGENT_GRANT_FILTER_ALL ? '' : filters.appCode;
-  const department =
-    filters.department === AGENT_GRANT_FILTER_ALL ? '' : filters.department;
+  const departments = filters.departments;
   return rows.filter((row) => {
     if (appCode && row.appCode !== appCode) return false;
-    if (department && !row.groups.includes(department)) return false;
+    if (
+      departments.length > 0 &&
+      !departments.some((department) => row.groups.includes(department))
+    ) {
+      return false;
+    }
     if (filters.sync === 'synced' && !row.accountExists) return false;
     if (filters.sync === 'unsynced' && row.accountExists) return false;
     if (!needle) return true;

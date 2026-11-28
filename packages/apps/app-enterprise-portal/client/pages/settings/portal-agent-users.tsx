@@ -7,6 +7,15 @@ import { PageContainer } from '#components/page-container';
 import { PageHeader } from '#components/page-header';
 import { Alert, AlertTitle } from '#components/ui/alert';
 import { Button } from '#components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '#components/ui/dropdown-menu';
 import { Input } from '#components/ui/input';
 import { RadioGroup, RadioGroupItem } from '#components/ui/radio-group';
 import {
@@ -24,6 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from '#components/ui/table';
+import { ChevronDownIcon } from 'lucide-react';
 import { SettingsError, SettingsLoading } from './shared.js';
 import { useSettingsData } from './hooks.js';
 import { PortalAgentGrantInstallDialog } from './portal-agent-grant-install-dialog.js';
@@ -90,9 +100,7 @@ export default function PortalAgentUsersPage(): ReactElement {
 
   const [syncFilter, setSyncFilter] = useState<EmployeeSyncFilter>('all');
   const [appFilter, setAppFilter] = useState(AGENT_GRANT_FILTER_ALL);
-  const [departmentFilter, setDepartmentFilter] = useState(
-    AGENT_GRANT_FILTER_ALL,
-  );
+  const [departmentFilter, setDepartmentFilter] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [selectedKey, setSelectedKey] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -121,7 +129,7 @@ export default function PortalAgentUsersPage(): ReactElement {
     () =>
       filterAgentGrantUsers(users, {
         appCode: appFilter,
-        department: departmentFilter,
+        departments: departmentFilter,
         sync: syncFilter,
         query,
       }),
@@ -146,19 +154,21 @@ export default function PortalAgentUsersPage(): ReactElement {
     ],
     [instances, t],
   );
-  const departmentItems = useMemo(
-    () => [
-      {
-        value: AGENT_GRANT_FILTER_ALL,
-        label: t('settings.portalAgentUsersDepartmentAll'),
-      },
-      ...departments.map((group) => ({
-        value: group,
-        label: formatGroupLabel(group),
-      })),
-    ],
-    [departments, t],
-  );
+  const departmentTriggerLabel =
+    departmentFilter.length === 0
+      ? t('settings.portalAgentUsersDepartmentAll')
+      : t('settings.portalAgentUsersDepartmentSelected', {
+          count: departmentFilter.length,
+        });
+
+  function toggleDepartment(groupId: string, checked: boolean): void {
+    setDepartmentFilter((current) => {
+      if (checked) {
+        return current.includes(groupId) ? current : [...current, groupId];
+      }
+      return current.filter((id) => id !== groupId);
+    });
+  }
 
   function selectRow(key: string): void {
     setSelectedKey(key);
@@ -279,28 +289,48 @@ export default function PortalAgentUsersPage(): ReactElement {
               ))}
             </SelectContent>
           </Select>
-          <Select
-            items={departmentItems}
-            value={departmentFilter}
-            onValueChange={(value) => {
-              const next = String(value ?? '');
-              if (next) setDepartmentFilter(next);
-            }}
-          >
-            <SelectTrigger
-              className='w-44'
-              aria-label={t('settings.portalAgentUsersDepartment')}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='h-9 w-44 justify-between font-normal'
+                  aria-label={t('settings.portalAgentUsersDepartment')}
+                />
+              }
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {departmentItems.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+              <span className='truncate'>{departmentTriggerLabel}</span>
+              <ChevronDownIcon className='size-4 opacity-50' />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align='end'
+              className='max-h-72 w-56 overflow-y-auto'
+            >
+              <DropdownMenuGroup>
+                {departmentFilter.length > 0 ? (
+                  <>
+                    <DropdownMenuItem onClick={() => setDepartmentFilter([])}>
+                      {t('settings.portalAgentUsersDepartmentClear')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
+                {departments.map((group) => (
+                  <DropdownMenuCheckboxItem
+                    key={group}
+                    checked={departmentFilter.includes(group)}
+                    onCheckedChange={(checked) =>
+                      toggleDepartment(group, checked === true)
+                    }
+                  >
+                    {formatGroupLabel(group)}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Input
             className='w-48'
             value={query}

@@ -296,6 +296,8 @@ const zhCN: AppResource = {
     portalAgentUsersInstanceAll: '全部实例',
     portalAgentUsersDepartment: '部门',
     portalAgentUsersDepartmentAll: '全部部门',
+    portalAgentUsersDepartmentSelected: '已选 {{count}} 个部门',
+    portalAgentUsersDepartmentClear: '清空部门',
     portalAgentUsersSearch: '搜索用户',
     portalAgentUsersColumnUser: '用户',
     portalAgentUsersColumnEmail: '邮箱',
