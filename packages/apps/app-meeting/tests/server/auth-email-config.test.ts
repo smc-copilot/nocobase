@@ -16,7 +16,7 @@ it('inherits private authentication sender mappings without changing other mail 
   const defaults = defaultAppConfigs({ auth });
   const config = new AppConfig();
   await config.loadAll();
-  config.mergeDefaults(defaults({} as never));
+  config.mergeDefaults(defaults({ env: {} } as never));
   config.defineSections(defaults.sections!);
   await config.loadSectionEnvironment({
     AUTH_EMAIL_PROVIDER: 'smtp',
@@ -65,7 +65,7 @@ it('ships a valid shared mailer example with private mapped credentials', async 
     const config = new AppConfig().loadFile(file);
     await config.loadAll();
     const defaults = defaultAppConfigs({ auth, mailers });
-    config.mergeDefaults(defaults({} as never));
+    config.mergeDefaults(defaults({ env: {} } as never));
     config.defineSections(defaults.sections!);
     await config.loadSectionEnvironment({
       MAILERS_SYSTEM_PASSWORD: 'synthetic-password',
@@ -87,7 +87,7 @@ it('accepts an entirely environment-configured shared sender without enabling re
   const config = new AppConfig();
   await config.loadAll();
   const defaults = defaultAppConfigs({ auth, mailers });
-  config.mergeDefaults(defaults({} as never));
+  config.mergeDefaults(defaults({ env: {} } as never));
   config.defineSections(defaults.sections!);
   await config.loadSectionEnvironment({
     MAILERS_DEFAULT: 'system',
@@ -116,7 +116,7 @@ it('loads the direct password-reset reference from the inherited environment map
   const config = new AppConfig();
   await config.loadAll();
   const defaults = defaultAppConfigs({ auth, mailers });
-  config.mergeDefaults(defaults({} as never));
+  config.mergeDefaults(defaults({ env: {} } as never));
   config.defineSections(defaults.sections!);
   await config.loadSectionEnvironment({
     AUTH_PASSWORD_RESET_MAILER: 'system',

@@ -87,6 +87,14 @@ pnpm build
 pnpm start
 ```
 
+## Optional Casdoor browser sign-in
+
+Meeting works without Casdoor. To enable the browser option, set `CASDOOR_BROWSER_SIGN_IN_ENABLED=true`, `CASDOOR_ISSUER`, `CASDOOR_CLIENT_ID`, and `CASDOOR_CLIENT_SECRET` in Meeting's server environment and restart. Use a dedicated confidential Casdoor client (not Portal's), the exact canonical HTTPS issuer without a trailing slash, and Meeting's actual HTTPS `APP_PUBLIC_ORIGIN`. Discovery must declare the exact issuer, same-origin HTTPS authorization, token and JWKS endpoints, RS256 and PKCE S256. Register the exact callback `<APP_PUBLIC_ORIGIN><APP_BASE_PATH>/api/auth/callback/casdoor` (omit the mount segment for a root-mounted app). If discovery fails at initialization, browser sign-in fails closed; password and OA sign-in remain available. Correct the provider configuration and restart the app.
+
+Apply the normal application database migration procedure before enrollment. Use the shared Casdoor Identity administration API to configure an enabled provider and a narrow admission policy, then preview and commit explicit issuer/subject bindings to approved existing human users. Keep the root/emergency account password-only and never enroll it. No account is selected by email or employee claim at sign-in; a valid browser callback cannot create users, change permissions or import passwords. Assign Meeting access separately through its existing role controls. Meeting does not accept Casdoor tokens as API credentials.
+
+Link to the Meeting application from Portal using its ordinary HTTPS URL, with no tokens or identity parameters. Meeting runs its own authorization-code flow and issues its own session. Before a real pilot, confirm first and repeat sign-in, unbound and unauthorized users, cancellation, local sign-out, local account deactivation and password fallback. Local sign-out does not sign out of Casdoor; deactivation by Casdoor alone does not revoke previously issued Meeting sessions. This change does not add central session revocation or directory synchronization.
+
 ## Project structure
 
 ```text

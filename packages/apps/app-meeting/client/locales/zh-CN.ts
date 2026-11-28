@@ -25,6 +25,10 @@ const zhCN: AppResource = {
     description:
       '绑定会议网关、查询已授权会议、编辑本地内容并准备 OA 草稿。在已发布写契约确认前，不会向真实 OA 写入。',
   },
+  meetingCasdoor: {
+    providerLabel: 'Casdoor',
+    signInFailed: 'Casdoor 登录未能完成，请重试或使用密码登录。',
+  },
   meetings: {
     title: '会议',
     empty: '还没有为你保存的会议。查询已绑定的网关后才会入库。',

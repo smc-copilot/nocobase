@@ -56,7 +56,17 @@ vi.mock('@nocobase/app-plugin-authentication/client/actions', () => ({
   usePasswordResetRequest: () => passwordResetRequest,
 }));
 
+const casdoor = vi.hoisted(() => ({ enabled: false, social: vi.fn() }));
+
+vi.mock('@nocobase/app-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nocobase/app-client')>()),
+  useClientApplication: () => ({
+    config: { public: { get: () => casdoor.enabled } },
+  }),
+}));
+
 vi.mock('@nocobase/app-plugin-authentication/client', () => ({
+  useAuthentication: () => ({ client: { signIn: { social: casdoor.social } } }),
   useSignUpAvailable: () => signUpAvailable.value,
   usePasswordResetCapability: () => resetCapability,
 }));
@@ -70,7 +80,7 @@ function renderAt(path: string, page: ReactElement) {
     <TestI18nProvider runtime={runtime}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route element={page} path={path} />
+          <Route element={page} path={path.split('?')[0]} />
           <Route element={<p>Login route</p>} path='/login' />
         </Routes>
       </MemoryRouter>
@@ -79,6 +89,56 @@ function renderAt(path: string, page: ReactElement) {
 }
 
 describe('application authentication pages', () => {
+  it.each([
+    ['/meetings?view=mine#upcoming', '/main/meetings?view=mine#upcoming'],
+    ['//other.example.test/collect', '/main/'],
+  ])(
+    'starts Casdoor with an application-local return for %s',
+    async (destination, expected) => {
+      casdoor.enabled = true;
+      casdoor.social.mockRejectedValue(new Error('secret provider detail'));
+      try {
+        renderAt(
+          `/?redirect=${encodeURIComponent(destination)}`,
+          <LoginPage />,
+        );
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Continue with Casdoor' }),
+        );
+        expect(casdoor.social).toHaveBeenCalledWith({
+          provider: 'casdoor',
+          callbackURL: expected,
+          errorCallbackURL: expect.stringMatching(
+            /^\/main\/login\?casdoor=failed/,
+          ),
+        });
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+          'Casdoor sign-in could not be completed',
+        );
+        expect(
+          screen.queryByText('secret provider detail'),
+        ).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled();
+      } finally {
+        casdoor.enabled = false;
+        casdoor.social.mockReset();
+      }
+    },
+  );
+
+  it('shows generic failure feedback after a Casdoor callback', () => {
+    casdoor.enabled = true;
+    try {
+      renderAt('/?casdoor=failed&error_description=raw-detail', <LoginPage />);
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Casdoor sign-in could not be completed',
+      );
+      expect(screen.queryByText('raw-detail')).not.toBeInTheDocument();
+    } finally {
+      casdoor.enabled = false;
+    }
+  });
+
   it('offers OA login only when enabled and submits the OA action', () => {
     oaLogin.status.enabled = true;
     oaLogin.submit.mockClear();

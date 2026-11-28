@@ -157,6 +157,7 @@ export function createCasdoorCredentialResolver(
     if (!presented) return undefined;
 
     const config = options.config() ?? {};
+    if (config.accessTokenEnabled === false) return undefined;
     if (
       !presented.dedicated &&
       !bearerClaimsOurIssuer(presented.token, config.issuer)

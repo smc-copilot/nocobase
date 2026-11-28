@@ -63,12 +63,23 @@ export async function ensureCasdoorBrowserIdentity(input: {
   readonly attributes: Readonly<Record<string, unknown>>;
   readonly auth: Auth;
   readonly provisioning: IdentityProvisioningService;
+  readonly requireExistingBinding?: boolean;
+  readonly allowLocalUser?: (userId: string) => Promise<boolean>;
 }): Promise<BrowserLoginProfile> {
-  const binding = await input.provisioning.onLogin({
-    issuer: input.issuer,
-    subject: input.subject,
-    attributes: input.attributes,
-  });
+  const binding = await input.provisioning.onLogin(
+    {
+      issuer: input.issuer,
+      subject: input.subject,
+      attributes: input.attributes,
+    },
+    { requireExistingBinding: input.requireExistingBinding },
+  );
+  if (
+    input.allowLocalUser &&
+    !(await input.allowLocalUser(binding.localUserId))
+  ) {
+    throw new Error('This local account cannot use Casdoor browser sign-in.');
+  }
 
   const context = await input.auth.administrationContext();
   const existing = await context.internalAdapter.findAccountByKey({

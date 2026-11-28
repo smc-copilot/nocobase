@@ -80,13 +80,19 @@ export class IdentityProvisioningService {
    * provider's admission policy admits the identity. Never invents a binding for an identity the
    * policy does not admit, and a provider without an admission policy admits nobody.
    */
-  public onLogin(token: VerifiedToken): Promise<LoginBinding> {
+  public onLogin(
+    token: VerifiedToken,
+    options?: { readonly requireExistingBinding?: boolean },
+  ): Promise<LoginBinding> {
     return this.locks.run(`${token.issuer}\n${token.subject}`, () =>
-      this.onLoginLocked(token),
+      this.onLoginLocked(token, options?.requireExistingBinding === true),
     );
   }
 
-  private async onLoginLocked(token: VerifiedToken): Promise<LoginBinding> {
+  private async onLoginLocked(
+    token: VerifiedToken,
+    requireExistingBinding: boolean,
+  ): Promise<LoginBinding> {
     // A disabled or missing provider must refuse every login, including identities that
     // already have a local binding (I01). Never fall through to "compat" reuse.
     const provider = await this.providers.findEnabledByIssuer(token.issuer);
@@ -108,12 +114,21 @@ export class IdentityProvisioningService {
       this.assertAdmitted(provider, identity);
       await this.assertLocalUserActive(existing.localUserId);
       await this.assertDirectorySnapshotFresh(existing.localUserId);
-      await this.reuse(existing, identity, provider);
+      // A pre-bound-only browser integration neither updates the local profile nor grants permissions on login.
+      if (!requireExistingBinding)
+        await this.reuse(existing, identity, provider);
       return {
         bindingId: existing.id,
         localUserId: existing.localUserId,
         created: false,
       };
+    }
+    if (requireExistingBinding) {
+      throw identityError(
+        'PERMISSION_DENIED',
+        'SUBJECT_BINDING_REQUIRED',
+        'No local user is bound to this external subject.',
+      );
     }
     this.assertAdmitted(provider, identity);
     const existingEmployee = await this.findUniqueEmployee(identity.employeeNo);

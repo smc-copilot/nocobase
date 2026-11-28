@@ -6,6 +6,8 @@
  */
 export interface CasdoorIdentityConfig {
   readonly issuer?: string;
+  /** Set false for applications that use Casdoor exclusively as a browser sign-in provider. */
+  readonly accessTokenEnabled?: boolean;
   readonly audience?: string | readonly string[];
   /** Absolute JWKS URL, for example `https://sso.example.com/.well-known/jwks`. */
   readonly jwksUri?: string;

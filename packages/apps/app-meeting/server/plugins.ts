@@ -19,6 +19,7 @@ import {
 import scheduler from '@nocobase/app-plugin-scheduler/server';
 import file from '@nocobase/app-plugin-file/server';
 import mail from '@nocobase/app-plugin-mail/server';
+import casdoorIdentity from '@nocobase/app-plugin-casdoor-identity/server';
 
 const serverPlugins: AppServerPlugins = defineServerPlugins([
   concurrency,
@@ -38,6 +39,7 @@ const serverPlugins: AppServerPlugins = defineServerPlugins([
   scheduler,
   mail,
   foundation,
+  casdoorIdentity,
 ]);
 
 export default serverPlugins;

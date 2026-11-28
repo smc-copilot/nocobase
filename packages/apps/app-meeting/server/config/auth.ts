@@ -6,7 +6,9 @@ import {
 } from '@nocobase/app-plugin-authentication/server';
 import { bearer, deviceAuthorization, username } from 'better-auth/plugins';
 
+import { meetingCasdoorBrowserAuth } from '../auth/casdoor.js';
 import { oaLtpaAuth } from '../auth/oa-ltpa/plugin.js';
+import { readMeetingCasdoorBrowserConfig } from './casdoor-identity.js';
 
 /**
  * The command-line clients that may sign in through the browser (`deviceAuthorization()`): `nocobase-cli`, the id
@@ -22,31 +24,45 @@ export function isMeetingUsername(username: string): boolean {
 // Select a named sender with passwordReset.mailer; defineAuthConfig retains AUTH_EMAIL_* for legacy inline senders.
 // Automatic recovery requires passwordReset.enabled: true; leave the switch absent for custom callback compatibility.
 const auth: AppConfigFactory<AuthConfig> = defineAuthConfig({
-  defaults: {
-    plugins: [
-      username({
-        displayUsername: false,
-        // Sign-in names include employee ids (`smc-sz-hr21007`) and display
-        // names written in any language. Better Auth's default allows only
-        // ASCII letters, digits, `_` and `.`.
-        usernameValidator: isMeetingUsername,
-      }),
-      apiKey(),
-      // A CLI signs in through the browser (RFC 8628): it shows a code the person approves on `/device`, below the
-      // application's base path, and receives a session token it sends as `Authorization: Bearer` (`bearer()`).
-      deviceAuthorization({
-        verificationUri: '/device',
-        expiresIn: '10m',
-        interval: '5s',
-        validateClient: (clientId) => CLI_CLIENT_IDS.includes(clientId),
-      }),
-      bearer(),
-      // OA Ltpa SSO (PRD-MEETING-OA-SSO-001). Remains inert until meetingOaSso.enabled and validateUrl are set.
-      oaLtpaAuth(),
-    ],
-    emailAndPassword: { enabled: true, autoSignIn: true },
-    session: { storeSessionInDatabase: true },
-    account: { encryptOAuthTokens: true },
+  defaults: (runtime) => {
+    const casdoor = readMeetingCasdoorBrowserConfig(runtime.env);
+    return {
+      plugins: [
+        username({
+          displayUsername: false,
+          // Sign-in names include employee ids (`smc-sz-hr21007`) and display
+          // names written in any language. Better Auth's default allows only
+          // ASCII letters, digits, `_` and `.`.
+          usernameValidator: isMeetingUsername,
+        }),
+        apiKey(),
+        // A CLI signs in through the browser (RFC 8628): it shows a code the person approves on `/device`, below the
+        // application's base path, and receives a session token it sends as `Authorization: Bearer` (`bearer()`).
+        deviceAuthorization({
+          verificationUri: '/device',
+          expiresIn: '10m',
+          interval: '5s',
+          validateClient: (clientId) => CLI_CLIENT_IDS.includes(clientId),
+        }),
+        bearer(),
+        // OA Ltpa SSO (PRD-MEETING-OA-SSO-001). Remains inert until meetingOaSso.enabled and validateUrl are set.
+        oaLtpaAuth(),
+        ...(casdoor
+          ? [meetingCasdoorBrowserAuth(casdoor, () => runtime.app)]
+          : []),
+      ],
+      emailAndPassword: { enabled: true, autoSignIn: true },
+      session: { storeSessionInDatabase: true },
+      account: {
+        encryptOAuthTokens: true,
+        ...(casdoor
+          ? {
+              accountLinking: { enabled: false },
+              updateAccountOnSignIn: false,
+            }
+          : {}),
+      },
+    };
   },
 });
 

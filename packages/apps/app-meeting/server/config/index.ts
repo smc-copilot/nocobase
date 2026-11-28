@@ -29,6 +29,7 @@ import foundation from './foundation.js';
 import meetingGateway from './meeting-gateway.js';
 import meetingOa from './meeting-oa.js';
 import meetingOaSso from './meeting-oa-sso.js';
+import casdoorIdentity from './casdoor-identity.js';
 
 const defaultConfigs: AppConfigFactory<{
   mailers: ReturnType<typeof mailers>;
@@ -58,6 +59,7 @@ const defaultConfigs: AppConfigFactory<{
   meetingGateway: ReturnType<typeof meetingGateway>;
   meetingOa: ReturnType<typeof meetingOa>;
   meetingOaSso: ReturnType<typeof meetingOaSso>;
+  casdoorIdentity: ReturnType<typeof casdoorIdentity>;
 }> = defaultAppConfigs({
   mailers,
   auth,
@@ -86,6 +88,7 @@ const defaultConfigs: AppConfigFactory<{
   meetingGateway,
   meetingOa,
   meetingOaSso,
+  casdoorIdentity,
 });
 
 export default defaultConfigs;

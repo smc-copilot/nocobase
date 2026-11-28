@@ -162,6 +162,7 @@
   },
   "dependencies": {
     "@nocobase/concurrency": "workspace:^",
+    "@nocobase/app-plugin-casdoor-identity": "workspace:*",
     "@nocobase/app-plugin-concurrency": "workspace:^",
     "zod": "catalog:",
     "@nocobase/app-plugin-api-keys": "workspace:^",
@@ -187,6 +188,7 @@
     "@oclif/core": "catalog:",
     "better-auth": "catalog:",
     "hono": "catalog:",
+    "jose": "^6.2.9",
     "@nocobase/app-plugin-authz-default-access": "workspace:^",
     "@nocobase/app-plugin-authz-sharing-rules": "workspace:^",
     "@nocobase/app-plugin-authz-restriction-rules": "workspace:^",

@@ -1,22 +1,61 @@
+import { resolveAppUrl, useClientApplication } from '@nocobase/app-client';
 import {
+  useAuthentication,
   usePasswordResetCapability,
   useSignUpAvailable,
 } from '@nocobase/app-plugin-authentication/client';
 import { usePasswordLogin } from '@nocobase/app-plugin-authentication/client/actions';
 import { useTranslation } from '@nocobase/i18n/client';
-import type { ReactElement } from 'react';
-import { Link } from 'react-router';
+import { useRef, useState, type ReactElement } from 'react';
+import { Link, useSearchParams } from 'react-router';
 
 import { PasswordLoginForm } from '#extensions/nocobase-auth-forms/password-login-form';
 import { AuthMethods } from '#extensions/nocobase-auth-methods/auth-methods';
 
+import '../../auth/casdoor-public-config.js';
 import { useOaLtpaLogin } from '../../auth/oa-ltpa/use-oa-ltpa-login.js';
+import { safeReturnTo } from '../../lib/return-to.js';
 import { AuthPage } from './shared.js';
 
 export default function LoginPage(): ReactElement {
   const { t } = useTranslation();
   const login = usePasswordLogin();
   const oaLogin = useOaLtpaLogin();
+  const { client } = useAuthentication();
+  const [search] = useSearchParams();
+  const showCasdoor =
+    useClientApplication().config.public.get(
+      'casdoorIdentity.browserSignIn',
+    ) === true;
+  const casdoorInFlightRef = useRef(false);
+  const [casdoorPending, setCasdoorPending] = useState(false);
+  const [casdoorFailed, setCasdoorFailed] = useState(
+    search.get('casdoor') === 'failed',
+  );
+
+  async function signInWithCasdoor() {
+    if (!showCasdoor || casdoorInFlightRef.current) return;
+    casdoorInFlightRef.current = true;
+    setCasdoorPending(true);
+    setCasdoorFailed(false);
+    const destination = safeReturnTo(search.get('redirect'));
+    const failure = new URLSearchParams({ casdoor: 'failed' });
+    if (destination) failure.set('redirect', destination);
+    try {
+      const result = await client.signIn.social({
+        provider: 'casdoor',
+        callbackURL: resolveAppUrl(destination ?? '/'),
+        errorCallbackURL: resolveAppUrl(`/login?${failure}`),
+      });
+      if (result.error || !result.data?.url) setCasdoorFailed(true);
+    } catch {
+      setCasdoorFailed(true);
+    } finally {
+      casdoorInFlightRef.current = false;
+      setCasdoorPending(false);
+    }
+  }
+
   // The sign-up link follows the server: it is hidden while `auth.emailAndPassword` turns sign-up off.
   const signUpAvailable = useSignUpAvailable();
   const resetCapability = usePasswordResetCapability();
@@ -71,8 +110,20 @@ export default function LoginPage(): ReactElement {
             label: t('auth.password'),
           },
         ]}
-        providers={
-          showOa
+        providers={[
+          ...(showCasdoor
+            ? [
+                {
+                  id: 'casdoor',
+                  label: t('meetingCasdoor.providerLabel'),
+                  disabled: casdoorPending,
+                  onClick: () => {
+                    void signInWithCasdoor();
+                  },
+                },
+              ]
+            : []),
+          ...(showOa
             ? [
                 {
                   id: 'oa-ltpa',
@@ -85,9 +136,14 @@ export default function LoginPage(): ReactElement {
                   },
                 },
               ]
-            : undefined
-        }
+            : []),
+        ]}
       />
+      {showCasdoor && casdoorFailed ? (
+        <p className='text-destructive mt-4 text-center text-sm' role='alert'>
+          {t('meetingCasdoor.signInFailed')}
+        </p>
+      ) : null}
       {showOa && oaLogin.status?.oaLoginUrl ? (
         <p className='text-muted-foreground mt-4 text-center text-sm'>
           <a

@@ -169,7 +169,9 @@ afterEach(async () => {
 
 describe('app server', () => {
   it('encrypts stored OAuth tokens', () => {
-    expect(authConfig({} as never).account?.encryptOAuthTokens).toBe(true);
+    expect(authConfig({ env: {} } as never).account?.encryptOAuthTokens).toBe(
+      true,
+    );
   });
 
   it('represents the NocoBase application separately from its Hono router', () => {
@@ -1317,7 +1319,10 @@ function createTestApp(options: CreateTestAppOptions = {}): TestApp {
     publicBasePath: configValues.app.publicBasePath,
     paths,
   });
-  configValues.auth = { ...authConfig({} as never), ...configValues.auth };
+  configValues.auth = {
+    ...authConfig({ env: {} } as never),
+    ...configValues.auth,
+  };
   if (database) {
     app.addServiceProvider(TestDatabaseProvider);
   }

@@ -31,6 +31,11 @@ const enUS = {
     description:
       'Bind the meeting gateway, query authorized meetings, edit local content, and prepare OA drafts. Live OA writes stay blocked until the published write contract is confirmed.',
   },
+  meetingCasdoor: {
+    providerLabel: 'Casdoor',
+    signInFailed:
+      'Casdoor sign-in could not be completed. Try again or sign in with your password.',
+  },
   meetings: {
     title: 'Meetings',
     empty:

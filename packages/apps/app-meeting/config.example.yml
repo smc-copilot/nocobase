@@ -4,6 +4,15 @@
 #   Public origin used for callbacks and redirects in production.
 #   publicOrigin: https://apps.example.com
 
+# Optional Meeting browser SSO (server environment only, disabled by default):
+# CASDOOR_BROWSER_SIGN_IN_ENABLED=true
+# CASDOOR_ISSUER=https://sso.example.com
+# CASDOOR_CLIENT_ID=<dedicated-meeting-client>
+# CASDOOR_CLIENT_SECRET=<set-through-secret-management>
+# Use the exact HTTPS issuer (without a trailing slash) and an HTTPS APP_PUBLIC_ORIGIN.
+# Register <APP_PUBLIC_ORIGIN><APP_BASE_PATH>/api/auth/callback/casdoor in Casdoor.
+# See README.MD for admission, reviewed pre-binding, and rollout checks.
+
 # The language the application starts in, for the browser and the server alike. Which languages it offers follows
 # from the files in client/locales and server/locales, not from configuration.
 # i18n:
