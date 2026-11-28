@@ -73,7 +73,7 @@ export const EXEMPTIONS = [
     packageName: '@nocobase/app-testing',
     path: 'tests/project/published-router.test.ts',
     reason:
-      'Reads both templates’ Vitest configurations and client setup for the installed-client regression. Both templates depend on app-testing, so declaring them would create a cycle; scripts/select-quality-scope.mjs maps these files to app-testing instead.',
+      'Reads the templates’ Vitest configurations and client setup for the installed-client regression. The templates depend on app-testing, so declaring them would create a cycle; scripts/select-quality-scope.mjs maps these files to app-testing instead.',
   },
   {
     packageName: '@nocobase/app-plugin-mail',

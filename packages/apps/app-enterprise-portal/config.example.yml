@@ -257,3 +257,17 @@ logging:
     enabled: true
     # Set true for human-readable terminal output.
     pretty: false
+
+# Casdoor identity. Each application uses its own OAuth client. Secrets come from the private .env only; do not commit them.
+# Browser sign-in turns on when CASDOOR_ISSUER, CASDOOR_CLIENT_ID and CASDOOR_CLIENT_SECRET are all set.
+# Directory sync turns on when CASDOOR_ENDPOINT, CASDOOR_ORGANIZATION, CASDOOR_CLIENT_ID and
+# CASDOOR_CLIENT_SECRET are all set. CASDOOR_AUDIENCE and CASDOOR_JWKS_URI override the JWT checks; JWKS defaults to
+# {CASDOOR_ISSUER}/.well-known/jwks.
+# mappablePermissionSets is empty until administrators name keys in config.yml. root is excluded.
+# CASDOOR_ISSUER=
+# CASDOOR_CLIENT_ID=
+# CASDOOR_CLIENT_SECRET=
+# CASDOOR_AUDIENCE=
+# CASDOOR_JWKS_URI=
+# CASDOOR_ENDPOINT=
+# CASDOOR_ORGANIZATION=

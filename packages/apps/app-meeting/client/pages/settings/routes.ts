@@ -1,4 +1,10 @@
-import { Users, ShieldCheck, KeyRound, ListFilter } from 'lucide-react';
+import {
+  Users,
+  ShieldCheck,
+  KeyRound,
+  ListFilter,
+  Fingerprint,
+} from 'lucide-react';
 import {
   defineAppRoutes,
   type AppClientRouteContribution,
@@ -89,6 +95,23 @@ const systemSettingsRoutes: AppClientRouteContribution = defineAppRoutes([
         componentLoader: () => import('./user-form.js'),
       },
     ],
+  },
+  {
+    parent: 'settingsAccount',
+    name: 'settingsIdentityBindings',
+    path: '/identity-bindings',
+    auth: 'required',
+    authz: {
+      resource: { type: 'settings', id: 'casdoorIdentity.externalIdentities' },
+      action: 'read',
+    },
+    navigation: {
+      title: 'identity.bindings',
+      description: 'identity.bindingsDescription',
+      icon: Fingerprint,
+    },
+    breadcrumb: { title: 'identity.bindings' },
+    componentLoader: () => import('./identity-bindings.js'),
   },
   {
     parent: 'settingsAccount',

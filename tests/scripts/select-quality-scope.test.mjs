@@ -334,7 +334,11 @@ test('a template change selects the template, its path consumers and the smoke t
   assert.equal(createApp.runAppInstaller, false);
 });
 
-for (const template of ['app-template-default', 'app-template-examples']) {
+for (const template of [
+  'app-template-default',
+  'app-template-examples',
+  'app-template-smc-enterprise',
+]) {
   for (const file of ['vitest.config.ts', 'tests/setup/client-config.ts']) {
     test(`${template}'s ${file} selects the installed-client regression`, () => {
       const result = plan(`packages/templates/${template}/${file}`);

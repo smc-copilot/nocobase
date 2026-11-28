@@ -1,18 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { defineAppRoutes } from '@nocobase/app-client/plugins';
 import {
-  defineAppRuntime,
-  resolveAppRuntime,
-} from '@nocobase/app-client/runtime';
+  defineAppRoutes,
+  resolveAppClientContributions,
+} from '@nocobase/app-client/plugins';
 import type {
   AuthorizationOptionsResponse,
   LocalizedText,
   PermissionGrant,
 } from '@nocobase/app-plugin-authorization/client';
-import { CAPABILITY_GUIDE_ACCESS } from '@nocobase/app-plugin-foundation/client';
-import appRuntime from '../../client/runtime.js';
+import { PLUGINS_ACCESS } from '@nocobase/app-plugin-foundation/client';
+import foundation from '@nocobase/app-plugin-foundation/client/routes';
 import { createApplicationRoutes } from '../../client/routes.js';
-import settingsRoutes from '../../client/pages/settings/routes.js';
 import {
   permissionWorkspace,
   type PermissionWorkspaceSelection,
@@ -142,6 +140,12 @@ const source = {
                 { name: 'update', title: 'Update' },
               ],
             },
+            {
+              type: 'settings',
+              id: PLUGINS_ACCESS.resource.id,
+              title: 'Plugins',
+              actions: [{ name: PLUGINS_ACCESS.action, title: 'View' }],
+            },
           ],
         },
       ],
@@ -230,20 +234,18 @@ const selection: PermissionWorkspaceSelection = {
 };
 
 async function workspace(chosen: PermissionWorkspaceSelection = selection) {
-  const appRoutes = createApplicationRoutes();
-  const hasUserManagement = appRoutes.some((contribution) =>
-    contribution.routes.some((route) => route.name === 'settingsUsers'),
-  );
-  const { routes } = await resolveAppRuntime(
-    defineAppRuntime({
-      ...appRuntime,
-      routes: () => [
-        ...appRoutes,
-        ...(hasUserManagement ? [] : [settingsRoutes]),
-        business,
-      ],
-    }),
-  );
+  const routes = resolveAppClientContributions([
+    {
+      packageName: '@superice/app-enterprise-portal',
+      source: 'application',
+      routes: [...createApplicationRoutes(), business],
+    },
+    {
+      packageName: '@nocobase/app-plugin-foundation',
+      source: 'plugin',
+      routes: foundation,
+    },
+  ]).routes;
   return {
     workspace: permissionWorkspace(source, routes, {}, words, chosen),
   };
@@ -433,24 +435,21 @@ describe('role permission workspace', () => {
     expect(
       users.actions.find((action) => action.label === enUS.settings.assignRole),
     ).toMatchObject({ risk: 'high' });
-    // A page guarded by a page grant opens with one action, stored as that page's access and not as a menu.
-    const guide = ws.settings.find((item) =>
+    // Plugins is a settings grant, stored on the System settings tab and not as a menu.
+    const plugins = ws.settings.find((item) =>
       item.objects.some((object) =>
         object.actions.some(
           (action) =>
             action.id ===
-            permissionRowId(
-              { type: 'page', id: CAPABILITY_GUIDE_ACCESS.resource.id },
-              'access',
-            ),
+            permissionRowId(PLUGINS_ACCESS.resource, PLUGINS_ACCESS.action),
         ),
       ),
     )!;
-    const open = guide.objects[0]!.actions[0]!;
-    expect(open).toMatchObject({ label: enUS.settings.openPage, view: true });
+    const open = plugins.objects[0]!.actions[0]!;
+    expect(open).toMatchObject({ label: 'View', view: true });
     expect(
       [...ws.menuPages.values()].some((pages) =>
-        pages.includes(CAPABILITY_GUIDE_ACCESS.resource.id),
+        pages.includes(PLUGINS_ACCESS.resource.id),
       ),
     ).toBe(false);
     const saved = grantsFromDraft(
@@ -461,8 +460,8 @@ describe('role permission workspace', () => {
     );
     expect(saved).toEqual([
       {
-        resource: { type: 'page', id: CAPABILITY_GUIDE_ACCESS.resource.id },
-        actions: [{ action: 'access' }],
+        resource: PLUGINS_ACCESS.resource,
+        actions: [{ action: PLUGINS_ACCESS.action }],
       },
     ]);
     expect(draftFromGrants(saved, ws).draft).toEqual({

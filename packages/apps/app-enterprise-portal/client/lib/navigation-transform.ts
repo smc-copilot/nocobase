@@ -1,4 +1,3 @@
-import { groupFoundationNavigation } from '@nocobase/app-plugin-foundation/client';
 import type { AppClientRegisteredRoute } from '@nocobase/app-client/plugins';
 import type { RouteNavigationItem } from '../routing/route-navigation.js';
 
@@ -20,51 +19,48 @@ export function organizeNavigation(
   items: RouteNavigationItem[],
   routes: readonly AppClientRegisteredRoute[],
 ): RouteNavigationItem[] {
-  return groupFoundationNavigation(
-    withSettingsGroup(items, routes),
-    SETTINGS_GROUP,
-  );
+  return nestSystemSettings(withSettingsGroup(items, routes));
 }
 
-/** Application-owned navigation customization, applied after permission filtering. */
+/** The sidebar shows one settings entry. System settings pages join that group, then it collapses. */
 export function transformNavigation(
   items: RouteNavigationItem[],
   routes: readonly AppClientRegisteredRoute[],
 ): RouteNavigationItem[] {
-  const organized = organizeNavigation(items, routes);
-  const hasGuide = organized.some(
-    (item) =>
-      item.route.name === SETTINGS_GROUP &&
-      item.children.some(
-        (child) =>
-          child.route.packageName === '@nocobase/app-plugin-foundation' &&
-          child.route.name === 'capabilityGuide',
-      ),
+  return collapseSettingsNavigation(organizeNavigation(items, routes));
+}
+
+/**
+ * Plugin pages declared with `defineSystemSettingsRoutes()` are a separate route surface. Fold their categories into
+ * the application's settings group so the sidebar still has one settings entry and the settings home lists them.
+ */
+function nestSystemSettings(
+  items: RouteNavigationItem[],
+): RouteNavigationItem[] {
+  const settingsIndex = items.findIndex((item) =>
+    settingsHomeRoute(item.route),
   );
-  return collapseSettingsNavigation(organized).map((item) =>
-    hasGuide && item.route.name === SETTINGS_HOME
-      ? {
-          ...item,
-          activeRouteKeys: [
-            ...(item.activeRouteKeys ?? []),
-            ...routes
-              .filter(
-                (route) =>
-                  route.packageName === '@nocobase/app-plugin-foundation' &&
-                  ['capabilityGuide', 'capabilityGuideEntry'].includes(
-                    route.name,
-                  ),
-              )
-              .map((route) => `${route.packageName}:${route.path}:${route.id}`),
-          ],
-        }
-      : item,
+  if (settingsIndex < 0) return items;
+  const system = items.filter(
+    (item) => item.route.surface === 'systemSettings',
   );
+  if (system.length === 0) return items;
+  const settings = items[settingsIndex];
+  if (!settings) return items;
+  const moved = new Set(system);
+  const merged: RouteNavigationItem = {
+    ...settings,
+    children: [...settings.children, ...system],
+  };
+  return items.flatMap((item, index) => {
+    if (moved.has(item)) return [];
+    return index === settingsIndex ? [merged] : [item];
+  });
 }
 
 /**
  * Permission filtering drops a group with nothing visible in it, which the settings group is until a module joins it.
- * Keep it in place so a plugin's settings entry, such as App Foundation, still has a group to join.
+ * Keep it in place so a plugin's settings entry still has a group to join.
  */
 function withSettingsGroup(
   items: RouteNavigationItem[],

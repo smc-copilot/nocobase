@@ -212,6 +212,10 @@ describe('app client routes', () => {
       { name: 'settingsUser', authorizedAs: 'user:*' },
       { name: 'settingsUserEdit', authorizedAs: 'user:*' },
       {
+        name: 'settingsIdentityBindings',
+        authorizedAs: 'settings:casdoorIdentity.externalIdentities',
+      },
+      {
         name: 'settingsRoles',
         authorizedAs: 'settings:authorization.permission-sets',
       },
@@ -258,6 +262,7 @@ describe('app client routes', () => {
       '/settings/users/create',
       '/settings/users/:userId',
       '/settings/users/:userId/edit',
+      '/settings/identity-bindings',
       '/settings/roles',
       '/settings/roles/create',
       '/settings/roles/:key/edit',

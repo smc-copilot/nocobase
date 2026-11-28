@@ -29,9 +29,18 @@ const templateRoots = {
     packageRoot,
     '../../templates/app-template-examples',
   ),
+  'app-template-smc-enterprise': path.resolve(
+    packageRoot,
+    '../../templates/app-template-smc-enterprise',
+  ),
 };
 
-it.each(['shared', 'app-template-default', 'app-template-examples'] as const)(
+it.each([
+  'shared',
+  'app-template-default',
+  'app-template-examples',
+  'app-template-smc-enterprise',
+] as const)(
   'shares installed client contexts with the %s configuration',
   async (configuration) => {
     const cache = path.join(tmpdir(), 'nocobase-vitest-regressions');

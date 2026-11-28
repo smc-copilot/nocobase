@@ -46,9 +46,30 @@ const oaLogin = vi.hoisted(() => ({
   submit: vi.fn(),
 }));
 
+const casdoorBrowserSignIn = vi.hoisted(() => ({ value: false }));
+const casdoorSignIn = vi.hoisted(() => vi.fn());
+
 vi.mock('../../client/auth/oa-ltpa/use-oa-ltpa-login.js', () => ({
   useOaLtpaLogin: () => oaLogin,
 }));
+
+vi.mock('@nocobase/app-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@nocobase/app-client')>();
+  return {
+    ...actual,
+    resolveAppUrl: (path: string) => path,
+    useClientApplication: () => ({
+      config: {
+        public: {
+          get: (key: string) =>
+            key === 'casdoorIdentity.browserSignIn'
+              ? casdoorBrowserSignIn.value
+              : undefined,
+        },
+      },
+    }),
+  };
+});
 
 vi.mock('@nocobase/app-plugin-authentication/client/actions', () => ({
   usePasswordLogin: () => passwordLoginAction,
@@ -59,6 +80,9 @@ vi.mock('@nocobase/app-plugin-authentication/client/actions', () => ({
 vi.mock('@nocobase/app-plugin-authentication/client', () => ({
   useSignUpAvailable: () => signUpAvailable.value,
   usePasswordResetCapability: () => resetCapability,
+  useAuthentication: () => ({
+    client: { signIn: { social: casdoorSignIn } },
+  }),
 }));
 
 const runtime = await createTestI18nRuntime({
@@ -92,6 +116,29 @@ describe('application authentication pages', () => {
     } finally {
       oaLogin.status.enabled = false;
       oaLogin.submit.mockReset();
+    }
+  });
+
+  it('shows Casdoor beside OA when both sign-in paths are enabled', () => {
+    oaLogin.status.enabled = true;
+    casdoorBrowserSignIn.value = true;
+    casdoorSignIn.mockClear();
+    try {
+      renderAt('/', <LoginPage />);
+      expect(
+        screen.getByRole('button', { name: 'Continue with OA' }),
+      ).toBeVisible();
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Continue with Casdoor' }),
+      );
+      expect(casdoorSignIn).toHaveBeenCalledWith({
+        provider: 'casdoor',
+        callbackURL: '/',
+      });
+    } finally {
+      oaLogin.status.enabled = false;
+      casdoorBrowserSignIn.value = false;
+      casdoorSignIn.mockReset();
     }
   });
 

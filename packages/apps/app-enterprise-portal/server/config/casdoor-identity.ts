@@ -3,11 +3,25 @@ import {
   envString,
   type AppConfigFactory,
 } from '@nocobase/app-server/config';
-import type { CasdoorIdentityConfig } from '@nocobase/app-plugin-casdoor-identity/server';
+import type {
+  CasdoorDirectoryConfig,
+  CasdoorIdentityConfig,
+} from '@nocobase/app-plugin-casdoor-identity/server';
 
 type CasdoorIdentityAppConfig = CasdoorIdentityConfig & {
   readonly browserSignIn?: boolean;
 };
+
+function readDirectory(): CasdoorDirectoryConfig | undefined {
+  const endpoint = process.env.CASDOOR_ENDPOINT?.trim();
+  const organization = process.env.CASDOOR_ORGANIZATION?.trim();
+  const clientId = process.env.CASDOOR_CLIENT_ID?.trim();
+  const clientSecret = process.env.CASDOOR_CLIENT_SECRET?.trim();
+  if (!endpoint || !organization || !clientId || !clientSecret) {
+    return undefined;
+  }
+  return { endpoint, organization, clientId, clientSecret };
+}
 
 const casdoorIdentity: AppConfigFactory<CasdoorIdentityAppConfig> =
   defineAppConfig({
@@ -17,6 +31,7 @@ const casdoorIdentity: AppConfigFactory<CasdoorIdentityAppConfig> =
       const clientSecret = process.env.CASDOOR_CLIENT_SECRET?.trim();
       const audience = process.env.CASDOOR_AUDIENCE?.trim();
       const browserSignIn = Boolean(issuer && clientId && clientSecret);
+      const directory = readDirectory();
       return {
         ...(issuer
           ? {
@@ -26,7 +41,15 @@ const casdoorIdentity: AppConfigFactory<CasdoorIdentityAppConfig> =
           : {}),
         ...(audience ? { audience } : {}),
         browserSignIn,
+        // This application defines no business Permission Set. Administrators name
+        // keys in config.yml before mapping rules can grant them. Never list root.
         mappablePermissionSets: [],
+        ...(directory
+          ? {
+              directory,
+              sync: { enabled: true },
+            }
+          : {}),
       };
     },
     public: ['browserSignIn'],

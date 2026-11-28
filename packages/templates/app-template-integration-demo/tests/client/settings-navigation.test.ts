@@ -11,7 +11,6 @@ import { createApplicationRoutes } from '../../client/routes.js';
 import {
   buildRouteNavigation,
   buildSettingsCatalog,
-  filterRouteTree,
   selectedNavigationId,
   routeKey,
 } from '../../client/routing/route-navigation.js';
@@ -188,22 +187,18 @@ describe('System settings navigation', () => {
         routes: foundation,
       },
     ]).routes;
-    // The bare shell: only App Foundation, which only an unrestricted administrator may open.
+    // Plugins joins System settings on the system settings surface.
     const menu = buildRouteNavigation(routes, new Set());
-    expect(menu.map(({ route }) => route.name)).toEqual(['settingsHome']);
-    expect(catalog(routes)).toEqual([
-      ['settingsSystem', [['foundation', '/foundation']]],
-    ]);
-    // The signed-in shell receives the tree filtered to its pages; empty categories keep their titles there.
-    const signedIn = filterRouteTree(
-      routes,
-      (route) => route.auth === 'required',
-    );
-    expect(catalog(signedIn)).toEqual([
-      ['settingsSystem', [['foundation', '/foundation']]],
-    ]);
-    const page = find(routes, 'foundation');
-    expect(page.navigation?.description).toBe('nav.foundationDescription');
+    expect(
+      menu.map(({ route, children }) => [
+        route.name,
+        children.map((child) => [child.route.name, child.route.path]),
+      ]),
+    ).toEqual([['systemSettings.system', [['plugins', '/settings/plugins']]]]);
+    const page = find(routes, 'plugins');
+    expect(page.name).toBe('plugins');
+    expect(page.path).toBe('/settings/plugins');
+    expect(page.navigation?.description).toBe('nav.pluginsDescription');
     expect(buildRouteNavigation(routes, new Set([routeKey(page)]))).toEqual([]);
   });
 

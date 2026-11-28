@@ -1,4 +1,3 @@
-import { groupFoundationNavigation } from '@nocobase/app-plugin-foundation/client';
 import type { AppClientRegisteredRoute } from '@nocobase/app-client/plugins';
 import type { RouteNavigationItem } from '../routing/route-navigation.js';
 
@@ -20,10 +19,7 @@ export function organizeNavigation(
   items: RouteNavigationItem[],
   routes: readonly AppClientRegisteredRoute[],
 ): RouteNavigationItem[] {
-  return groupFoundationNavigation(
-    withSettingsGroup(items, routes),
-    SETTINGS_GROUP,
-  );
+  return withSettingsGroup(items, routes);
 }
 
 /** Application-owned navigation customization, applied after permission filtering. */
@@ -31,35 +27,7 @@ export function transformNavigation(
   items: RouteNavigationItem[],
   routes: readonly AppClientRegisteredRoute[],
 ): RouteNavigationItem[] {
-  const organized = organizeNavigation(items, routes);
-  const hasGuide = organized.some(
-    (item) =>
-      item.route.name === SETTINGS_GROUP &&
-      item.children.some(
-        (child) =>
-          child.route.packageName === '@nocobase/app-plugin-foundation' &&
-          child.route.name === 'capabilityGuide',
-      ),
-  );
-  return collapseSettingsNavigation(organized).map((item) =>
-    hasGuide && item.route.name === SETTINGS_HOME
-      ? {
-          ...item,
-          activeRouteKeys: [
-            ...(item.activeRouteKeys ?? []),
-            ...routes
-              .filter(
-                (route) =>
-                  route.packageName === '@nocobase/app-plugin-foundation' &&
-                  ['capabilityGuide', 'capabilityGuideEntry'].includes(
-                    route.name,
-                  ),
-              )
-              .map((route) => `${route.packageName}:${route.path}:${route.id}`),
-          ],
-        }
-      : item,
-  );
+  return collapseSettingsNavigation(organizeNavigation(items, routes));
 }
 
 /**

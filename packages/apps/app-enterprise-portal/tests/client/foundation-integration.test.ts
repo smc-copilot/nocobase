@@ -1,81 +1,90 @@
-import { CAPABILITY_GUIDE_ACCESS } from '@nocobase/app-plugin-foundation/client';
-import { permissionWorkspace } from '../../client/pages/settings/permission-workspace.js';
-import { permissionRowId } from '../../client/pages/settings/permissions-model.js';
+import { PLUGINS_ACCESS } from '@nocobase/app-plugin-foundation/client';
+import {
+  defineAppRoutes,
+  resolveAppClientContributions,
+  type AppClientRegisteredRoute,
+} from '@nocobase/app-client/plugins';
 import { describe, expect, it } from 'vitest';
-import {
-  createCapabilityCatalog,
-  entryContent,
-  guideContent,
-  type DependencyManifest,
-} from '@nocobase/app-plugin-foundation/capability-guide';
-import packageMetadata from '../../package.json' with { type: 'json' };
-import {
-  defineAppRuntime,
-  resolveAppRuntime,
-} from '@nocobase/app-client/runtime';
-import appRuntime from '../../client/runtime.js';
+import foundation from '@nocobase/app-plugin-foundation/client/routes';
 import cliPlugins from '../../cli/plugins.js';
+import { createApplicationRoutes } from '../../client/routes.js';
 import {
-  routeKey,
   buildRouteNavigation,
   buildSettingsCatalog,
+  routeKey,
 } from '../../client/routing/route-navigation.js';
 
-import { defineAppRoutes } from '@nocobase/app-client/plugins';
-import databaseExplorerRoutes from '../../client/pages/settings/database-explorer/routes.js';
-import settingsRoutes from '../../client/pages/settings/routes.js';
-import shellRoutes from '../../client/pages/settings/shell-routes.js';
+const app = '@superice/app-enterprise-portal';
 
-describe('default Foundation integration', () => {
-  it('registers the Foundation deployment evidence build hook', () => {
+function resolve(...extra: ReturnType<typeof defineAppRoutes>[]) {
+  return resolveAppClientContributions([
+    {
+      packageName: app,
+      source: 'application',
+      routes: [...createApplicationRoutes(), ...extra],
+    },
+    {
+      packageName: '@nocobase/app-plugin-foundation',
+      source: 'plugin',
+      routes: foundation,
+    },
+  ]).routes;
+}
+
+function flatten(
+  routes: readonly AppClientRegisteredRoute[],
+): AppClientRegisteredRoute[] {
+  return routes.flatMap((route) => [route, ...flatten(route.children ?? [])]);
+}
+
+describe('plugins page integration', () => {
+  it('adds no build step: the plugin contributes no commands', () => {
     expect(
-      cliPlugins.plugins.filter(
-        (plugin) => plugin.packageName === '@nocobase/app-plugin-foundation',
-      ),
-    ).toHaveLength(1);
+      cliPlugins.plugins.map((plugin) => plugin.packageName),
+    ).not.toContain('@nocobase/app-plugin-foundation');
   });
-  it('provides Features and extensions in System settings with its existing route', async () => {
-    const runtime = await resolveAppRuntime(appRuntime);
-    const category = buildSettingsCatalog(runtime.routes, new Set()).find(
-      ({ route }) => route.name === 'settingsSystem',
+
+  it('lists Plugins in System settings behind «Plugins · View»', () => {
+    const routes = resolve();
+    const category = buildSettingsCatalog(routes, new Set()).find(
+      ({ route }) => route.name === 'systemSettings.system',
     );
-    const guide = category?.modules.find(
-      ({ route }) => route.name === 'capabilityGuide',
+    const plugins = category?.modules.find(
+      ({ route }) => route.name === 'plugins',
     );
-    expect(guide?.target.path).toBe('/settings/capabilities');
-    expect(guide?.route.auth).toBe('required');
-    expect(guide?.route.authz).toEqual(CAPABILITY_GUIDE_ACCESS);
+    expect(plugins?.target.path).toBe('/settings/plugins');
+    expect(plugins?.route).toMatchObject({
+      id: '@nocobase/app-plugin-foundation:plugins',
+      auth: 'required',
+      authz: PLUGINS_ACCESS,
+    });
     expect(
-      buildSettingsCatalog(runtime.routes, new Set([routeKey(guide!.route)]))
+      buildSettingsCatalog(routes, new Set([routeKey(plugins!.route)]))
         .flatMap((item) => item.modules)
-        .some((item) => item.route.name === 'capabilityGuide'),
+        .some((item) => item.route.name === 'plugins'),
+    ).toBe(false);
+    expect(
+      buildRouteNavigation(routes, new Set()).some(
+        ({ route }) => route.name === 'plugins',
+      ),
     ).toBe(false);
   });
 
-  it('keeps Features and extensions in System when business and account routes are registered', async () => {
-    const orders = defineAppRoutes([
-      {
-        name: 'fixtureOrders',
-        path: '/fixture-orders',
-        auth: 'required',
-        authz: {
-          resource: { type: 'page', id: 'fixture-orders' },
-          action: 'access',
+  it('keeps Plugins in System when a business route is registered', () => {
+    const routes = resolve(
+      defineAppRoutes([
+        {
+          name: 'fixtureOrders',
+          path: '/fixture-orders',
+          auth: 'required',
+          authz: {
+            resource: { type: 'page', id: 'fixture-orders' },
+            action: 'access',
+          },
+          navigation: { title: 'Orders' },
+          componentLoader: async () => ({ default: () => null }),
         },
-        navigation: { title: 'Orders' },
-        componentLoader: async () => ({ default: () => null }),
-      },
-    ]);
-    const { routes } = await resolveAppRuntime(
-      defineAppRuntime({
-        ...appRuntime,
-        routes: () => [
-          shellRoutes,
-          settingsRoutes,
-          databaseExplorerRoutes,
-          orders,
-        ],
-      }),
+      ]),
     );
     const catalog = buildSettingsCatalog(routes, new Set());
     const modules = (name: string) =>
@@ -90,100 +99,32 @@ describe('default Foundation integration', () => {
       'permissionManagement',
       '/settings/roles',
     ]);
-    expect(modules('settingsSystem')).toContainEqual([
-      'capabilityGuide',
-      '/settings/capabilities',
+    expect(modules('systemSettings.system')).toEqual([
+      ['plugins', '/settings/plugins'],
     ]);
-    const menu = buildRouteNavigation(routes, new Set());
-    const menuNames = menu.map(({ route }) => route.name);
+    const menuNames = buildRouteNavigation(routes, new Set()).map(
+      ({ route }) => route.name,
+    );
     expect(menuNames).toContain('fixtureOrders');
-    expect(menuNames).not.toContain('foundationSettings');
-    expect(menuNames).not.toContain('capabilityGuide');
-    expect(
-      menu.filter(({ route }) => route.path.startsWith('/settings')),
-    ).toMatchObject([
-      { route: { name: 'settingsHome', path: '/settings' }, children: [] },
-    ]);
-  });
-
-  it('lists every plugin this application declares in the capability guide, with the standalone core modules', () => {
-    const manifest = packageMetadata as DependencyManifest;
-    const { entries } = createCapabilityCatalog(manifest);
-    const declared = Object.keys({
-      ...manifest.dependencies,
-      ...manifest.devDependencies,
-    })
-      .filter((name) => name.includes('app-plugin-'))
-      .sort();
-    expect(
-      entries
-        .filter((entry) => entry.source === 'plugin')
-        .map((entry) => entry.packageName)
-        .sort(),
-    ).toEqual(declared);
-    expect(
-      entries
-        .filter((entry) => entry.source === 'kernel')
-        .map((entry) => entry.name),
-    ).toEqual(['db', 'jobs', 'lifecycle', 'queue', 'realtime']);
-    // Installed extensions may use the guide's generic introduction.
-    for (const entry of entries) {
-      for (const locale of ['en-US', 'zh-CN']) {
-        const text = entryContent(guideContent(locale), entry);
-        expect(text.title.trim()).not.toBe('');
-        expect(text.summary.trim()).not.toBe('');
-      }
-    }
-  });
-
-  it('keeps an additional plugin discoverable without built-in wording', () => {
-    const packageName = '@example/app-plugin-business-extension';
-    const catalog = createCapabilityCatalog({
-      ...packageMetadata,
-      dependencies: {
-        ...packageMetadata.dependencies,
-        [packageName]: '1.0.0',
-      },
-    });
-    const entry = catalog.entries.find(
-      (item) => item.packageName === packageName,
-    )!;
-    expect(entry).toMatchObject({ source: 'plugin', known: false });
-    expect(catalog.find(entry.id)).toBe(entry);
-    for (const locale of ['en-US', 'zh-CN']) {
-      const text = entryContent(guideContent(locale), entry);
-      expect(text.title).toContain(packageName);
-      expect(text.summary.trim()).not.toBe('');
-      expect(text.prompts.main?.template).toContain(packageName);
-    }
+    expect(menuNames).not.toContain('plugins');
   });
 });
 
-it('offers one Features and extensions page on the System settings tab', async () => {
-  const { routes } = await resolveAppRuntime(appRuntime);
-  const workspace = permissionWorkspace(
-    { sections: [], recordAccess: [], subjectTypes: [], collections: [] },
-    routes,
-    {},
-    {
-      text: (value) => (typeof value === 'string' ? value : value.key),
-      t: (key) => key,
-    },
-  );
-  const open = permissionRowId(CAPABILITY_GUIDE_ACCESS.resource, 'access');
-  const owners = workspace.settings.filter((page) =>
-    page.objects.some((object) =>
-      object.actions.some((action) => action.id === open),
-    ),
-  );
-  expect(owners.map((page) => page.label)).toEqual(['nav.capabilityGuide']);
-  // It is not a business menu.
+it('sends the earlier Foundation and capability guide addresses to the plugins page', () => {
+  const routes = resolve();
+  const paths = flatten(routes)
+    .filter(
+      (route) =>
+        route.packageName === '@nocobase/app-plugin-foundation' &&
+        route.name !== 'plugins',
+    )
+    .map((route) => [route.path, route.navigation]);
+  expect(paths).toEqual([
+    ['/settings/foundation', undefined],
+    ['/settings/capabilities', undefined],
+    ['/settings/capabilities/:entryId', undefined],
+  ]);
   expect(
-    [...workspace.menuPages.values()].some((pages) =>
-      pages.includes(CAPABILITY_GUIDE_ACCESS.resource.id),
-    ),
-  ).toBe(false);
-  expect(
-    routes.find(({ name }) => name === 'capabilityGuideEntry')?.authz,
-  ).toEqual(CAPABILITY_GUIDE_ACCESS);
+    flatten(routes).find((route) => route.name === 'plugins')?.authz,
+  ).toEqual(PLUGINS_ACCESS);
 });

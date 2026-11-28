@@ -270,3 +270,18 @@ logging:
 #   timeoutMs: 10000
 #   oaLoginUrl: https://oa.example.test
 #   validateMethod: GET
+
+# Casdoor identity. Separate from OA LTPA above: the two sign-in mechanisms stay independent.
+# Each application uses its own OAuth client. Secrets come from the private .env only; do not commit them.
+# Browser sign-in turns on when CASDOOR_ISSUER, CASDOOR_CLIENT_ID and CASDOOR_CLIENT_SECRET are all set.
+# Directory sync turns on when CASDOOR_ENDPOINT, CASDOOR_ORGANIZATION, CASDOOR_CLIENT_ID and
+# CASDOOR_CLIENT_SECRET are all set. CASDOOR_AUDIENCE and CASDOOR_JWKS_URI override the JWT checks; JWKS defaults to
+# {CASDOOR_ISSUER}/.well-known/jwks.
+# Meeting maps meeting-operator, meeting-oa-operator, meeting-oa-reconciler and member. root is excluded.
+# CASDOOR_ISSUER=
+# CASDOOR_CLIENT_ID=
+# CASDOOR_CLIENT_SECRET=
+# CASDOOR_AUDIENCE=
+# CASDOOR_JWKS_URI=
+# CASDOOR_ENDPOINT=
+# CASDOOR_ORGANIZATION=

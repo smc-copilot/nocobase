@@ -8,6 +8,24 @@ const enUS = {
   // `./system/` so a template upgrade can replace it without touching the application's copy below.
   ...systemEnUS,
   ...fileUi,
+  'auth.casdoor': 'Casdoor',
+  identity: {
+    bindings: 'Identity bindings',
+    bindingsDescription:
+      'Bind a Casdoor issuer and subject to a local username by trusted employee number. Email never merges accounts.',
+    isolationTitle: 'External identity bindings',
+    bindingIsolation:
+      'Preview and commit bind a Casdoor issuer and subject to a local username via employee number. Email never auto-merges.',
+    bindingCommitted: 'Bindings committed',
+    bindingFailed: 'Unable to preview or commit bindings.',
+    bindingPreview: 'Preview or commit JSON',
+    preview: 'Preview',
+    commit: 'Commit',
+    issuer: 'Issuer',
+    subject: 'Subject',
+    localUserId: 'Local user',
+    noBindings: 'No issuer and subject bindings yet.',
+  },
   // The application's copy goes here, one group per feature. A shared group such as `navigation` is extended by
   // spreading the system one first, `navigation: { ...systemEnUS.navigation, orders: 'Orders' }`, since a group
   // written here replaces the system group of the same name rather than merging with it.

@@ -52,9 +52,13 @@ export const pathDependencies = [
     path: 'ui-library/registry/file/',
     consumers: ['@nocobase/app-plugin-file'],
   },
-  // The installed-client regression reads each template's actual Vitest configuration and setup. Both templates
+  // The installed-client regression reads each template's actual Vitest configuration and setup. These templates
   // depend on app-testing, so it cannot declare them without a cycle.
-  ...['app-template-default', 'app-template-examples'].flatMap((template) =>
+  ...[
+    'app-template-default',
+    'app-template-examples',
+    'app-template-smc-enterprise',
+  ].flatMap((template) =>
     ['vitest.config.ts', 'tests/setup/client-config.ts'].map((file) => ({
       path: `packages/templates/${template}/${file}`,
       consumers: ['@nocobase/app-testing'],
@@ -66,6 +70,7 @@ export const pathDependencies = [
 export const createAppPackages = [
   '@nocobase/app-template-default',
   '@nocobase/app-template-examples',
+  '@nocobase/app-template-smc-enterprise',
   '@nocobase/create-app',
 ];
 

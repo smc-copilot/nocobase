@@ -116,6 +116,7 @@ describe('System settings navigation', () => {
         'settingsAccount',
         [
           ['settingsUsers', '/settings/users'],
+          ['settingsIdentityBindings', '/settings/identity-bindings'],
           ['permissionManagement', '/settings/roles'],
         ],
       ],
@@ -126,6 +127,7 @@ describe('System settings navigation', () => {
         'settingsAccount',
         [
           ['settingsUsers', '/settings/users'],
+          ['settingsIdentityBindings', '/settings/identity-bindings'],
           ['permissionManagement', '/settings/default-access'],
         ],
       ],
@@ -133,6 +135,7 @@ describe('System settings navigation', () => {
     const denied = new Set(
       [
         'settingsUsers',
+        'settingsIdentityBindings',
         'settingsRoles',
         'settingsDefaultAccess',
         'meetingConnections',
@@ -192,11 +195,11 @@ describe('System settings navigation', () => {
         routes: foundation,
       },
     ]).routes;
-    // The bare shell: only App Foundation, which only an unrestricted administrator may open.
+    // The bare shell: only the plugins page.
     const menu = buildRouteNavigation(routes, new Set());
     expect(menu.map(({ route }) => route.name)).toEqual(['settingsHome']);
     expect(catalog(routes)).toEqual([
-      ['settingsSystem', [['foundation', '/foundation']]],
+      ['systemSettings.system', [['plugins', '/settings/plugins']]],
     ]);
     // The signed-in shell receives the tree filtered to its pages; empty categories keep their titles there.
     const signedIn = filterRouteTree(
@@ -204,10 +207,10 @@ describe('System settings navigation', () => {
       (route) => route.auth === 'required',
     );
     expect(catalog(signedIn)).toEqual([
-      ['settingsSystem', [['foundation', '/foundation']]],
+      ['systemSettings.system', [['plugins', '/settings/plugins']]],
     ]);
-    const page = find(routes, 'foundation');
-    expect(page.navigation?.description).toBe('nav.foundationDescription');
+    const page = find(routes, 'plugins');
+    expect(page.navigation?.description).toBe('nav.pluginsDescription');
     expect(buildRouteNavigation(routes, new Set([routeKey(page)]))).toEqual([]);
   });
 
@@ -226,6 +229,7 @@ describe('System settings navigation', () => {
         'settingsAccount',
         [
           ['settingsUsers', '/settings/users'],
+          ['settingsIdentityBindings', '/settings/identity-bindings'],
           ['permissionManagement', '/settings/roles'],
         ],
       ],
@@ -263,6 +267,7 @@ it('places database browsing in System and hides its card when access is denied'
       'settingsAccount',
       [
         ['settingsUsers', '/settings/users'],
+        ['settingsIdentityBindings', '/settings/identity-bindings'],
         ['permissionManagement', '/settings/roles'],
       ],
     ],
@@ -273,6 +278,7 @@ it('places database browsing in System and hides its card when access is denied'
       'settingsAccount',
       [
         ['settingsUsers', '/settings/users'],
+        ['settingsIdentityBindings', '/settings/identity-bindings'],
         ['permissionManagement', '/settings/roles'],
       ],
     ],

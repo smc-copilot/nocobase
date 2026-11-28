@@ -1,0 +1,197 @@
+import type { AppClientRegisteredRoute } from '@nocobase/app-client/plugins';
+import type { RouteNavigationItem } from '../routing/route-navigation.js';
+
+/**
+ * The settings route group: one sidebar entry opening its home page. Its direct child groups are categories on that
+ * page, the entries inside a category are modules (one card each), and the pages of a module group are its tabs.
+ */
+export const SETTINGS_GROUP = 'settings';
+/** The settings home page, a navigation-less child of the settings group. */
+export const SETTINGS_HOME = 'settingsHome';
+/** The category a module registered directly under the settings group is shown in: the built-in `other` category's route. */
+export const SETTINGS_FALLBACK_CATEGORY = 'systemSettings.other';
+
+/**
+ * The application's navigation as the sidebar shows it, from the routes the viewer may open. The shared router calls
+ * this one function, so a template arranges its own menu here: Default only collapses the settings group.
+ */
+export function organizeNavigation(
+  items: RouteNavigationItem[],
+): RouteNavigationItem[] {
+  return collapseSettingsNavigation(items);
+}
+
+/** The settings home page of a settings group route, when the application registers one. */
+export function settingsHomeRoute(
+  route: AppClientRegisteredRoute,
+): AppClientRegisteredRoute | undefined {
+  if (route.name !== SETTINGS_GROUP || route.componentLoader) return undefined;
+  return route.children?.find(
+    (child) => child.name === SETTINGS_HOME && child.componentLoader,
+  );
+}
+
+/** The personal settings group (`withSettingsShell`) and its home page, `/me`, which opens the first personal page. */
+export const PERSONAL_SETTINGS_GROUP = 'personalSettings';
+export const PERSONAL_SETTINGS_HOME = 'personalSettingsHome';
+
+/**
+ * The home page of the system or the personal settings group: where the group's breadcrumb level links, so the first
+ * level of `System settings › page` and `Personal settings › page` leads back to `/settings` or `/me`.
+ */
+export function settingsAreaHomeRoute(
+  route: AppClientRegisteredRoute,
+): AppClientRegisteredRoute | undefined {
+  const system = settingsHomeRoute(route);
+  if (system) return system;
+  if (route.name !== PERSONAL_SETTINGS_GROUP || route.componentLoader)
+    return undefined;
+  return route.children?.find(
+    (child) => child.name === PERSONAL_SETTINGS_HOME && child.componentLoader,
+  );
+}
+
+/**
+ * The sidebar shows the settings group as one entry opening its home page; it stays selected on every page below the
+ * group. Without a module the viewer may open, the entry disappears. An application without a home page keeps the
+ * expanded group.
+ */
+export function collapseSettingsNavigation(
+  items: RouteNavigationItem[],
+): RouteNavigationItem[] {
+  return items.flatMap((item) => {
+    const home = settingsHomeRoute(item.route);
+    if (!home) return [item];
+    if (item.children.length === 0) return [];
+    return [
+      {
+        route: { ...home, navigation: item.route.navigation },
+        startGroup: true,
+        children: [],
+        activeRouteKeys: [home, ...descendantPages(item.route)].map(
+          (route) => `${route.packageName}:${route.path}:${route.id}`,
+        ),
+      },
+    ];
+  });
+}
+
+function descendantPages(
+  route: AppClientRegisteredRoute,
+): AppClientRegisteredRoute[] {
+  return (route.children ?? []).flatMap((child) => [
+    ...(child.componentLoader ? [child] : []),
+    ...descendantPages(child),
+  ]);
+}
+
+export interface SettingsModule {
+  /** The module's own route: a page, or the group whose pages are its tabs. */
+  readonly route: AppClientRegisteredRoute;
+  /** The page a card opens: the module page, or the first tab the viewer may open. */
+  readonly target: AppClientRegisteredRoute;
+}
+
+export interface SettingsCategory {
+  readonly route: AppClientRegisteredRoute;
+  readonly modules: readonly SettingsModule[];
+}
+
+/**
+ * The settings home's cards, from the permission-filtered navigation: one category per
+ * child group of the settings group, in route order, and the modules the viewer may open in each. A module registered
+ * directly under the settings group joins the fallback category. Empty categories are left out.
+ */
+export function settingsCatalog(
+  items: readonly RouteNavigationItem[],
+): SettingsCategory[] {
+  const settings = items.find((item) => settingsHomeRoute(item.route));
+  if (!settings) return [];
+  const categories = settings.children.filter(
+    (child) => !child.route.componentLoader,
+  );
+  const loose = settings.children
+    .filter((child) => child.route.componentLoader)
+    .flatMap(toModule);
+  const result = categories.map((category) => ({
+    route: category.route,
+    modules: category.children.flatMap(toModule),
+  }));
+  if (loose.length) {
+    const fallback = result.find(
+      (category) => category.route.name === SETTINGS_FALLBACK_CATEGORY,
+    );
+    const declared = settings.route.children?.find(
+      (child) => child.name === SETTINGS_FALLBACK_CATEGORY,
+    );
+    if (fallback)
+      result[result.indexOf(fallback)] = {
+        ...fallback,
+        modules: [...fallback.modules, ...loose],
+      };
+    else
+      result.push({
+        route: declared ?? settings.route,
+        modules: loose,
+      });
+  }
+  return result.filter((category) => category.modules.length > 0);
+}
+
+function toModule(item: RouteNavigationItem): SettingsModule[] {
+  if (item.route.componentLoader)
+    return [{ route: item.route, target: item.route }];
+  const target = firstPage(item);
+  return target ? [{ route: item.route, target }] : [];
+}
+
+function firstPage(
+  item: RouteNavigationItem,
+): AppClientRegisteredRoute | undefined {
+  for (const child of item.children) {
+    if (child.route.componentLoader) return child.route;
+    const nested = firstPage(child);
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+/**
+ * The navigation shown in place of the application's while a settings page is open: each category a headed section,
+ * each module one entry. A module of several views opens its first view the viewer may open and stays selected on all
+ * of them, the tabs inside the page switching between them; an entry also stays selected on the pages below its own
+ * path, such as a record opened from it.
+ */
+export function settingsNavigation(
+  catalog: readonly SettingsCategory[],
+  routes: readonly AppClientRegisteredRoute[],
+): RouteNavigationItem[] {
+  const pages = allPages(routes);
+  const key = (route: AppClientRegisteredRoute): string =>
+    `${route.packageName}:${route.path}:${route.id}`;
+  return catalog.map((category) => ({
+    route: category.route,
+    children: category.modules.map((module) => {
+      const own = [module.target, ...descendantPages(module.route)];
+      const below = pages.filter((page) =>
+        own.some((route) => page.path.startsWith(`${route.path}/`)),
+      );
+      return {
+        route: module.route.componentLoader
+          ? module.route
+          : { ...module.target, navigation: module.route.navigation },
+        children: [],
+        activeRouteKeys: [...new Set([...own, ...below].map(key))],
+      };
+    }),
+  }));
+}
+
+function allPages(
+  routes: readonly AppClientRegisteredRoute[],
+): AppClientRegisteredRoute[] {
+  return routes.flatMap((route) => [
+    ...(route.componentLoader ? [route] : []),
+    ...allPages(route.children ?? []),
+  ]);
+}

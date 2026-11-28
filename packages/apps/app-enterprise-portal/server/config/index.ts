@@ -26,7 +26,6 @@ import database from './database.js';
 import snowflake from './snowflake.js';
 import users from './users.js';
 import knowledge from './knowledge.js';
-import foundation from './foundation.js';
 import casdoorIdentity from './casdoor-identity.js';
 import enterpriseAppPortal from './enterprise-app-portal.js';
 
@@ -55,7 +54,6 @@ const defaultConfigs: AppConfigFactory<{
   snowflake: ReturnType<typeof snowflake>;
   users: ReturnType<typeof users>;
   knowledge: ReturnType<typeof knowledge>;
-  foundation: ReturnType<typeof foundation>;
   casdoorIdentity: ReturnType<typeof casdoorIdentity>;
   enterpriseAppPortal: ReturnType<typeof enterpriseAppPortal>;
 }> = defaultAppConfigs({
@@ -83,7 +81,6 @@ const defaultConfigs: AppConfigFactory<{
   snowflake,
   users,
   knowledge,
-  foundation,
   casdoorIdentity,
   enterpriseAppPortal,
 });

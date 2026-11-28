@@ -29,6 +29,20 @@ vi.mock('../../client/auth/oa-ltpa/use-oa-ltpa-login.js', () => ({
   }),
 }));
 
+vi.mock('@nocobase/app-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@nocobase/app-client')>();
+  return {
+    ...actual,
+    useClientApplication: () => ({
+      config: {
+        public: {
+          get: () => false,
+        },
+      },
+    }),
+  };
+});
+
 vi.mock('@nocobase/app-plugin-authentication/client', () => ({
   useSignUpAvailable: () => true,
   usePasswordResetCapability: () => ({
@@ -36,6 +50,9 @@ vi.mock('@nocobase/app-plugin-authentication/client', () => ({
     isPending: resetState.pending,
     isError: resetState.failed,
     refetch: resetState.retry,
+  }),
+  useAuthentication: () => ({
+    client: { signIn: { social: vi.fn() } },
   }),
 }));
 

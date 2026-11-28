@@ -21,9 +21,11 @@ The repository root `packageManager` is authoritative (`pnpm@11.11.0` as of the 
 
 ## Documents in this folder
 
-| File | Topic |
-| --- | --- |
-| [application-architecture.md](application-architecture.md) | App / public-layer boundaries and identity options |
-| [acceptance/](acceptance/) | Run-scoped evidence for integrations and releases |
+| File                                                             | Topic                                                                            |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [application-architecture.md](application-architecture.md)       | App / public-layer boundaries and identity options                               |
+| [casdoor-enterprise-identity.md](casdoor-enterprise-identity.md) | Shared Casdoor issuer, per-app sessions, and provisioning prerequisites          |
+| [appops-identity-profile.md](appops-identity-profile.md)         | AppOps `casdoor-enterprise` profile: shared issuer refs and per-instance secrets |
+| [acceptance/](acceptance/)                                       | Run-scoped evidence for integrations and releases                                |
 
 Further topics (branching, create-business-app, migrations, platform upgrades, releases) land here as later PRs land their mechanisms.
