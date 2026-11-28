@@ -164,6 +164,20 @@
     "zh": "通知",
     "ja": "通知"
   },
+  "distributed": {
+    "en": "Cluster and distributed",
+    "zh": "集群与分布式",
+    "ja": "クラスターと分散"
+  },
+  "file": { "en": "Files", "zh": "文件", "ja": "ファイル" },
+  "files": { "en": "Files", "zh": "文件", "ja": "ファイル" },
+  "backup": { "en": "Backup", "zh": "备份", "ja": "バックアップ" },
+  "drive": { "en": "Files", "zh": "文件", "ja": "ファイル" },
+  "mail": { "en": "Mail", "zh": "邮件", "ja": "メール" },
+  "mailer": { "en": "Mail", "zh": "邮件", "ja": "メール" },
+  "notification": { "en": "Notifications", "zh": "通知", "ja": "通知" },
+  "notifications": { "en": "Notifications", "zh": "通知", "ja": "通知" },
+  "notification-in-app": { "en": "Notifications", "zh": "通知", "ja": "通知" },
   "notification-providers": {
     "en": "Notifications",
     "zh": "通知",
@@ -174,6 +188,7 @@
     "zh": "通知",
     "ja": "通知"
   },
+  "verification": { "en": "Verification", "zh": "验证码", "ja": "認証コード" },
   "scheduler": {
     "en": "Scheduler",
     "zh": "定时任务",
@@ -279,6 +294,18 @@
     "zh": "日志",
     "ja": "ログ"
   },
+  "message-broker": {
+    "en": "Message broker",
+    "zh": "消息代理",
+    "ja": "メッセージブローカー"
+  },
+  "app-plugin-message-broker": {
+    "en": "Message broker",
+    "zh": "消息代理",
+    "ja": "メッセージブローカー"
+  },
+  "logging": { "en": "Logging", "zh": "日志", "ja": "ログ" },
+  "audit": { "en": "Audit", "zh": "审计", "ja": "監査" },
   "lifecycle": {
     "en": "Plugin lifecycle",
     "zh": "插件生命周期",

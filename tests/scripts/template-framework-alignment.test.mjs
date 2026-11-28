@@ -119,131 +119,18 @@ function runtimeDependencies(template) {
   return imported;
 }
 
-// Examples installs Agents; Default deliberately does not. Apply only the documented chat
-// composition slots to Default's expected source, keeping every shared line under comparison.
-function withExamplesChat(source, file) {
-  const replaceOnce = (before, after) => {
-    assert.equal(source.split(before).length - 1, 1, `${file}: chat slot`);
-    source = source.replace(before, after);
-  };
-  if (file === 'client/layouts/app-layout.tsx') {
-    replaceOnce(
-      'import { RouteTreeProvider }',
-      "import { OnlineAgentProvider } from '#components/online-agent/provider';\n" +
-        "import { OnlineAgentPanelHost } from '#components/online-agent/panel-host';\n" +
-        'import { RouteTreeProvider }',
-    );
-    replaceOnce(
-      'export function AppLayout({ routes }: AppLayoutProps): ReactElement {',
-      `export function AppLayout({ routes }: AppLayoutProps): ReactElement {
-  return (
-    <OnlineAgentProvider>
-      <AuthenticatedLayout routes={routes} />
-    </OnlineAgentProvider>
-  );
-}
-
-function AuthenticatedLayout({ routes }: AppLayoutProps): ReactElement {`,
-    );
-    // Retain the route outlet, watermark, scrolling and surrounding shell verbatim.
-    const main = source.match(
-      /^            <main[\s\S]*?^            <\/main>/mu,
-    )?.[0];
-    assert.ok(main, 'shared route outlet');
-    replaceOnce(
-      main,
-      '            {/* Examples-only integration: the temporary chat docks beside any demo without replacing the route. */}\n' +
-        "            <div className='relative flex min-h-0 flex-1'>\n" +
-        main
-          .replace(/^( +)(?=[<{])/gmu, '  $1')
-          .replace(
-            'relative isolate min-w-0',
-            'relative isolate min-h-0 min-w-0',
-          ) +
-        '\n              <OnlineAgentPanelHost />\n            </div>',
-    );
-  }
-  if (file === 'client/layouts/components/header-actions.tsx') {
-    replaceOnce(
-      "import { UserMenu } from './user-menu.js';",
-      "import { UserMenu } from './user-menu.js';\n" +
-        "import { ChatHeaderButton } from '#extensions/nocobase-agent-chat/launchers';",
-    );
-    replaceOnce(
-      '        <UserMenu />',
-      '        <ChatHeaderButton />\n        <UserMenu />',
-    );
-  }
-  return source;
-}
-
 function sharedFrameworkSource(template, file) {
-  let source = readFileSync(path.join(template.directory, file), 'utf8');
+  const source = readFileSync(path.join(template.directory, file), 'utf8');
 
   // The image recipe is shared. Only the template's own directory, named in the usage comment, differs; it is
   // normalized to Default's before comparing.
   if (file === 'Dockerfile') {
-    source = source.replaceAll(
+    return source.replaceAll(
       `packages/templates/app-template-${template.kind}`,
       'packages/templates/app-template-default',
     );
   }
 
-  // Default omits the template name; Examples retains it in the footer, tooltip and accessible name.
-  // Normalize only the exact name-related fragments so the rest of the shared layout stays compared.
-  if (file === 'client/layouts/components/sidebar-footer.tsx') {
-    if (template.kind === 'default') {
-      assert.doesNotMatch(
-        source,
-        /templateName|app\.displayName|Default Template/u,
-      );
-    } else {
-      const nameFragments = [
-        [
-          " * The application's sidebar footer: the NocoBase slogan's two lines, then the template's name and its version, each\n" +
-            ' * on its own line. In icon mode only the shield remains, and a tooltip carries the same text.',
-          " * The application's sidebar footer: the NocoBase slogan's two lines, then the application's version.\n" +
-            ' * In icon mode only the shield remains, and a tooltip carries the same text.',
-        ],
-        [
-          "  const templateName = publicConfig.get('app.displayName', 'Examples Template');\n",
-          '',
-        ],
-        [
-          '${brandPartnership} ${buildReliableSystems} ${templateName} ${versionLabel}',
-          '${brandPartnership} ${buildReliableSystems} ${versionLabel}',
-        ],
-        [
-          "            <span className='mt-1 opacity-70'>\n" +
-            '              {templateName} {versionLabel}\n' +
-            '            </span>',
-          "            <span className='mt-1 opacity-70'>{versionLabel}</span>",
-        ],
-        [
-          '          {/* Name and version stay on one line each; a long name is cut off, with the whole name as its title. */}\n' +
-            '          <p\n' +
-            "            className='mt-1 truncate text-muted-foreground'\n" +
-            '            title={templateName}\n' +
-            '          >\n' +
-            '            {templateName}\n' +
-            '          </p>\n' +
-            "          <p className='truncate text-muted-foreground' title={versionLabel}>",
-          '          <p\n' +
-            "            className='mt-1 truncate text-muted-foreground'\n" +
-            '            title={versionLabel}\n' +
-            '          >',
-        ],
-      ];
-      for (const [before, after] of nameFragments) {
-        assert.equal(
-          source.split(before).length - 1,
-          1,
-          `${template.kind}: ${file} must retain exactly one name fragment: ${before}`,
-        );
-        source = source.replace(before, after);
-      }
-    }
-  }
   return source;
 }
 
@@ -294,12 +181,8 @@ for (const template of templates) {
         const relative = path.join(directory, file);
         assert.equal(
           sharedFrameworkSource(template, relative),
-          template.kind === 'examples'
-            ? withExamplesChat(
-                sharedFrameworkSource(baseline, relative),
-                relative,
-              )
-            : sharedFrameworkSource(baseline, relative),
+          // Both templates get the Agent panel from the plugin's layout extension, so the layouts are identical.
+          sharedFrameworkSource(baseline, relative),
           `${template.kind}: ${relative}`,
         );
       }
@@ -321,9 +204,7 @@ for (const template of templates) {
     ]) {
       assert.equal(
         sharedFrameworkSource(template, file),
-        template.kind === 'examples'
-          ? withExamplesChat(sharedFrameworkSource(baseline, file), file)
-          : sharedFrameworkSource(baseline, file),
+        sharedFrameworkSource(baseline, file),
         `${template.kind}: ${file}`,
       );
     }

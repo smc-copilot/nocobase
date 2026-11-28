@@ -3,6 +3,15 @@ import type { LocaleResource } from '@nocobase/i18n';
 import type enUS from './en-US.js';
 
 const koKR: LocaleResource<typeof enUS> = {
+  audit: {
+    operations: {
+      createPermissionSet: '권한 세트 만들기',
+      assignPermissionSet: '권한 세트 할당',
+      unassignPermissionSet: '권한 세트 할당 취소',
+      updatePermissionSet: '권한 세트 수정',
+      deletePermissionSet: '권한 세트 삭제',
+    },
+  },
   sections: {
     pages: '페이지 접근',
     page: '페이지',
@@ -31,6 +40,7 @@ const koKR: LocaleResource<typeof enUS> = {
     },
     settings: {
       'permission-sets': '권한 세트',
+      'authentication-settings': '로그인 및 인증',
     },
     subjectTypes: {
       authenticated: '로그인한 모든 사용자',

@@ -3,6 +3,15 @@ import type { LocaleResource } from '@nocobase/i18n';
 import type enUS from './en-US.js';
 
 const deDE: LocaleResource<typeof enUS> = {
+  audit: {
+    operations: {
+      createPermissionSet: 'Berechtigungssatz erstellen',
+      assignPermissionSet: 'Berechtigungssatz zuweisen',
+      unassignPermissionSet: 'Zuweisung eines Berechtigungssatzes aufheben',
+      updatePermissionSet: 'Berechtigungssatz bearbeiten',
+      deletePermissionSet: 'Berechtigungssatz löschen',
+    },
+  },
   sections: {
     pages: 'Seitenberechtigungen',
     page: 'Seiten',
@@ -31,6 +40,7 @@ const deDE: LocaleResource<typeof enUS> = {
     },
     settings: {
       'permission-sets': 'Berechtigungssätze',
+      'authentication-settings': 'Anmeldung und Authentifizierung',
     },
     subjectTypes: {
       authenticated: 'Alle angemeldeten Benutzer',

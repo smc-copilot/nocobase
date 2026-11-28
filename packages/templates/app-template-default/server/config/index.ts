@@ -1,3 +1,5 @@
+import { defineAuditConfig, type AuditConfig } from '@nocobase/audit';
+import agents from './agents.js';
 import mailers from './mailers.js';
 import {
   defaultAppConfigs,
@@ -15,6 +17,7 @@ import logging from './logging.js';
 import drive from './drive.js';
 import concurrency from './concurrency.js';
 import queue from './queue.js';
+import messageBroker from './message-broker.js';
 import jobs from './jobs.js';
 import scheduler from './scheduler.js';
 import caching from './caching.js';
@@ -25,10 +28,11 @@ import api from './api.js';
 import database from './database.js';
 import snowflake from './snowflake.js';
 import users from './users.js';
-import knowledge from './knowledge.js';
-import foundation from './foundation.js';
+
+const audit = defineAuditConfig();
 
 const defaultConfigs: AppConfigFactory<{
+  agents: ReturnType<typeof agents>;
   mailers: ReturnType<typeof mailers>;
   auth: ReturnType<typeof auth>;
   authorization: ReturnType<typeof authorization>;
@@ -42,6 +46,7 @@ const defaultConfigs: AppConfigFactory<{
   drive: ReturnType<typeof drive>;
   concurrency: ReturnType<typeof concurrency>;
   queue: ReturnType<typeof queue>;
+  messageBroker: ReturnType<typeof messageBroker>;
   jobs: ReturnType<typeof jobs>;
   scheduler: ReturnType<typeof scheduler>;
   caching: ReturnType<typeof caching>;
@@ -49,12 +54,12 @@ const defaultConfigs: AppConfigFactory<{
   i18n: ReturnType<typeof i18n>;
   app: ReturnType<typeof app>;
   api: ReturnType<typeof api>;
+  audit: AuditConfig;
   database: ReturnType<typeof database>;
   snowflake: ReturnType<typeof snowflake>;
   users: ReturnType<typeof users>;
-  knowledge: ReturnType<typeof knowledge>;
-  foundation: ReturnType<typeof foundation>;
 }> = defaultAppConfigs({
+  agents,
   mailers,
   auth,
   authorization,
@@ -68,6 +73,7 @@ const defaultConfigs: AppConfigFactory<{
   drive,
   concurrency,
   queue,
+  messageBroker,
   jobs,
   scheduler,
   caching,
@@ -75,11 +81,10 @@ const defaultConfigs: AppConfigFactory<{
   i18n,
   app,
   api,
+  audit,
   database,
   snowflake,
   users,
-  knowledge,
-  foundation,
 });
 
 export default defaultConfigs;

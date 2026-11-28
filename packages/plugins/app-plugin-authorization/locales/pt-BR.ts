@@ -3,6 +3,16 @@ import type { LocaleResource } from '@nocobase/i18n';
 import type enUS from './en-US.js';
 
 const ptBR: LocaleResource<typeof enUS> = {
+  audit: {
+    operations: {
+      createPermissionSet: 'Criar um conjunto de permissões',
+      assignPermissionSet: 'Atribuir um conjunto de permissões',
+      unassignPermissionSet:
+        'Remover a atribuição de um conjunto de permissões',
+      updatePermissionSet: 'Editar um conjunto de permissões',
+      deletePermissionSet: 'Excluir um conjunto de permissões',
+    },
+  },
   sections: {
     pages: 'Permissões de página',
     page: 'Páginas',
@@ -31,6 +41,7 @@ const ptBR: LocaleResource<typeof enUS> = {
     },
     settings: {
       'permission-sets': 'Conjuntos de permissões',
+      'authentication-settings': 'Login e autenticação',
     },
     subjectTypes: {
       authenticated: 'Todos os usuários conectados',

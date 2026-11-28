@@ -1,10 +1,15 @@
 const messages = {
-  'push.title': '推送通知',
-  'push.description': '每台设备独立订阅，应用 关闭后也能收到提醒。',
-  'push.subscribe': '订阅此设备',
+  'push.deviceCount': '已登记 {{total}} 台 · 已开启 {{active}} 台',
+  'push.active': '已开启',
+  'push.paused': '已暂停',
+  'push.pause': '暂停',
+  'push.resume': '恢复',
+  'push.title': '接收推送的设备',
+  'push.description': '在要接收浏览器推送的设备上分别开启。',
+  'push.subscribe': '在这台设备上开启推送',
   'push.name': '设备名称',
   'push.empty': '还没有订阅设备',
-  'push.emptyHint': '订阅此设备，即可在 应用 关闭后收到提醒。',
+  'push.emptyHint': '在这台设备上开启推送，即可在 应用关闭后收到提醒。',
   'push.ios':
     'iOS 或 iPadOS 16.4 及以上：在 Safari 的分享菜单中选择“添加到主屏幕”，然后从主屏幕打开 应用 再订阅。',
   'push.unsupported': '推送需要 HTTPS 和支持 Web Push 的浏览器。',
@@ -19,10 +24,27 @@ const messages = {
   'push.cancel': '取消',
   'push.saved': '设备设置已保存',
   'push.saving': '正在保存设备设置',
-  'push.testSent': '测试通知已排队',
+  'push.testSent': '推送服务已接受测试通知。',
+  'push.invalid': '浏览器返回的订阅信息无效，请重新订阅。',
+  'push.endpoint': '服务器暂不支持此浏览器使用的推送服务。',
+  'push.owned': '此浏览器的订阅属于另一个账号。请先从原账号移除，再重新订阅。',
+  'push.browserFailed':
+    '浏览器无法创建推送订阅。请检查浏览器的通知设置和网络连接。',
+  'push.expired': '此设备订阅已过期或已被移除，请在该设备上重新订阅。',
+  'push.testPaused': '请先恢复此设备的推送，再发送测试通知。',
+  'push.testLimited': '两次测试通知之间请间隔 30 秒。',
+  'push.testNetwork':
+    '服务器无法连接推送服务。请联系管理员检查网络和 Web Push 代理。',
+  'push.testGatewayAuth':
+    '推送服务拒绝了服务器的凭据。请联系管理员检查 VAPID 密钥。',
+  'push.testGatewayLimited': '推送服务限制了请求频率，请稍后重试。',
+  'push.testGateway': '推送服务暂时无法接受测试通知，请稍后重试。',
   'push.failed': '无法更新推送设置，请重试。',
   'push.loadingFailed': '无法加载设备，请重试。',
   'push.retry': '重试',
+  'channelType.title': '浏览器推送',
+  'channelType.testHint':
+    '给你开启了推送的浏览器发一条测试通知。请先在个人设置 › 通知中开启。',
 };
 
 export default messages;

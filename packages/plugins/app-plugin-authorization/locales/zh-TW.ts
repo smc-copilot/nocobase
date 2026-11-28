@@ -3,6 +3,15 @@ import type { LocaleResource } from '@nocobase/i18n';
 import type enUS from './en-US.js';
 
 const zhTW: LocaleResource<typeof enUS> = {
+  audit: {
+    operations: {
+      createPermissionSet: '建立權限集',
+      assignPermissionSet: '指派權限集',
+      unassignPermissionSet: '取消指派權限集',
+      updatePermissionSet: '編輯權限集',
+      deletePermissionSet: '刪除權限集',
+    },
+  },
   sections: {
     pages: '頁面許可權',
     page: '頁數',
@@ -30,6 +39,7 @@ const zhTW: LocaleResource<typeof enUS> = {
     },
     settings: {
       'permission-sets': '許可權集',
+      'authentication-settings': '登入與認證',
     },
     subjectTypes: {
       authenticated: '所有登入使用者',
