@@ -241,6 +241,34 @@ export class ProviderRegistry {
     return this.require(providerId);
   }
 
+  public async recordHealthCheck(
+    providerId: string,
+    actor?: ActorContext,
+  ): Promise<ProviderView> {
+    await this.require(providerId);
+    return this.runtime.transaction(async (connection) => {
+      const now = this.runtime.now();
+      await connection.query
+        .updateTable(tables.providers)
+        .set({ lastHealthCheckAt: now, updatedAt: now })
+        .where('providerId', '=', providerId)
+        .execute();
+      await this.audit.append(
+        {
+          action: 'provider.health_checked',
+          actorId: actor?.actorId,
+          providerId,
+          requestId: actor?.requestId,
+          entityType: 'provider',
+          entityId: providerId,
+          details: {},
+        },
+        connection,
+      );
+      return this.require(providerId, connection);
+    });
+  }
+
   private assertType(value: string): void {
     if (!isProviderType(value)) {
       throw hubError(

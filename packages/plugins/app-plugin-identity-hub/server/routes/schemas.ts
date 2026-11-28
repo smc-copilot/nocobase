@@ -339,6 +339,66 @@ export const ResolveConflictSchema: z.ZodType = z
   .object({ status: z.enum(['resolved', 'rejected']) })
   .meta({ ref: 'IdentityHubResolveConflict' });
 
+export const ProviderHealthSchema: z.ZodType = z
+  .object({
+    ok: z.boolean(),
+    checkedAt: z.iso.datetime(),
+    detail: z.string().nullable(),
+  })
+  .meta({ ref: 'IdentityHubProviderHealth' });
+
+const syncAction = z.enum(['create', 'link', 'update', 'conflict', 'skip']);
+
+export const SyncProposalSchema: z.ZodType = z
+  .object({
+    externalId: z.string(),
+    identityKey: z.string(),
+    externalUsername: z.string().nullable(),
+    displayName: z.string().nullable(),
+    action: syncAction,
+    personId: z.string().nullable(),
+    reason: z.string().nullable(),
+  })
+  .meta({ ref: 'IdentityHubSyncProposal' });
+
+export const SyncPreviewSchema: z.ZodType = z
+  .object({
+    providerId: z.string(),
+    proposals: z.array(SyncProposalSchema),
+  })
+  .meta({ ref: 'IdentityHubSyncPreview' });
+
+export const SyncFailureSchema: z.ZodType = z
+  .object({
+    externalId: z.string().nullable(),
+    reason: z.string(),
+  })
+  .meta({ ref: 'IdentityHubSyncFailure' });
+
+export const SyncStatsSchema: z.ZodType = z
+  .object({
+    created: z.number().int(),
+    linked: z.number().int(),
+    updated: z.number().int(),
+    conflicts: z.number().int(),
+    failed: z.number().int(),
+    skipped: z.number().int(),
+    failures: z.array(SyncFailureSchema),
+  })
+  .meta({ ref: 'IdentityHubSyncStats' });
+
+export const SyncRunSchema: z.ZodType = z
+  .object({
+    batchId: z.string(),
+    providerId: z.string(),
+    status: z.enum(['running', 'succeeded', 'failed']),
+    stats: SyncStatsSchema,
+    startedAt: z.iso.datetime().nullable(),
+    finishedAt: z.iso.datetime().nullable(),
+    error: z.string().nullable(),
+  })
+  .meta({ ref: 'IdentityHubSyncRun' });
+
 export const PageMetaSchema: z.ZodType = z
   .object({
     total: z.number().int(),

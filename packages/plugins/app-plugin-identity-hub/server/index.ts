@@ -23,11 +23,13 @@ export {
   SETTINGS_PROVIDERS,
 } from './authorization.js';
 export {
+  adapterRegistryToken,
   admissionPolicyToken,
   appRegistryServiceToken,
   conflictQueueToken,
   identityAuditLogToken,
   identityLinkServiceToken,
+  identitySyncServiceToken,
   membershipServiceToken,
   organizationServiceToken,
   outboxPublisherToken,

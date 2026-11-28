@@ -3,6 +3,7 @@ import {
   type ServiceToken,
 } from '@nocobase/service-provider';
 
+import type { AdapterRegistry } from './adapters/registry.js';
 import type { AdmissionPolicyService } from './admission.js';
 import type { OutboxPublisher } from './outbox.js';
 import type { AppRegistryService, MembershipService } from './services/apps.js';
@@ -12,6 +13,7 @@ import type { IdentityLinkService } from './services/identities.js';
 import type { OrganizationService } from './services/organizations.js';
 import type { PersonService } from './services/persons.js';
 import type { ProviderRegistry } from './services/providers.js';
+import type { IdentitySyncService } from './services/sync.js';
 
 const namespace = '@nocobase/app-plugin-identity-hub';
 
@@ -44,3 +46,9 @@ export const admissionPolicyToken: ServiceToken<AdmissionPolicyService> =
 
 export const outboxPublisherToken: ServiceToken<OutboxPublisher> =
   createServiceToken<OutboxPublisher>(`${namespace}/outbox`);
+
+export const adapterRegistryToken: ServiceToken<AdapterRegistry> =
+  createServiceToken<AdapterRegistry>(`${namespace}/adapters`);
+
+export const identitySyncServiceToken: ServiceToken<IdentitySyncService> =
+  createServiceToken<IdentitySyncService>(`${namespace}/sync`);

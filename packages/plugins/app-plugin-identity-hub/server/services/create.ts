@@ -1,4 +1,6 @@
 import { AdmissionPolicyService } from '../admission.js';
+import type { AdapterDependencies } from '../adapters/types.js';
+import { AdapterRegistry } from '../adapters/registry.js';
 import type { HubRuntime } from '../runtime.js';
 import { AppRegistryService, MembershipService } from './apps.js';
 import { IdentityAuditLog } from './audit.js';
@@ -7,6 +9,7 @@ import { IdentityLinkService } from './identities.js';
 import { OrganizationService } from './organizations.js';
 import { PersonService } from './persons.js';
 import { ProviderRegistry } from './providers.js';
+import { IdentitySyncService } from './sync.js';
 
 export interface IdentityHubServices {
   readonly runtime: HubRuntime;
@@ -19,10 +22,13 @@ export interface IdentityHubServices {
   readonly apps: AppRegistryService;
   readonly memberships: MembershipService;
   readonly admission: AdmissionPolicyService;
+  readonly adapters: AdapterRegistry;
+  readonly sync: IdentitySyncService;
 }
 
 export function createIdentityHubServices(
   runtime: HubRuntime,
+  deps: AdapterDependencies = {},
 ): IdentityHubServices {
   const audit = new IdentityAuditLog(runtime);
   const conflicts = new ConflictQueue(runtime, audit);
@@ -33,6 +39,16 @@ export function createIdentityHubServices(
   const memberships = new MembershipService(runtime, audit, persons, apps);
   const identities = new IdentityLinkService(runtime, audit, persons);
   const admission = new AdmissionPolicyService();
+  const adapters = new AdapterRegistry(providers, deps);
+  const sync = new IdentitySyncService(
+    runtime,
+    adapters,
+    providers,
+    persons,
+    identities,
+    conflicts,
+    audit,
+  );
   return {
     runtime,
     audit,
@@ -44,5 +60,7 @@ export function createIdentityHubServices(
     apps,
     memberships,
     admission,
+    adapters,
+    sync,
   };
 }

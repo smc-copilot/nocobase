@@ -406,7 +406,7 @@ importers:
         version: 24.13.3
       eslint:
         specifier: 'catalog:'
-        version: 10.8.1(jiti@2.7.0)(supports-color@8.1.1)
+        version: 10.8.1(jiti@2.7.0)
       hono:
         specifier: 'catalog:'
         version: 4.13.2
@@ -5725,6 +5725,9 @@ importers:
       hono:
         specifier: 'catalog:'
         version: 4.13.2
+      jose:
+        specifier: ^6.2.9
+        version: 6.2.9
       zod:
         specifier: 'catalog:'
         version: 4.6.7
@@ -5740,7 +5743,7 @@ importers:
         version: 24.13.3
       eslint:
         specifier: 'catalog:'
-        version: 10.8.1(jiti@2.7.0)
+        version: 10.8.1(jiti@2.7.0)(supports-color@8.1.1)
       prettier:
         specifier: 'catalog:'
         version: 3.9.6

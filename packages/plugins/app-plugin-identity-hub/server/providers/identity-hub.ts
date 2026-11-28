@@ -9,11 +9,13 @@ import {
   type IdentityHubServices,
 } from '../services/create.js';
 import {
+  adapterRegistryToken,
   admissionPolicyToken,
   appRegistryServiceToken,
   conflictQueueToken,
   identityAuditLogToken,
   identityLinkServiceToken,
+  identitySyncServiceToken,
   membershipServiceToken,
   organizationServiceToken,
   outboxPublisherToken,
@@ -64,5 +66,7 @@ export class IdentityHubProvider extends ServiceProvider<AppPluginApplication> {
       outboxPublisherToken,
       () => resolveServices().runtime.outbox,
     );
+    container.singleton(adapterRegistryToken, () => resolveServices().adapters);
+    container.singleton(identitySyncServiceToken, () => resolveServices().sync);
   }
 }

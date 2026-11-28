@@ -34,6 +34,7 @@ import {
   conflictQueueToken,
   identityAuditLogToken,
   identityLinkServiceToken,
+  identitySyncServiceToken,
   membershipServiceToken,
   personServiceToken,
   providerRegistryToken,
@@ -61,10 +62,13 @@ import {
   PersonParamsSchema,
   PersonSchema,
   ProviderBodySchema,
+  ProviderHealthSchema,
   ProviderParamsSchema,
   ProviderPatchSchema,
   ProviderSchema,
   ResolveConflictSchema,
+  SyncPreviewSchema,
+  SyncRunSchema,
   UnlinkSchema,
   UpdatePersonSchema,
 } from './schemas.js';
@@ -145,6 +149,7 @@ export const apiRoutes: AppApiRouteContribution<AppPluginApplication> =
 
     const persons = () => container.resolve(personServiceToken);
     const providers = () => container.resolve(providerRegistryToken);
+    const sync = () => container.resolve(identitySyncServiceToken);
     const identities = () => container.resolve(identityLinkServiceToken);
     const apps = () => container.resolve(appRegistryServiceToken);
     const memberships = () => container.resolve(membershipServiceToken);
@@ -346,6 +351,112 @@ export const apiRoutes: AppApiRouteContribution<AppPluginApplication> =
             actorOf(context),
           ),
         }),
+    );
+
+    router.post(
+      '/identityHub/providers/:providerId/test',
+      providersManage,
+      describeRoute({
+        tags,
+        summary: 'Test an identity provider connection',
+        operationId: 'identityHubTestProvider',
+        description:
+          'Requires manage on identityHub.providers. Calls the provider adapter health check and records lastHealthCheckAt.',
+        responses: {
+          200: dataResponse(ProviderHealthSchema),
+          ...apiErrorResponses,
+          400: apiErrorResponse(400),
+          404: apiErrorResponse(404),
+        },
+      }),
+      apiValidator('param', ProviderParamsSchema),
+      async (context) =>
+        context.json({
+          data: await sync().testConnection(
+            readParam<{ providerId: string }>(context).providerId,
+            actorOf(context),
+          ),
+        }),
+    );
+
+    router.post(
+      '/identityHub/providers/:providerId/sync-preview',
+      providersManage,
+      describeRoute({
+        tags,
+        summary: 'Preview a provider directory sync',
+        operationId: 'identityHubPreviewProviderSync',
+        description:
+          'Requires manage on identityHub.providers. Reads the first directory page and writes no person or identity rows.',
+        responses: {
+          200: dataResponse(SyncPreviewSchema),
+          ...apiErrorResponses,
+          400: apiErrorResponse(400),
+          404: apiErrorResponse(404),
+        },
+      }),
+      apiValidator('param', ProviderParamsSchema),
+      async (context) =>
+        context.json({
+          data: await sync().syncPreview(
+            readParam<{ providerId: string }>(context).providerId,
+            actorOf(context),
+          ),
+        }),
+    );
+
+    router.post(
+      '/identityHub/providers/:providerId/sync-runs',
+      providersManage,
+      describeRoute({
+        tags,
+        summary: 'Run a provider directory sync',
+        operationId: 'identityHubStartProviderSync',
+        description:
+          'Requires manage on identityHub.providers. Creates or links hub persons from the directory. A per-user failure is recorded on the run and does not disable other identities.',
+        responses: {
+          200: dataResponse(SyncRunSchema),
+          ...apiErrorResponses,
+          400: apiErrorResponse(400),
+          404: apiErrorResponse(404),
+        },
+      }),
+      apiValidator('param', ProviderParamsSchema),
+      async (context) =>
+        context.json({
+          data: await sync().syncRun(
+            readParam<{ providerId: string }>(context).providerId,
+            actorOf(context),
+          ),
+        }),
+    );
+
+    router.get(
+      '/identityHub/providers/:providerId/sync-runs',
+      providersRead,
+      describeRoute({
+        tags,
+        summary: 'List provider sync runs',
+        operationId: 'identityHubListProviderSyncRuns',
+        description: 'Requires read on identityHub.providers.',
+        responses: {
+          200: listResponse(SyncRunSchema, PageMetaSchema),
+          ...apiErrorResponses,
+          404: apiErrorResponse(404),
+        },
+      }),
+      apiValidator('param', ProviderParamsSchema),
+      apiValidator('query', PageQuerySchema),
+      async (context) => {
+        const page = await sync().listSyncRuns(
+          readParam<{ providerId: string }>(context).providerId,
+          readQuery(context),
+        );
+        return context.json({
+          data: page.items,
+          meta: { total: page.total, page: page.page, pageSize: page.pageSize },
+        });
+      },
     );
 
     router.post(

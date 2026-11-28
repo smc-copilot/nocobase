@@ -3,6 +3,7 @@ import {
   type DatabaseConnection,
 } from '@nocobase/db';
 
+import type { VerifiedIdentity } from '../adapters/types.js';
 import { hubError } from '../errors.js';
 import type { ActorContext, IdentityStatus } from '../model.js';
 import { buildIdentityKey } from '../model.js';
@@ -164,6 +165,113 @@ export class IdentityLinkService {
         await this.audit.append(
           {
             action: 'identity.linked',
+            actorId: actor?.actorId,
+            personId: person.personId,
+            providerId: provider.providerId,
+            requestId: actor?.requestId,
+            entityType: 'identity',
+            entityId: identityId,
+            details: { identityKey, subject },
+          },
+          connection,
+        );
+        return stored;
+      });
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        throw hubError(
+          'ALREADY_EXISTS',
+          'IDENTITY_HUB_IDENTITY_ALREADY_LINKED',
+          'This provider identity is already linked.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  public findByIdentityKey(
+    providerId: string,
+    identityKey: string,
+  ): Promise<IdentityView | undefined> {
+    return this.findByKey(providerId, identityKey);
+  }
+
+  /**
+   * Inserts a verified provider identity or refreshes the same key.
+   * A second link with the same key keeps one row and updates mutable attributes.
+   */
+  public async upsertVerified(
+    personId: string,
+    verified: VerifiedIdentity,
+    actor?: ActorContext,
+  ): Promise<IdentityView> {
+    const person = await this.persons.get(personId);
+    const provider = await this.requireProvider(verified.providerId);
+    const identityKey = verified.identityKey.trim();
+    const subject = verified.subject.trim();
+    if (!identityKey || !subject) {
+      throw hubError(
+        'INVALID_ARGUMENT',
+        'IDENTITY_HUB_SUBJECT_REQUIRED',
+        'A verified identity needs a subject and identity key.',
+      );
+    }
+    try {
+      return await this.runtime.transaction(async (connection) => {
+        const now = this.runtime.now();
+        const existing = await this.findByKey(
+          verified.providerId,
+          identityKey,
+          connection,
+        );
+        if (
+          existing &&
+          existing.status !== 'unlinked' &&
+          existing.personId !== person.personId
+        ) {
+          throw hubError(
+            'ALREADY_EXISTS',
+            'IDENTITY_HUB_IDENTITY_ALREADY_LINKED',
+            'This provider identity is already linked.',
+            { identityId: existing.identityId, personId: existing.personId },
+          );
+        }
+        const identityId = existing?.identityId ?? this.runtime.id();
+        const values = {
+          personId: person.personId,
+          providerType: provider.providerType,
+          issuer: blankToNull(verified.issuer),
+          subject,
+          externalId: blankToNull(verified.externalId ?? identityKey),
+          externalUsername: blankToNull(verified.externalUsername),
+          status: 'active' as const,
+          lastSyncedAt: now,
+          updatedAt: now,
+        };
+        if (existing) {
+          await connection.query
+            .updateTable(tables.identities)
+            .set(values)
+            .where('identityId', '=', identityId)
+            .execute();
+        } else {
+          await connection.query
+            .insertInto(tables.identities)
+            .values({
+              ...values,
+              identityId,
+              providerId: provider.providerId,
+              identityKey,
+              verifiedAt: now,
+              lastAuthenticatedAt: null,
+              createdAt: now,
+            })
+            .execute();
+        }
+        const stored = await this.require(identityId, connection);
+        await this.audit.append(
+          {
+            action: existing ? 'identity.updated' : 'identity.linked',
             actorId: actor?.actorId,
             personId: person.personId,
             providerId: provider.providerId,
