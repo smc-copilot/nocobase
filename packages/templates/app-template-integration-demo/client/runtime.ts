@@ -17,6 +17,13 @@ const appRuntime = defineAppRuntime({
   reactProviders,
   routes: () => createApplicationRoutes(),
   plugins,
+  // These plugin pages use the same addresses as this application's own settings and inbox pages.
+  excludedRouteIds: [
+    '@nocobase/app-plugin-notification-in-app:inbox',
+    '@nocobase/app-plugin-users:settingsUsers',
+    '@nocobase/app-plugin-authorization:settingsRoles',
+    '@nocobase/app-plugin-authorization:settingsDefaultAccess',
+  ],
 });
 
 export default appRuntime;

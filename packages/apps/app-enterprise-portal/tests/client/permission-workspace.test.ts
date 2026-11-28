@@ -9,7 +9,7 @@ import type {
   LocalizedText,
   PermissionGrant,
 } from '@nocobase/app-plugin-authorization/client';
-import { CAPABILITY_GUIDE_ACCESS } from '@nocobase/app-plugin-foundation/client';
+import { DATABASE_EXPLORER_ACCESS } from '@nocobase/app-plugin-database-explorer/client';
 import appRuntime from '../../client/runtime.js';
 import { createApplicationRoutes } from '../../client/routes.js';
 import settingsRoutes from '../../client/pages/settings/routes.js';
@@ -440,7 +440,7 @@ describe('role permission workspace', () => {
           (action) =>
             action.id ===
             permissionRowId(
-              { type: 'page', id: CAPABILITY_GUIDE_ACCESS.resource.id },
+              { type: 'page', id: DATABASE_EXPLORER_ACCESS.resource.id },
               'access',
             ),
         ),
@@ -450,7 +450,7 @@ describe('role permission workspace', () => {
     expect(open).toMatchObject({ label: enUS.settings.openPage, view: true });
     expect(
       [...ws.menuPages.values()].some((pages) =>
-        pages.includes(CAPABILITY_GUIDE_ACCESS.resource.id),
+        pages.includes(DATABASE_EXPLORER_ACCESS.resource.id),
       ),
     ).toBe(false);
     const saved = grantsFromDraft(
@@ -461,7 +461,7 @@ describe('role permission workspace', () => {
     );
     expect(saved).toEqual([
       {
-        resource: { type: 'page', id: CAPABILITY_GUIDE_ACCESS.resource.id },
+        resource: { type: 'page', id: DATABASE_EXPLORER_ACCESS.resource.id },
         actions: [{ action: 'access' }],
       },
     ]);

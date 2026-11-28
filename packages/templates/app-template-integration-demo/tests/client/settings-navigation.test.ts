@@ -179,7 +179,7 @@ describe('System settings navigation', () => {
     );
   });
 
-  it('places a plugin module registered outside the categories under System', () => {
+  it('places a plugin module in its built-in System category', () => {
     const routes = resolveAppClientContributions([
       { packageName: app, source: 'application', routes: [shell] },
       {
@@ -188,11 +188,11 @@ describe('System settings navigation', () => {
         routes: foundation,
       },
     ]).routes;
-    // The bare shell: only App Foundation, which only an unrestricted administrator may open.
+    // The bare shell: only the plugins page; the old App Foundation addresses lead to it and stay out of the menu.
     const menu = buildRouteNavigation(routes, new Set());
     expect(menu.map(({ route }) => route.name)).toEqual(['settingsHome']);
     expect(catalog(routes)).toEqual([
-      ['settingsSystem', [['foundation', '/foundation']]],
+      ['systemSettings.system', [['plugins', '/settings/plugins']]],
     ]);
     // The signed-in shell receives the tree filtered to its pages; empty categories keep their titles there.
     const signedIn = filterRouteTree(
@@ -200,10 +200,10 @@ describe('System settings navigation', () => {
       (route) => route.auth === 'required',
     );
     expect(catalog(signedIn)).toEqual([
-      ['settingsSystem', [['foundation', '/foundation']]],
+      ['systemSettings.system', [['plugins', '/settings/plugins']]],
     ]);
-    const page = find(routes, 'foundation');
-    expect(page.navigation?.description).toBe('nav.foundationDescription');
+    const page = find(routes, 'plugins');
+    expect(page.navigation?.description).toBe('nav.pluginsDescription');
     expect(buildRouteNavigation(routes, new Set([routeKey(page)]))).toEqual([]);
   });
 

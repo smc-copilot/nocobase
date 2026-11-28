@@ -1,4 +1,3 @@
-import { groupFoundationNavigation } from '@nocobase/app-plugin-foundation/client';
 import type { AppClientRegisteredRoute } from '@nocobase/app-client/plugins';
 import type { RouteNavigationItem } from '../routing/route-navigation.js';
 
@@ -20,10 +19,7 @@ export function organizeNavigation(
   items: RouteNavigationItem[],
   routes: readonly AppClientRegisteredRoute[],
 ): RouteNavigationItem[] {
-  return groupFoundationNavigation(
-    withSettingsGroup(items, routes),
-    SETTINGS_GROUP,
-  );
+  return nestSystemSettings(withSettingsGroup(items, routes));
 }
 
 /** Application-owned navigation customization, applied after permission filtering. */
@@ -31,35 +27,29 @@ export function transformNavigation(
   items: RouteNavigationItem[],
   routes: readonly AppClientRegisteredRoute[],
 ): RouteNavigationItem[] {
-  const organized = organizeNavigation(items, routes);
-  const hasGuide = organized.some(
-    (item) =>
-      item.route.name === SETTINGS_GROUP &&
-      item.children.some(
-        (child) =>
-          child.route.packageName === '@nocobase/app-plugin-foundation' &&
-          child.route.name === 'capabilityGuide',
-      ),
+  return collapseSettingsNavigation(organizeNavigation(items, routes));
+}
+
+/**
+ * Plugins and the other built-in system settings categories register on the `systemSettings` surface, beside this
+ * application's settings group. Fold them into that group so the sidebar keeps one Settings entry.
+ */
+function nestSystemSettings(
+  items: RouteNavigationItem[],
+): RouteNavigationItem[] {
+  const system = items.filter(
+    (item) => item.route.surface === 'systemSettings',
   );
-  return collapseSettingsNavigation(organized).map((item) =>
-    hasGuide && item.route.name === SETTINGS_HOME
-      ? {
-          ...item,
-          activeRouteKeys: [
-            ...(item.activeRouteKeys ?? []),
-            ...routes
-              .filter(
-                (route) =>
-                  route.packageName === '@nocobase/app-plugin-foundation' &&
-                  ['capabilityGuide', 'capabilityGuideEntry'].includes(
-                    route.name,
-                  ),
-              )
-              .map((route) => `${route.packageName}:${route.path}:${route.id}`),
-          ],
-        }
-      : item,
-  );
+  if (!system.length) return items;
+  const rest = items.filter((item) => item.route.surface !== 'systemSettings');
+  const index = rest.findIndex((item) => item.route.name === SETTINGS_GROUP);
+  const settings = rest[index];
+  if (!settings) return items;
+  return [
+    ...rest.slice(0, index),
+    { ...settings, children: [...settings.children, ...system] },
+    ...rest.slice(index + 1),
+  ];
 }
 
 /**

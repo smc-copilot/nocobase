@@ -25,7 +25,6 @@ import api from './api.js';
 import database from './database.js';
 import snowflake from './snowflake.js';
 import users from './users.js';
-import foundation from './foundation.js';
 import meetingGateway from './meeting-gateway.js';
 import meetingOa from './meeting-oa.js';
 import meetingOaSso from './meeting-oa-sso.js';
@@ -54,7 +53,6 @@ const defaultConfigs: AppConfigFactory<{
   database: ReturnType<typeof database>;
   snowflake: ReturnType<typeof snowflake>;
   users: ReturnType<typeof users>;
-  foundation: ReturnType<typeof foundation>;
   meetingGateway: ReturnType<typeof meetingGateway>;
   meetingOa: ReturnType<typeof meetingOa>;
   meetingOaSso: ReturnType<typeof meetingOaSso>;
@@ -82,7 +80,6 @@ const defaultConfigs: AppConfigFactory<{
   database,
   snowflake,
   users,
-  foundation,
   meetingGateway,
   meetingOa,
   meetingOaSso,

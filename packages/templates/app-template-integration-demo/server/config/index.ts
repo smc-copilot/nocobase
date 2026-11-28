@@ -26,7 +26,6 @@ import database from './database.js';
 import snowflake from './snowflake.js';
 import users from './users.js';
 import knowledge from './knowledge.js';
-import foundation from './foundation.js';
 import casdoorIdentity from './casdoor-identity.js';
 import agentAuthorization from './agent-authorization.js';
 import businessUiAdapter from './business-ui-adapter.js';
@@ -56,7 +55,6 @@ const defaultConfigs: AppConfigFactory<{
   snowflake: ReturnType<typeof snowflake>;
   users: ReturnType<typeof users>;
   knowledge: ReturnType<typeof knowledge>;
-  foundation: ReturnType<typeof foundation>;
   casdoorIdentity: ReturnType<typeof casdoorIdentity>;
   agentAuthorization: ReturnType<typeof agentAuthorization>;
   businessUiAdapter: ReturnType<typeof businessUiAdapter>;
@@ -85,7 +83,6 @@ const defaultConfigs: AppConfigFactory<{
   snowflake,
   users,
   knowledge,
-  foundation,
   casdoorIdentity,
   agentAuthorization,
   businessUiAdapter,
